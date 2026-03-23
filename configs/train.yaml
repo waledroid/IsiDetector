@@ -1,0 +1,25 @@
+project_name: "isiDetector"
+
+model_type: "yolov26"
+model_size: "m" 
+
+dataset_path: "data/universal_dataset" 
+nc: 2
+class_names: ["carton", "polybag"]
+
+epochs: 30
+batch_size: 16
+image_size: 640
+mixed_precision: true 
+
+# 🧬 INDUSTRIAL AUGMENTATION (Handled dynamically in RAM)
+# YOLO will automatically apply these during training
+hsv_h: 0.015  # Image HSV-Hue augmentation
+hsv_s: 0.7    # Image HSV-Saturation augmentation
+hsv_v: 0.4    # Image HSV-Value augmentation
+fliplr: 0.5   # Image flip left-right (probability)
+mosaic: 1.0   # Image mosaic (probability) - Extremely powerful for warehouse scenes
+scale: 0.5    # Image scale (+/- gain)
+
+hooks:
+  - "IndustrialLogger"
