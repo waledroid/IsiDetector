@@ -1,0 +1,28 @@
+# configs/optimizers/yolo_optim.yaml
+
+# 🛑 Control the total training length here to sync with the scheduler
+epochs: 200 
+
+optimizer:
+  type: "AdamW"
+  lr: 0.001
+  weight_decay: 0.0005
+  
+  scheduler:
+    type: "CosineAnnealing"
+    warmup_epochs: 3
+    T_max: 200     # 🧠 Perfectly synced with total epochs
+    eta_min: 0.00001
+
+early_stopping:
+  enabled: true
+  patience: 50     # 🛑 Aggressive cutoff: Stop if no improvement for 10 epochs
+  min_delta: 0.0005
+  monitor: "mAP50"
+  mode: "max"
+  restore_best_weights: true
+
+checkpoint:
+  save_best_only: true
+  save_frequency: 5
+  keep_last: 3

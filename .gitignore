@@ -1,5 +1,9 @@
 data/
 runs/
+models/
+*/__pycache__/*
+*.pth
+*.onnx
 *.pt
 !yolo26n.pt
 !yolov8m-seg.pt

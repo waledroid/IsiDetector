@@ -1,0 +1,17 @@
+TODAY 
+python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+
+python scripts/run_live.py --weights models/rfdetr/25-03-2026_0043/checkpoint_best_ema.pth --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights models/rfdetr/25-03-2026_0043/inference_model.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+
+
+
+YESTERDAY
+
+python scripts/run_live.py --weights runs/segment/models/yolov26/23-03-20262/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights runs/segment/models/yolov26/23-03-20262/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+
+python scripts/run_live.py --weights models/rfdetr/24-03-2026_0120/checkpoint_best_ema.pth --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights models/rfdetr/24-03-2026_0120/inference_model.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+

@@ -7,14 +7,14 @@ import logging
 from pathlib import Path
 
 # 1. System Path Setup
-# This ensures Python can find your 'src' folder no matter where you run the script from.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
 # 2. Wake up the Registry
+
 from src.shared.registry import TRAINERS
-# 🛑 CRITICAL: We must import the trainer and hook modules so their @register decorators fire!
-import src.training.trainers 
+import src.training.trainers.yolo    # Wakes up YOLO
+import src.training.trainers.rfdetr  # 🛑 Wakes up the new RF-DETR!
 import src.training.hooks
 
 # Setup standard industrial logging
@@ -26,26 +26,45 @@ logging.basicConfig(
 logger = logging.getLogger("Ignition")
 
 def main():
-    # 3. CLI Argument Parser
-    parser = argparse.ArgumentParser(description="isiDetector Industrial Training Pipeline")
-    parser.add_argument(
-        '--config', 
-        type=str, 
-        default='configs/train.yaml',
-        help="Path to the master training configuration YAML."
-    )
+    # 3. CLI Argument Parser (Perfectly preserved!)
+    parser = argparse.ArgumentParser(description="Industrial Training Pipeline")
+    parser.add_argument('--config', type=str, default='configs/train.yaml', help='Path to master config')
+    parser.add_argument('--resume', type=str, default=None, help='Path to last.pt to resume training')
     args = parser.parse_args()
 
-    # 4. Load the Command Center (YAML)
     config_path = PROJECT_ROOT / args.config
+
     if not config_path.exists():
-        logger.error(f"❌ Configuration file not found at {config_path}")
+        logger.error(f"❌ Master Config missing at {config_path}")
         sys.exit(1)
-        
+
+    # 4. Load Master Config
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
 
-    # Updated fallback to match your project name
+    # 5. 🛑 THE MERGE: Dynamically read the optimizer config from train.yaml
+    if 'optimizer_config' in config:
+        optim_path = PROJECT_ROOT / config['optimizer_config']
+        if optim_path.exists():
+            logger.info(f"🔗 Merging Secondary Config: {optim_path.name}")
+            with open(optim_path, 'r') as f:
+                optim_config = yaml.safe_load(f)
+                config.update(optim_config)
+        else:
+            logger.error(f"❌ Optimizer config not found at {optim_path}")
+            sys.exit(1)
+    else:
+        logger.warning("⚠️ No 'optimizer_config' found in train.yaml. Using default parameters.")
+
+    # 6. RESUME MODE LOGIC (Perfectly preserved for YOLO!)
+    if args.resume:
+        resume_file = PROJECT_ROOT / args.resume
+        if not resume_file.exists():
+            logger.error(f"❌ Cannot resume. File not found: {resume_file}")
+            sys.exit(1)
+        config['resume_path'] = str(resume_file)
+        logger.info(f"🔄 RESUME MODE INITIATED: Will continue from {resume_file.name}")
+
     project_name = config.get('project_name', 'isiDetector')
     model_type = config.get('model_type')
 
@@ -53,15 +72,17 @@ def main():
     logger.info(f"🔍 Requested Model Architecture: {model_type}")
 
     try:
-        # 5. The Magic of the Registry
-        # We ask the registry for the class, and instantly instantiate it with our config
+        # 7. Registry Instantiation
         TrainerClass = TRAINERS.get(model_type)
+        if not TrainerClass:
+            raise KeyError(f"No trainer registered for '{model_type}'.")
+        
         trainer = TrainerClass(config)
         
-        # 6. Execute the Pipeline
+        # 8. Execute the Pipeline
         trainer.train()
         
-        # 7. Post-Training Validation & Export
+        # 9. Post-Training Validation & Export
         trainer.evaluate()
         
         if config.get('export_model', True):

@@ -1,25 +1,39 @@
+# configs/train.yaml
 project_name: "isiDetector"
-
-model_type: "yolov26"
-model_size: "m" 
-
-dataset_path: "data/universal_dataset" 
 nc: 2
 class_names: ["carton", "polybag"]
+hooks:
+  - "IndustrialLogger"
 
-epochs: 30
+# =========================================================
+# 🛑 ACTIVE ENGINE SWITCHBOARD (Uncomment ONE block below)
+# =========================================================
+
+# ---------------------------------------------------------
+# 🚀 OPTION A: YOLOv8 (CNN) - Fast, grid-based, high batch size
+# ---------------------------------------------------------
+model_type: "yolo"
+model_size: "m"
+dataset_path: "data/universal_dataset"
+optimizer_config: "configs/optimizers/yolo_optim.yaml"
 batch_size: 16
 image_size: 640
 mixed_precision: true 
+# YOLO Specific Augmentations
+# hsv_h: 0.015  
+# hsv_s: 0.7    
+# hsv_v: 0.4    
+fliplr: 0.5   
+mosaic: 1.0   
+scale: 0.5    
 
-# 🧬 INDUSTRIAL AUGMENTATION (Handled dynamically in RAM)
-# YOLO will automatically apply these during training
-hsv_h: 0.015  # Image HSV-Hue augmentation
-hsv_s: 0.7    # Image HSV-Saturation augmentation
-hsv_v: 0.4    # Image HSV-Value augmentation
-fliplr: 0.5   # Image flip left-right (probability)
-mosaic: 1.0   # Image mosaic (probability) - Extremely powerful for warehouse scenes
-scale: 0.5    # Image scale (+/- gain)
-
-hooks:
-  - "IndustrialLogger"
+# ---------------------------------------------------------
+# 🤖 OPTION B: RF-DETR (Transformer) - DINOv2 Backbone, Global Context
+# ---------------------------------------------------------
+# model_type: "rfdetr"
+# model_size: "m"
+# optimizer_config: "configs/optimizers/rfdetr_optim.yaml"
+# dataset_path: "data/rfdetr_dataset"
+# batch_size: 2      #4 default   # Keep low to prevent VRAM crashes
+# image_size: 640
+# mixed_precision: true

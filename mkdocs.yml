@@ -1,0 +1,103 @@
+site_name: IsiDetector
+site_description: Modular Instance Segmentation Pipeline for Industrial Parcel Detection
+site_author: waledroid
+repo_url: https://github.com/waledroid/IsiDetector
+repo_name: waledroid/IsiDetector
+
+theme:
+  name: material
+  icon:
+    logo: material/cube-scan
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.indexes
+    - navigation.expand
+    - navigation.top
+    - navigation.instant
+    - navigation.instant.progress
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/waledroid/IsiDetector
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.mark
+  - footnotes
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture:
+    - architecture/index.md
+    - System Overview: architecture/overview.md
+    - Registry Pattern: architecture/registry.md
+    - BaseTrainer Contract: architecture/base-trainer.md
+  - Trainers:
+    - trainers/index.md
+    - YOLOv8-Seg: trainers/yolo.md
+    - RF-DETR-Seg: trainers/rfdetr.md
+  - Modules:
+    - modules/index.md
+    - Hook System: hooks/index.md
+    - Inference Engines: inference/index.md
+    - Preprocessing: preprocessing/index.md
+  - Configuration: config/index.md
