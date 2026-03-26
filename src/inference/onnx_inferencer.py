@@ -29,9 +29,6 @@ class ONNXInferencer(BaseInferencer):
         # 3. Get Output Names to detect model type (YOLO vs RF-DETR)
         self.output_names = [o.name for o in self.session.get_outputs()]
         self.is_rfdetr = "dets" in self.output_names
-        
-        # Map indices to your custom classes
-        self.class_names = {0: "carton", 1: "polybag"}
 
     def _load_model(self):
         return None # Managed by onnxruntime session
@@ -90,10 +87,10 @@ class ONNXInferencer(BaseInferencer):
         final_boxes = new_boxes * rescale
 
         # 4. Label Shift Fix: 
-        # If your labels are shifted by 1, subtract 1 here:
+        # If your labels are shifted by 1, subtract 1 here to index into BaseInferencer.class_names:
         final_class_ids = class_ids[mask_idx] - 1 
-        # Ensure no negative IDs
-        final_class_ids = np.clip(final_class_ids, 0, 1)
+        # Ensure no negative IDs or out of bounds
+        final_class_ids = np.clip(final_class_ids, 0, self.nc - 1)
 
         # 5. Mask Resize
         final_masks = []
@@ -109,49 +106,64 @@ class ONNXInferencer(BaseInferencer):
         )
 
     def _postprocess_yolo(self, outputs, orig_w, orig_h):
-        # 1. Parse Tensors
-        # output0: [1, 38, 8400] -> [8400, 38]
-        # output1: [1, 32, 160, 160] (Mask Prototypes)
-        preds = np.squeeze(outputs[0]).T 
-        protos = outputs[1] 
-
-        # 2. Split: [box(4), scores(2), mask_coeffs(32)]
+        # 1. Split the outputs
+        preds = np.squeeze(outputs[0])  # [300, 38]
+        protos = np.squeeze(outputs[1]) # [32, 160, 160]
+        
+        # 2. Extract Box, Score, and the 32 Mask Coefficients
         boxes = preds[:, :4]
-        scores = preds[:, 4:6]
-        mask_coeffs = preds[:, 6:]
-
-        # 3. Get Class and Max Score
+        scores = preds[:, 4:4+self.nc]
+        mask_coeffs = preds[:, 4+self.nc:]
+        
         class_ids = np.argmax(scores, axis=1)
         confidences = np.max(scores, axis=1)
-
-        # 4. Filter by Threshold
-        idx = confidences > self.conf_threshold
-        if not np.any(idx):
+        
+        mask = confidences > self.conf_threshold
+        if not np.any(mask):
             return sv.Detections.empty()
 
-        # 5. Apply Manual NMS (This removes the "lots of boxes" problem)
-        # Convert XYWH to XYXY for NMS
-        nm_boxes = boxes[idx]
-        x, y, w, h = nm_boxes[:, 0], nm_boxes[:, 1], nm_boxes[:, 2], nm_boxes[:, 3]
-        boxes_xyxy = np.stack([x - w/2, y - h/2, x + w/2, y + h/2], axis=-1)
+        # 3. Filter and Scale Boxes
+        # Use dynamic input shape instead of hardcoded 640
+        model_h, model_w = self.input_shape[2], self.input_shape[3]
+        final_boxes = boxes[mask]
+        final_boxes[:, [0, 2]] *= (orig_w / model_w)
+        final_boxes[:, [1, 3]] *= (orig_h / model_h)
+
+        # 4. OPTIMIZED VECTORIZED MASK DECODING
+        # Matrix multiplication for all masks at once: [N, 32] @ [32, 160*160] -> [N, 160, 160]
+        c = mask_coeffs[mask]
+        ih, iw = protos.shape[1:]
+        m = (c @ protos.reshape(32, -1)).reshape(-1, ih, iw)
         
-        # Supervision's NMS is very fast
-        detections = sv.Detections(
-            xyxy=boxes_xyxy,
-            confidence=confidences[idx],
-            class_id=class_ids[idx]
+        # Vectorized Sigmoid
+        m = 1 / (1 + np.exp(-m)) 
+        
+        final_masks = []
+        for i in range(len(m)):
+            # Resize individual mask
+            mask_resized = cv2.resize(m[i], (orig_w, orig_h))
+            mask_bool = mask_resized > 0.5
+            
+            # Crop to bounding box
+            x1, y1, x2, y2 = final_boxes[i].astype(int)
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(orig_w, x2), min(orig_h, y2)
+
+            clean_mask = np.zeros((orig_h, orig_w), dtype=bool)
+            if x2 > x1 and y2 > y1:
+                clean_mask[y1:y2, x1:x2] = mask_bool[y1:y2, x1:x2]
+            final_masks.append(clean_mask)
+
+        # 5. Fix YOLO Class Swap (Model 0=Polybag, 1=Carton | Config 0=Carton, 1=Polybag)
+        # Using 1 - class_id to swap 0 <-> 1 for this specific binary model
+        final_class_ids = (1 - class_ids[mask]).astype(int)
+
+        return sv.Detections(
+            xyxy=final_boxes,
+            confidence=confidences[mask],
+            class_id=final_class_ids,
+            mask=np.array(final_masks)
         )
-        detections = detections.with_nms(threshold=0.5)
-
-        # 6. COORDINATE SCALE (640 -> 1080p)
-        scale_x, scale_y = orig_w / 640, orig_h / 640
-        detections.xyxy[:, [0, 2]] *= scale_x
-        detections.xyxy[:, [1, 3]] *= scale_y
-
-        # 7. TODO: MASK DECODING
-        # YOLO masks require a matrix multiplication of (mask_coeffs @ protos)
-        # We will keep them as 'None' for 1 second to verify the boxes first.
-        return detections
         
     # --- Methods required by BaseInferencer Contract ---
 

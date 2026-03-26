@@ -1,3 +1,19 @@
+INFERENCE USB CAMERA
+python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.onnx --source 0
+
+
+CONVERT YOLO O NNX 
+# Using the CLI is often safer for ensuring all flags are caught
+yolo export \
+  model=runs/segment/models/yolov26/23-03-20262/weights/best.pt \
+  format=onnx \
+  imgsz=640 \
+  opset=12 \
+  simplify=True \
+  nms=True \
+  dynamic=False
+
+
 TODAY 
 python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"

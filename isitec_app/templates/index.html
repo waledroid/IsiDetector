@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISITEC visionAI Platform</title>
+    <!-- Modern Fonts and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+
+    <!-- Chart.js for Advanced Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-logo">
+            <!-- Using the static local logo, fallback to placeholder -->
+            <img src="/static/img/isitec-logo.png" alt="ISITEC Logo" height="80"
+                onerror="this.src='https://via.placeholder.com/240x80?text=ISITEC+Logo'">
+            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">ISITEC visionAI Platform</h1>
+        </div>
+
+        <div style="display: flex; align-items: center; height: 100%;">
+            <div class="lang-switcher">
+                <button id="btn-lang-en" class="lang-btn active" title="English">🇬🇧</button>
+                <button id="btn-lang-fr" class="lang-btn" title="Français">🇫🇷</button>
+            </div>
+            <nav class="app-nav">
+                <button class="nav-btn active" data-target="section-live"><i class="material-icons">videocam</i> <span
+                        data-i18n="nav_live">Live Inference</span></button>
+                <button class="nav-btn" data-target="section-analytics"><i class="material-icons">analytics</i> <span
+                        data-i18n="nav_analytics">Analytics</span></button>
+                <button class="nav-btn" data-target="section-models"><i class="material-icons">model_training</i> <span
+                        data-i18n="nav_models">Models</span></button>
+                <button class="nav-btn" data-target="section-settings"><i class="material-icons">settings</i> <span
+                        data-i18n="nav_settings">Settings</span></button>
+                <button class="nav-btn" data-target="section-about"><i class="material-icons">info</i> <span
+                        data-i18n="nav_about">About</span></button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Auto-hiding Message Strip -->
+    <div id="message" class="message-strip hidden"></div>
+
+    <!-- Main Container for Cards -->
+    <main class="main-container">
+
+        <!-- SECTION 1: LIVE INFERENCE -->
+        <section id="section-live" class="panel active">
+            <div class="card layout-row">
+                <!-- Controls Side (Left) -->
+                <div class="controls-panel">
+
+                    <!-- Real-Time Stats Grid -->
+                    <div id="statsGrid" class="stats-grid">
+                        <div class="stat-card" style="background-color: #E8E0F8; border-color: #D1C4E9;">
+                            <span class="stat-value" id="statCartons" style="color: #4A148C;">0</span>
+                            <span class="stat-label" data-i18n="stat_cartons">Cartons</span>
+                        </div>
+                        <div class="stat-card" style="background-color: #FCE4EC; border-color: #F8BBD0;">
+                            <span class="stat-value" id="statPolybags" style="color: #880E4F;">0</span>
+                            <span class="stat-label" data-i18n="stat_polybags">Polybags</span>
+                        </div>
+                        <div class="stat-card full-width">
+                            <span class="stat-label" data-i18n="stat_last">Last Detected</span>
+                            <span class="stat-value text-small" id="statLast" data-i18n="stat_none">None</span>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Chart embedded directly beside/under stats -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h3 data-i18n="chart_title">Detection Analytics</h3>
+                            <div class="chart-filters">
+                                <button class="filter-btn active" data-period="live"
+                                    data-i18n="filter_live">Live</button>
+                                <button class="filter-btn" data-period="24h" data-i18n="filter_24h">24h</button>
+                                <button class="filter-btn" data-period="7d" data-i18n="filter_7d">7 Days</button>
+                                <button class="filter-btn" data-period="30d" data-i18n="filter_30d">30 Days</button>
+                            </div>
+                        </div>
+                        <div
+                            style="background: #fff; border: 1px solid #dadce0; border-radius: 6px; padding: 12px; margin-bottom: 48px;">
+                            <canvas id="analyticsChart" height="160"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="padding-top: 10px;">
+                        <label data-i18n="modes">Modes</label>
+                        <select id="modelSelect">
+                            <option value="yolo">Mode 1</option>
+                            <option value="rfdetr">Mode 2</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label data-i18n="input_source">Input Source</label>
+                        <div class="source-buttons">
+                            <button class="source-btn active" data-type="image"><i class="material-icons">image</i>
+                                <span data-i18n="src_image">Image</span></button>
+                            <button class="source-btn" data-type="video"><i class="material-icons">movie</i> <span
+                                    data-i18n="src_video">Video</span></button>
+                            <button class="source-btn" data-type="rtsp"><i class="material-icons">router</i> <span
+                                    data-i18n="src_rtsp">RTSP URL</span></button>
+                            <button class="source-btn" data-type="camera"><i class="material-icons">photo_camera</i>
+                                <span data-i18n="src_camera">Camera</span></button>
+                        </div>
+                    </div>
+
+                    <div class="input-group" id="dynamicInputContainer">
+                        <!-- File Upload Drop Area -->
+                        <div class="file-drop-area" id="fileDropArea">
+                            <span class="fake-file-btn" data-i18n="choose_file">Choose File</span>
+                            <span class="file-msg" data-i18n="drag_drop">or drag and drop here</span>
+                            <input class="file-input" type="file" id="sourceFile" accept="image/*">
+                        </div>
+                        <!-- Text Input Area (for Camera ID or RTSP URL) -->
+                        <input type="text" id="sourceText" placeholder="" style="display:none; font-family: inherit;">
+                    </div>
+                </div>
+
+                <!-- Video Side (Right) -->
+                <div class="video-panel" style="display: flex; flex-direction: column;">
+                    <div class="video-wrapper">
+                        <img id="videoStream" src="/video_feed" width="640" height="640" alt="Video Stream">
+                    </div>
+
+                    <div class="button-group"
+                        style="margin-top: 16px; justify-content: center; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #dadce0;">
+                        <button id="btnStart" class="btn btn-primary"
+                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="material-icons" style="font-size: 24px;">play_arrow</i> <span
+                                data-i18n="start_tracking">Start Tracking</span>
+                        </button>
+                        <button id="btnStop" class="btn btn-danger"
+                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="material-icons" style="font-size: 24px;">stop</i> <span
+                                data-i18n="stop">Stop</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: ANALYTICS -->
+        <section id="section-analytics" class="panel">
+            <div class="card">
+                <h2 data-i18n="analytics_overview">Analytics & Logging Overview</h2>
+                <div class="placeholder-box">
+                    <i class="material-icons" style="font-size: 48px; color: #ccc;">bar_chart</i>
+                    <p data-i18n="analytics_soon">Historical logs are stored in the /logs directory and parsed in the
+                        live dashboard natively.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: MODELS -->
+        <section id="section-models" class="panel">
+            <div class="card">
+                <h2 data-i18n="model_management">Model Management</h2>
+                <div class="placeholder-box">
+                    <i class="material-icons" style="font-size: 48px; color: #ccc;">folder_open</i>
+                    <p data-i18n="model_soon">Model Directory Viewer Coming Soon.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: SETTINGS -->
+        <section id="section-settings" class="panel">
+            <div class="card">
+                <h2 data-i18n="system_settings">System Settings</h2>
+                <div class="placeholder-box">
+                    Configurations.
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: ABOUT -->
+        <section id="section-about" class="panel">
+            <div class="card">
+                <h2 data-i18n="about_title">About ISITEC visionAI</h2>
+                <p data-i18n="about_desc">Industrial Object Detection and Tracking Platform</p>
+                <p style="color: #666; margin-top: 8px;" data-i18n="version">Version 1.0.0-beta</p>
+            </div>
+        </section>
+
+    </main>
+
+    <footer
+        style="text-align: center; padding: 16px; font-size: 13px; color: var(--text-light); border-top: 1px solid #dadce0; margin-top: auto;"
+        data-i18n="copyright_footer">
+        &copy; Copyright Isitec International 2026
+    </footer>
+
+    <script src="/static/js/main.js"></script>
+</body>
+
+</html>

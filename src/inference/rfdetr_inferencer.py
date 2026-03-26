@@ -16,7 +16,8 @@ class RFDETRInferencer(BaseInferencer):
     
     def __init__(self, model_path: str, conf_threshold: float = 0.5):
         super().__init__(model_path, conf_threshold)
-        self.class_names = {1: "carton", 2: "polybag"}
+        # RF-DETR Shift: Starts from 1 (COCO Convention)
+        self.class_names = {i+1: name for i, name in self.class_names.items()}
     
     def _load_model(self):
         model = RFDETRSegMedium(pretrain_weights=str(self.model_path))
@@ -24,37 +25,17 @@ class RFDETRInferencer(BaseInferencer):
         return model
 
     def predict_frame(self, frame: np.ndarray):
-        """Processes a video frame with aspect-ratio aware scaling for Transformers."""
-        orig_h, orig_w = frame.shape[:2]
-        
-        # 1. Scaling Logic
-        if max(orig_h, orig_w) > 640:
-            scale = 640 / max(orig_h, orig_w)
-            new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-            input_frame = cv2.resize(frame, (new_w, new_h))
-            needs_scaling = True
-        else:
-            input_frame = frame
-            scale = 1.0
-            needs_scaling = False
+        """Processes a video frame with shared preprocessing."""
+        # 1. Shared Scaling Logic
+        input_frame, scale, needs_scaling, orig_w, orig_h = self._preprocess_frame(frame, target_size=640)
         
         # 2. PIL Conversion & Inference
         image = Image.fromarray(cv2.cvtColor(input_frame, cv2.COLOR_BGR2RGB))
         detections = self.model.predict(image, threshold=self.conf_threshold)
         
-        # 3. Manual Scaling Back
-        if needs_scaling and len(detections) > 0:
-            inv_scale = 1 / scale
-            detections.xyxy = detections.xyxy.copy()
-            detections.xyxy *= inv_scale
-            
-            if detections.mask is not None:
-                resized_masks = []
-                for mask in detections.mask:
-                    m = cv2.resize(mask.astype(np.uint8), (orig_w, orig_h), 
-                                 interpolation=cv2.INTER_NEAREST)
-                    resized_masks.append(m.astype(bool))
-                detections.mask = np.array(resized_masks)
+        # 3. Shared Scaling Back
+        if needs_scaling:
+            detections = self._rescale_detections(detections, scale, orig_w, orig_h)
             
         return detections
 
