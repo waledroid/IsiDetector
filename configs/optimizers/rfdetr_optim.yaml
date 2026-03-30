@@ -1,8 +1,9 @@
 # configs/optimizers/rfdetr_optim.yaml
 
-epochs: 105 
-batch_size: 2           # Keep at 4 to protect your 12GB VRAM
-image_size: 640         # Must be divisible by 56 for DINOv2
+epochs: 2
+batch_size: 2           # Keep at 2 on 12GB VRAM with segmentation masks
+image_size: 448         # 448 = 56×8, proper DINOv2 multiple, ~23% less VRAM than 512
+num_select: 100         # Lowered from 300 to prevent VRAM OOM during mask interpolation
 
 optimizer:
   type: "AdamW"

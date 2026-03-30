@@ -1,5 +1,11 @@
+rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?
+
 INFERENCE USB CAMERA
 python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.onnx --source 0
+
+FLASK WEB APP
+python isitec_app/app.py
+http://127.0.0.1:9501
 
 
 CONVERT YOLO O NNX 

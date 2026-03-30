@@ -10,7 +10,7 @@ hide:
 <p class="hero-subtitle">
   A modular, config-driven instance segmentation pipeline for industrial parcel detection.
   <br/>
-  Switch between <strong>YOLOv8-Seg</strong> and <strong>RF-DETR-Seg</strong> with one line of YAML.
+  Switch between <strong>YOLOv12-seg</strong> and <strong>RF-DETR-Seg</strong> with one line of YAML.
 </p>
 
 [Get Started :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
@@ -29,7 +29,7 @@ IsiDetector is built for **logistics and warehouse** environments where you need
 
 ### 🧠 Two Architectures, One Interface
 
-Train with a CNN-based **YOLOv8-Seg** for speed, or a Transformer-based **RF-DETR-Seg** (DINOv2 backbone) for global context. Both share the exact same API.
+Train with a CNN-based **YOLOv12-seg** for speed, or a Transformer-based **RF-DETR-Seg** (DINOv2 backbone) for global context. Both share the exact same API.
 
 </div>
 <div class="card" markdown>
@@ -79,26 +79,22 @@ Built-in CLAHE-based `SpecularGuard` handles polybag glare and deep shadows in L
 
 ```text
 logistic/
-├── configs/
+├── isitec_app/                       # 🌐 VisionAI Platform (Flask)
+│   ├── app.py                        # Backend entrypoint
+│   ├── stream_handler.py             # Async inference management
+│   ├── templates/                    # Material UI index
+│   └── static/                       # CSS/JS & Assets
+├── configs/                          # ⚙️ YAML configurations
 │   ├── train.yaml                    # Master switchboard
-│   └── optimizers/
-│       ├── yolo_optim.yaml           # YOLO hyperparameters
-│       └── rfdetr_optim.yaml         # RF-DETR hyperparameters
-├── scripts/
-│   ├── run_train.py                  # Training entrypoint
-│   ├── run_infer.py                  # Inference entrypoint
-│   ├── run_live.py                   # Live camera inference
-│   └── ...
-├── src/
-│   ├── shared/registry.py            # Registry pattern
-│   ├── training/
-│   │   ├── base_trainer.py           # Abstract contract
-│   │   ├── trainers/
-│   │   │   ├── yolo.py               # YOLOv8-Seg trainer
-│   │   │   └── rfdetr.py             # RF-DETR-Seg trainer
-│   │   └── hooks/
-│   │       └── industrial_logger.py  # Epoch logger
-│   ├── inference/                    # Inference engines
-│   └── preprocess/                   # CLAHE engine
-└── data/                             # Datasets
+│   └── optimizers/                   # Hyperparameter presets
+├── src/                              # 🏗️ Core Engine
+│   ├── shared/registry.py            # Global module registry
+│   ├── training/                     # Training logic
+│   │   ├── trainers/                 # YOLOv12 & RF-DETR implementations
+│   │   └── hooks/                    # Logging & Metrics system
+│   └── inference/                    # High-speed ONNX & Torch engines
+├── models/                           # 🧠 Pretrained & Exported weights
+├── data/                             # 📊 Training & Validation sets
+├── docs/                             # 📑 Documentation source
+└── site/                             # 🌍 Built MkDocs static site
 ```

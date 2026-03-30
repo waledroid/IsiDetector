@@ -1,6 +1,6 @@
-# YOLOv8-Seg Trainer
+# YOLOv12-seg Trainer
 
-The `YOLOTrainer` wraps Ultralytics' YOLOv8 segmentation engine into the modular `BaseTrainer` interface. It handles model initialisation, dataset configuration, hook bridging, and the full train/eval/export cycle.
+The `YOLOTrainer` wraps Ultralytics' YOLOv12 segmentation engine into the modular `BaseTrainer` interface. It handles model initialisation, dataset configuration, hook bridging, and the full train/eval/export cycle.
 
 :material-file-code: **Source**: `src/training/trainers/yolo.py`
 :material-tag: **Registry Names**: `"yolo"`, `"yolov26"`
@@ -31,7 +31,7 @@ def __init__(self, config: dict):
 ```
 
 1. Calls `BaseTrainer.__init__()` which creates output dirs, initialises state vars, and attaches hooks
-2. Model size determines which pretrained weights to load (`yolov8n-seg.pt`, `yolov8m-seg.pt`, etc.)
+2. Model size determines which pretrained weights to load (`yolov12n-seg.pt`, `yolov12m-seg.pt`, etc.)
 3. Immediately checks for / generates the `data.yaml` that YOLO requires
 
 ---
@@ -77,17 +77,17 @@ def build_model(self):
     if resume_path:
         self.model = YOLO(resume_path)       # Resume from checkpoint
     else:
-        model_name = f"yolov8{self.model_size}-seg.pt"
+        model_name = f"yolov12{self.model_size}-seg.pt"
         self.model = YOLO(model_name)        # Fresh pretrained weights
 ```
 
 | `model_size` | Weights File | Parameters | Speed |
 |---|---|---|---|
-| `n` | `yolov8n-seg.pt` | ~3.4M | Fastest |
-| `s` | `yolov8s-seg.pt` | ~11.8M | Fast |
-| `m` | `yolov8m-seg.pt` | ~27.3M | Balanced |
-| `l` | `yolov8l-seg.pt` | ~46.0M | Accurate |
-| `x` | `yolov8x-seg.pt` | ~71.8M | Most Accurate |
+| `n` | `yolov12n-seg.pt` | ~3.4M | Fastest |
+| `s` | `yolov12s-seg.pt` | ~11.8M | Fast |
+| `m` | `yolov12m-seg.pt` | ~27.3M | Balanced |
+| `l` | `yolov12l-seg.pt` | ~46.0M | Accurate |
+| `x` | `yolov12x-seg.pt` | ~71.8M | Most Accurate |
 
 ---
 

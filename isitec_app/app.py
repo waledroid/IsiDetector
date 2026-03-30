@@ -13,6 +13,16 @@ from isitec_app.stream_handler import StreamHandler
 app = Flask(__name__)
 stream_handler = StreamHandler()
 
+import threading
+import time
+
+def heartbeat():
+    while True:
+        # print("💓 Flask Heartbeat: Server component is active")
+        time.sleep(10)
+
+threading.Thread(target=heartbeat, daemon=True).start()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -116,4 +126,11 @@ def stop_stream():
 
 if __name__ == '__main__':
     # Using 0.0.0.0 to allow access from any IP, useful when containerized.
-    app.run(host='0.0.0.0', port=9501, debug=True, threaded=True)
+    # debug=False ensures the app is more stable and won't restart on background errors.
+    try:
+        print("🚀 Starting Flask Server on http://0.0.0.0:9501")
+        app.run(host='0.0.0.0', port=9501, debug=False, threaded=True)
+    except Exception as e:
+        print(f"🔥 Flask Critical Error: {e}")
+    finally:
+        print("💀 Flask Process Exiting...")

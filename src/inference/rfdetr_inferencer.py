@@ -1,5 +1,5 @@
-# src/inference/rfdetr_inferencer.py
 import cv2
+import torch
 import supervision as sv
 from pathlib import Path
 from PIL import Image
@@ -13,11 +13,21 @@ except ImportError:
 
 class RFDETRInferencer(BaseInferencer):
     """Concrete implementation for RF-DETR Segmentation with 640px scaling."""
-    
-    def __init__(self, model_path: str, conf_threshold: float = 0.5):
-        super().__init__(model_path, conf_threshold)
+
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
+        super().__init__(model_path, conf_threshold, device)
+        # Resolve once
+        if self.device == "cpu":
+            self._device = "cpu"
+        else:
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
         # RF-DETR Shift: Starts from 1 (COCO Convention)
         self.class_names = {i+1: name for i, name in self.class_names.items()}
+        # Move model to target device at load time
+        try:
+            self.model.to(self._device)
+        except Exception:
+            pass
     
     def _load_model(self):
         model = RFDETRSegMedium(pretrain_weights=str(self.model_path))
@@ -27,7 +37,7 @@ class RFDETRInferencer(BaseInferencer):
     def predict_frame(self, frame: np.ndarray):
         """Processes a video frame with shared preprocessing."""
         # 1. Shared Scaling Logic
-        input_frame, scale, needs_scaling, orig_w, orig_h = self._preprocess_frame(frame, target_size=640)
+        input_frame, scale, needs_scaling, orig_w, orig_h = self._preprocess_frame(frame)
         
         # 2. PIL Conversion & Inference
         image = Image.fromarray(cv2.cvtColor(input_frame, cv2.COLOR_BGR2RGB))

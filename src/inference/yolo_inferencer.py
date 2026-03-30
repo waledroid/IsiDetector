@@ -1,4 +1,6 @@
 # src/inference/yolo_inferencer.py
+import os
+import torch
 import cv2
 import supervision as sv
 import numpy as np
@@ -8,10 +10,15 @@ from src.inference.base_inferencer import BaseInferencer
 
 class YOLOInferencer(BaseInferencer):
     """Concrete implementation for YOLO Segmentation models with 640px scaling."""
-    
-    def __init__(self, model_path: str, conf_threshold: float = 0.5):
-        super().__init__(model_path, conf_threshold)
-        self.class_names = self.model.names 
+
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
+        super().__init__(model_path, conf_threshold, device)
+        # Resolve once: YOLO uses int 0 for first GPU, "cpu" for CPU
+        if self.device == "cpu":
+            self._device = "cpu"
+        else:
+            self._device = 0 if torch.cuda.is_available() else "cpu"
+        self.class_names = self.model.names
 
     def _load_model(self):
         return YOLO(self.model_path)
@@ -19,10 +26,10 @@ class YOLOInferencer(BaseInferencer):
     def predict_frame(self, frame: np.ndarray):
         """Processes a video frame with shared preprocessing."""
         # 1. Shared Scaling Logic
-        input_frame, scale, needs_scaling, orig_w, orig_h = self._preprocess_frame(frame, target_size=640)
+        input_frame, scale, needs_scaling, orig_w, orig_h = self._preprocess_frame(frame)
 
         # 2. Inference
-        results = self.model(input_frame, conf=self.conf_threshold, imgsz=640, verbose=False)[0]
+        results = self.model(input_frame, conf=self.conf_threshold, imgsz=self.imgsz, verbose=False, device=self._device)[0]
         detections = sv.Detections.from_ultralytics(results)
 
         # 3. Shared Scaling Back
@@ -34,7 +41,7 @@ class YOLOInferencer(BaseInferencer):
     def predict(self, source: str, show: bool = False, save: bool = False):
         source_val = int(source) if str(source).isdigit() else source
         results_gen = self.model.predict(
-            source=source_val, conf=self.conf_threshold, stream=True, verbose=False
+            source=source_val, conf=self.conf_threshold, stream=True, verbose=False, device=self._device
         )
         for r in results_gen:
             detections = sv.Detections.from_ultralytics(r)

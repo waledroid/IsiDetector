@@ -3,6 +3,7 @@ site_description: Modular Instance Segmentation Pipeline for Industrial Parcel D
 site_author: waledroid
 repo_url: https://github.com/waledroid/IsiDetector
 repo_name: waledroid/IsiDetector
+copyright: "for ISITEC International 2026"
 
 theme:
   name: material
@@ -44,6 +45,7 @@ theme:
     repo: fontawesome/brands/github
 
 extra:
+  generator: false
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/waledroid/IsiDetector
@@ -91,13 +93,20 @@ nav:
     - System Overview: architecture/overview.md
     - Registry Pattern: architecture/registry.md
     - BaseTrainer Contract: architecture/base-trainer.md
+  - Web Platform:
+    - web-app/index.md
+    - Functionalities: web-app/functionalities.md
   - Trainers:
     - trainers/index.md
-    - YOLOv8-Seg: trainers/yolo.md
+    - YOLOv12-seg: trainers/yolo.md
     - RF-DETR-Seg: trainers/rfdetr.md
   - Modules:
     - modules/index.md
+    - Shared Vision Engine: modules/vision-engine.md
+    - Industry Analytics: modules/analytics.md
     - Hook System: hooks/index.md
-    - Inference Engines: inference/index.md
+    - Inference Engines:
+      - Overview: inference/index.md
+      - High-Speed ONNX: inference/onnx.md
     - Preprocessing: preprocessing/index.md
   - Configuration: config/index.md

@@ -79,6 +79,7 @@ def main():
     parser.add_argument('--source', type=str, required=True, help="RTSP URL or 0 for Webcam")
     # --- NEW: Config Argument ---
     parser.add_argument('--config', type=str, default='configs/train.yaml', help="Path to YAML config")
+    parser.add_argument('--device', type=str, default=None, help="Device: None=auto-GPU, 'cpu'=force CPU, 'cuda'=force GPU")
     args = parser.parse_args()
 
     # ==========================================
@@ -109,17 +110,20 @@ def main():
     # ==========================================
     weights_path = str(args.weights).lower()
     
+    device = args.device  # None = auto-GPU, "cpu" = force CPU, "cuda" = force GPU
+    device_label = "CPU" if device == "cpu" else "GPU"
+
     if weights_path.endswith('.onnx'):
         from src.inference.onnx_inferencer import ONNXInferencer
         logger.info(f"⚡ Loading High-Speed ONNX Engine: {args.weights}")
-        engine = ONNXInferencer(model_path=args.weights, conf_threshold=conf_thresh)
-        mode_text = "MODE ONNX"
+        engine = ONNXInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+        mode_text = f"MODE ONNX • {device_label}"
     elif 'rfdetr' in weights_path:
-        engine = RFDETRInferencer(model_path=args.weights, conf_threshold=conf_thresh)
-        mode_text = "MODE 2"
+        engine = RFDETRInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+        mode_text = f"MODE 2 • {device_label}"
     else:
-        engine = YOLOInferencer(model_path=args.weights, conf_threshold=conf_thresh)
-        mode_text = "MODE 1"
+        engine = YOLOInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+        mode_text = f"MODE 1 • {device_label}"
 
     # ==========================================
     # 2. SETUP ANALYTICS & TRACKING

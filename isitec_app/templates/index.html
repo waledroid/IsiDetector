@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ISITEC visionAI Platform</title>
+    <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -22,7 +22,7 @@
             <!-- Using the static local logo, fallback to placeholder -->
             <img src="/static/img/isitec-logo.png" alt="ISITEC Logo" height="80"
                 onerror="this.src='https://via.placeholder.com/240x80?text=ISITEC+Logo'">
-            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">ISITEC visionAI Platform</h1>
+            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">visionAI Platform</h1>
         </div>
 
         <div style="display: flex; align-items: center; height: 100%;">
@@ -128,7 +128,9 @@
                 <!-- Video Side (Right) -->
                 <div class="video-panel" style="display: flex; flex-direction: column;">
                     <div class="video-wrapper">
-                        <img id="videoStream" src="/video_feed" width="640" height="640" alt="Video Stream">
+                        <!-- Standard MJPEG hidden, used as source for Canvas -->
+                        <img id="videoStream" src="/video_feed" style="display: none;" alt="Video Stream">
+                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; max-width: 100%; height: auto;"></canvas>
                     </div>
 
                     <div class="button-group"

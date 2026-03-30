@@ -341,6 +341,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
     const videoStream = document.getElementById('videoStream');
+    const videoCanvas = document.getElementById('videoCanvas');
+    const vCtx = videoCanvas.getContext('2d');
+
+    function renderCanvas() {
+        if (videoStream.complete && videoStream.naturalWidth > 0) {
+            // Dynamically adjust canvas to match stream resolution
+            if (videoCanvas.width !== videoStream.naturalWidth) {
+                videoCanvas.width = videoStream.naturalWidth;
+                videoCanvas.height = videoStream.naturalHeight;
+            }
+            vCtx.drawImage(videoStream, 0, 0, videoCanvas.width, videoCanvas.height);
+        }
+        requestAnimationFrame(renderCanvas);
+    }
+    renderCanvas();
 
     btnStart.addEventListener('click', async () => {
         const model_type = document.getElementById('modelSelect').value;

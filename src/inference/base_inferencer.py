@@ -10,12 +10,14 @@ logger = logging.getLogger(__name__)
 
 class BaseInferencer(ABC):
     """
-    The blueprint for all inference engines. 
+    The blueprint for all inference engines.
     Keeps the main application clean and model-agnostic.
     """
-    def __init__(self, model_path: str, conf_threshold: float = 0.5):
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
         self.model_path = Path(model_path)
         self.conf_threshold = conf_threshold
+        # None = auto (GPU if available, else CPU), "cpu" = force CPU, "cuda" = force GPU
+        self.device = device
         
         # 1. Dynamic Class Loading (Master Config)
         self.project_root = self.model_path.parents[3] # Usually ~/logistic
@@ -34,14 +36,19 @@ class BaseInferencer(ABC):
             logger.warning(f"⚠️ Could not load config at {config_path}: {e}")
             self.class_names = {0: "carton", 1: "polybag"}
             self.nc = 2
-
+        
+        self.imgsz = config.get('image_size', 640)
+        
         if not self.model_path.exists():
             raise FileNotFoundError(f"❌ Weights not found at {self.model_path}")
             
         self.model = self._load_model()
 
-    def _preprocess_frame(self, frame: np.ndarray, target_size: int = 640):
+    def _preprocess_frame(self, frame: np.ndarray, target_size: int = None):
         """Standard aspect-ratio aware downscaling."""
+        if target_size is None:
+            target_size = self.imgsz
+            
         orig_h, orig_w = frame.shape[:2]
         if max(orig_h, orig_w) > target_size:
             scale = target_size / max(orig_h, orig_w)
