@@ -40,7 +40,8 @@ python isitec_app/app.py
 
 # Docker
 docker build -t isitec-visionai -f isitec_app/Dockerfile .
-docker run -p 9501:9501 isitec-visionai
+docker run -p 9501:9501 -p 9502:9502 isitec-visionai
+docker run -p 9501:9501 -e UDP_HOST=192.168.1.50 -e UDP_PORT=9502 isitec-visionai  # remote controller
 ```
 
 ### Model Export
@@ -101,8 +102,34 @@ IsiDetector uses a **Config-Driven + Registry + Strategy** pattern across five l
 
 ### Web Platform (`isitec_app/`)
 - `app.py` — Flask routes on port 9501; MJPEG stream at `/video_feed`; REST API at `/api/*`
-- `stream_handler.py` — background inference thread, statistics management, locale switching (en/fr/de)
-- Key endpoints: `POST /api/start`, `POST /api/stop`, `POST /api/upload`, `GET /api/stats`, `GET /api/chart?period=24h|7d|30d|live`
+- `stream_handler.py` — background inference thread, statistics management, locale switching (en/fr/de), UDP publisher
+- Key endpoints: `POST /api/start`, `POST /api/stop`, `POST /api/upload`, `GET /api/stats`, `GET /api/chart?period=24h|7d|30d|live`, `GET|POST /api/udp`
+
+### UDP Sorting Broadcast (`isitec_app/stream_handler.py` — `UDPPublisher`)
+On every line-crossing event, a ~60-byte JSON datagram is fired to the sorting machine controller:
+```json
+{"class": "carton", "ts": "2026-03-31T14:23:45.312847"}
+```
+- Transport: `socket.SOCK_DGRAM` — single socket created once at stream start, reused per event, no queue
+- Timestamp: microsecond ISO format (`.isoformat()`)
+- Default target: `127.0.0.1:9502` (controller on same machine)
+- **Configuration priority** (highest wins):
+  1. Runtime API: `POST /api/udp {"host": "...", "port": ...}` — retargets live, no restart needed
+  2. Environment variable: `UDP_HOST`, `UDP_PORT`
+  3. `configs/train.yaml` → `inference.udp.host / port`
+  4. Hardcoded default: `127.0.0.1:9502`
+- Docker: `-p 9502:9502` to expose port, or `-e UDP_HOST=192.168.1.50` for remote controller
+
+**Consumer-side minimal implementation:**
+```python
+import socket, json
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.bind(("127.0.0.1", 9502))
+while True:
+    data, _ = sock.recvfrom(1024)       # blocks until event arrives — no polling
+    event = json.loads(data)
+    trigger_sort_gate(event["class"])   # act on "carton" or "polybag"
+```
 
 ### Data Flow (Training)
 ```
@@ -114,7 +141,9 @@ run_train.py → merge YAMLs → TRAINERS.get(model_type) → trainer.train()
 ### Data Flow (Web Inference)
 ```
 Flask /api/start → StreamHandler → VisionEngine(inferencer, config)
-  → ByteTrack (ID continuity) → line-crossing count → DailyLogger (CSV)
+  → ByteTrack (ID continuity) → line-crossing detection
+  → UDPPublisher.publish(class) → UDP datagram → sorting controller (port 9502)
+  → DailyLogger (CSV)
   → /video_feed: annotated MJPEG frames
   → /api/stats: live counts  →  /api/chart: CSV-aggregated history
 ```

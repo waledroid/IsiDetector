@@ -7,16 +7,28 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 class DailyLogger:
+    """Hourly CSV data logger with automatic midnight file rotation.
+
+    Appends one row per save interval to a daily CSV file named
+    ``report_DD-MM-YYYY.csv``. Rotates to a new file automatically
+    when the date changes, enabling long multi-day sessions.
+
+    CSV format::
+
+        Time,carton,polybag
+        08:00:00,142,87
+        09:00:00,298,165
+
+    Args:
+        class_names: List of class name strings
+            (e.g. ``['carton', 'polybag']``). Becomes the CSV header.
+        log_dir: Directory for CSV files. Created if it does not exist.
+            Defaults to ``"logs"``.
+        save_interval: Seconds between auto-saves. Defaults to
+            ``3600`` (hourly). Reduce for higher-frequency snapshots.
     """
-    Industrial Data Logger for IsiDetector.
-    Handles hourly snapshots, daily file rotation, and graceful exits.
-    """
+
     def __init__(self, class_names: list, log_dir: str = "logs", save_interval: int = 3600):
-        """
-        :param class_names: List of strings (e.g., ['carton', 'polybag'])
-        :param log_dir: Folder to save the CSV reports
-        :param save_interval: Seconds between auto-saves (Default: 3600 = 1 hour)
-        """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
@@ -37,14 +49,33 @@ class DailyLogger:
         return self.log_dir / f"report_{self.current_date}.csv"
 
     def update(self, counts: dict):
-        """Called every frame. Triggers a save only if the interval has passed."""
+        """Check elapsed time and save if the interval has passed.
+
+        Designed to be called on every frame — the check is a single
+        ``time.time()`` comparison so overhead is negligible at 30 fps.
+
+        Args:
+            counts: Current session totals dict
+                (e.g. ``{'carton': 42, 'polybag': 18}``).
+        """
         current_time = time.time()
         if current_time - self.last_save_time >= self.save_interval:
             self.save(counts, auto=True)
             self.last_save_time = current_time
 
     def save(self, counts: dict, auto: bool = False):
-        """Forces a save to the CSV file. Usually called on exit or by update()."""
+        """Write the current counts as a timestamped row to the CSV file.
+
+        Handles midnight date rollover automatically. Writes the CSV
+        header on first write to a new file. Errors are logged but
+        never re-raised — a failed save does not crash the session.
+
+        Args:
+            counts: Session totals dict to snapshot.
+            auto: ``True`` when called by the interval timer (logged as
+                "Auto-Snapshot"); ``False`` for a manual final save on
+                session stop.
+        """
         filepath = self._get_filepath()
         file_exists = filepath.exists()
         

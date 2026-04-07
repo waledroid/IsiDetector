@@ -85,6 +85,27 @@ markdown_extensions:
   - pymdownx.mark
   - footnotes
 
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_signature_annotations: true
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            heading_level: 3
+            show_bases: true
+            filters:
+              - "!^__"       # hide dunder methods
+              - "!^_[^_]"   # hide private single-underscore by default
+              - "^_inject"   # but always show _inject_framework_hooks (subclassing contract)
+              - "^_setup"    # and _setup_run_dir
+              - "^_flush"    # and _flush_memory
+
 nav:
   - Home: index.md
   - Getting Started: getting-started.md

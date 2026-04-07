@@ -35,8 +35,8 @@
                         data-i18n="nav_live">Live Inference</span></button>
                 <button class="nav-btn" data-target="section-analytics"><i class="material-icons">analytics</i> <span
                         data-i18n="nav_analytics">Analytics</span></button>
-                <button class="nav-btn" data-target="section-models"><i class="material-icons">model_training</i> <span
-                        data-i18n="nav_models">Models</span></button>
+                <button class="nav-btn" data-target="section-performance"><i class="material-icons">speed</i> <span
+                        data-i18n="nav_performance">Performance</span></button>
                 <button class="nav-btn" data-target="section-settings"><i class="material-icons">settings</i> <span
                         data-i18n="nav_settings">Settings</span></button>
                 <button class="nav-btn" data-target="section-about"><i class="material-icons">info</i> <span
@@ -154,31 +154,164 @@
         <section id="section-analytics" class="panel">
             <div class="card">
                 <h2 data-i18n="analytics_overview">Analytics & Logging Overview</h2>
-                <div class="placeholder-box">
-                    <i class="material-icons" style="font-size: 48px; color: #ccc;">bar_chart</i>
-                    <p data-i18n="analytics_soon">Historical logs are stored in the /logs directory and parsed in the
-                        live dashboard natively.</p>
+                <p style="color: var(--text-light); margin: -16px 0 24px;" data-i18n="analytics_soon">Historical logs are stored in the /logs directory and parsed in the live dashboard natively.</p>
+
+                <!-- Session Comparison Table (moved from Performance) -->
+                <h3 style="margin: 0 0 16px; font-size: 15px; font-weight: 600; color: var(--text-main);" data-i18n="pg_sessions">Session Comparison (Last 5)</h3>
+                <div class="table-wrap">
+                    <table class="sessions-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="sess_date">Date</th>
+                                <th data-i18n="sess_model">Model</th>
+                                <th data-i18n="sess_duration">Duration</th>
+                                <th data-i18n="sess_fps">FPS</th>
+                                <th data-i18n="sess_conf">Avg Conf</th>
+                                <th data-i18n="sess_idratio">ID Ratio</th>
+                                <th data-i18n="sess_counts">Counts</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessionsBody">
+                            <tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;">No sessions recorded yet.</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>
 
-        <!-- SECTION 3: MODELS -->
-        <section id="section-models" class="panel">
-            <div class="card">
-                <h2 data-i18n="model_management">Model Management</h2>
-                <div class="placeholder-box">
-                    <i class="material-icons" style="font-size: 48px; color: #ccc;">folder_open</i>
-                    <p data-i18n="model_soon">Model Directory Viewer Coming Soon.</p>
+        <!-- SECTION 3: PERFORMANCE -->
+        <section id="section-performance" class="panel">
+            <div class="card perf-header-card">
+                <h2 data-i18n="perf_title">Performance Monitoring</h2>
+                <p class="perf-subtitle" data-i18n="perf_subtitle">Real-time system and model metrics</p>
+            </div>
+
+            <!-- Empty-state banner — hidden once a stream runs -->
+            <div class="perf-empty-banner" id="perfEmptyBanner">
+                <i class="material-icons">play_circle_outline</i>
+                <span data-i18n="perf_empty">Start a stream to see live metrics</span>
+            </div>
+
+            <!-- Row 1: Session Health + Hardware -->
+            <div class="perf-row">
+                <div class="perf-group" id="pg-session">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-session" title="Green: 0 errors, heartbeat < 10s"></span>
+                        <h3 data-i18n="pg_session">Session Health</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-session"></div>
+                </div>
+                <div class="perf-group" id="pg-hardware">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-hardware" title="Green: VRAM < 70%, GPU < 80%, Temp < 75°C"></span>
+                        <h3 data-i18n="pg_hardware">Hardware</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-hardware"></div>
+                </div>
+            </div>
+
+            <!-- Row 2: Throughput + Detection Quality -->
+            <div class="perf-row">
+                <div class="perf-group" id="pg-throughput">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-throughput" title="Green: FPS ≥ 20, Latency ≤ 50ms"></span>
+                        <h3 data-i18n="pg_throughput">Throughput</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-throughput"></div>
+                </div>
+                <div class="perf-group" id="pg-detection">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-detection" title="Green: Confidence ≥ 0.75, Low-conf < 10%"></span>
+                        <h3 data-i18n="pg_detection">Detection Quality</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-detection"></div>
+                </div>
+            </div>
+
+            <!-- Row 3: Tracking + Counting Rate -->
+            <div class="perf-row">
+                <div class="perf-group" id="pg-tracking">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-tracking" title="Green: ID ratio < 2.0"></span>
+                        <h3 data-i18n="pg_tracking">Tracking</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-tracking"></div>
+                </div>
+                <div class="perf-group" id="pg-counting">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-counting" title="Green: Counts active while running"></span>
+                        <h3 data-i18n="pg_counting">Counting Rate</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-counting"></div>
                 </div>
             </div>
         </section>
 
         <!-- SECTION 4: SETTINGS -->
         <section id="section-settings" class="panel">
-            <div class="card">
+            <div class="card settings-card">
                 <h2 data-i18n="system_settings">System Settings</h2>
-                <div class="placeholder-box">
-                    Configurations.
+                <p style="color: var(--text-light); font-size: 14px; margin: -10px 0 20px;">Configure AI models and inference parameters. Changes take effect on the next stream startup.</p>
+                
+                <div class="settings-grid">
+                    <!-- MODE 1 CONFIG -->
+                    <div class="settings-group">
+                        <div class="sg-header">
+                            <span class="sg-badge mode-1">MODE 1</span>
+                            <h3>YOLO Configuration</h3>
+                        </div>
+                        <div class="sg-body">
+                            <label>Model Weights</label>
+                            <select id="set_yolo_weights" class="set-select">
+                                <option value="">Loading models...</option>
+                            </select>
+
+                            <label title="Higher resolution reduces speed but improves small object detection.">Image Size (imgsz)</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_yolo_imgsz" min="320" max="1024" step="32" value="640">
+                                <span class="slider-val" id="val_yolo_imgsz">640px</span>
+                            </div>
+
+                            <label title="Lower confidence = more detections, higher false positive rate.">Confidence Threshold</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_yolo_conf" min="0.1" max="0.95" step="0.05" value="0.5">
+                                <span class="slider-val" id="val_yolo_conf">0.50</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MODE 2 CONFIG -->
+                    <div class="settings-group">
+                        <div class="sg-header">
+                            <span class="sg-badge mode-2">MODE 2</span>
+                            <h3>RF-DETR Configuration</h3>
+                        </div>
+                        <div class="sg-body">
+                            <label>Model Weights</label>
+                            <select id="set_detr_weights" class="set-select">
+                                <option value="">Loading models...</option>
+                            </select>
+
+                            <label title="Native resolution for RF-DETR is usually 640.">Image Size (imgsz)</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_detr_imgsz" min="320" max="1024" step="32" value="640">
+                                <span class="slider-val" id="val_detr_imgsz">640px</span>
+                            </div>
+
+                            <label>Confidence Threshold</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_detr_conf" min="0.1" max="0.95" step="0.05" value="0.35">
+                                <span class="slider-val" id="val_detr_conf">0.35</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button class="btn btn-primary" id="btnSaveSettings" style="width: 100%; justify-content: center;">
+                        <i class="material-icons">save</i> Save Configuration
+                    </button>
+                    <div id="saveConfirm" class="save-confirm hidden"><i class="material-icons">check_circle</i> Settings Saved</div>
                 </div>
             </div>
         </section>

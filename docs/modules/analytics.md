@@ -36,3 +36,12 @@ inference:
     save_interval: 3600    # Time in seconds (3600 = 1 Hour)
     log_dir: "logs"        # Destination folder
 ```
+
+!!! info "Design for Long Shifts"
+    `update()` is called on every frame (~30fps). The actual save only triggers when `save_interval` seconds have elapsed — the check is a single `time.time()` comparison, so overhead is negligible. This design keeps SSD write amplification low across 12-hour shifts.
+
+---
+
+## API Reference
+
+::: src.utils.analytics_logger.DailyLogger

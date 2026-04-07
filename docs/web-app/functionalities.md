@@ -74,3 +74,75 @@ For industrial control systems (SCADA/PLC) that need to interact with IsiDetecto
 !!! info "Chart period detail"
     - `live` — mirrors the current in-memory session counts (no disk read)
     - `24h` / `7d` / `30d` — scans all `.csv` files in `isitec_app/logs/` and counts rows whose timestamp falls within the cutoff window
+
+---
+
+## 7. Long-Run Stability (12-Hour Shifts)
+
+The web app is designed to run uninterrupted across full production shifts. Several mechanisms work together to prevent the common failure modes of long-running inference loops.
+
+### FPS Pacing for Uploaded Video
+
+When the source is an MP4 file, the `LiveReader` thread reads frames as fast as possible — much faster than real time. Without pacing, the inference queue floods and the video appears to play at 2× or 3× speed.
+
+**Fix**: The reader reads the native FPS from OpenCV and sleeps `1/fps` seconds after each frame:
+
+```python
+fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+frame_delay = 1.0 / fps          # e.g. 0.033s at 30fps
+# ... after q.put(frame):
+time.sleep(frame_delay)           # paces frame production to real-time
+```
+
+This is only applied for file sources — RTSP and webcam streams are self-pacing.
+
+### Exponential Backoff on Inference Errors
+
+A GPU error (CUDA OOM, device reset) that persists will cause the inference loop to retry continuously. Without backoff, this generates 10 error log lines per second and wastes CPU.
+
+**Fix**: The loop tracks `consecutive_errors` and sleeps `min(0.1 × 2^n, 5.0)` seconds between retries — capping at 5 seconds. The counter resets to 0 on the next successful frame.
+
+| Consecutive Errors | Sleep |
+|---|---|
+| 1 | 0.1s |
+| 2 | 0.2s |
+| 3 | 0.4s |
+| 5 | 1.6s |
+| 7+ | 5.0s (cap) |
+
+### Periodic CUDA Memory Flush
+
+PyTorch does not automatically return freed GPU tensors to the OS — it holds them in an internal cache. Over thousands of frames this cache can consume hundreds of MB that could otherwise be used for inference.
+
+**Fix**: Every 1800 frames (~60s at 30fps), the loop forces a GC cycle and calls `torch.cuda.empty_cache()`:
+
+```python
+if frame_count % 1800 == 0:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+```
+
+### Heartbeat Logging
+
+If the inference thread stalls silently (e.g., waiting on an empty queue, or a lock contention), there is no indication from the outside — the web UI just shows a frozen frame. A heartbeat log line makes this detectable.
+
+**Fix**: Every 9000 frames (~5 minutes at 30fps), the loop logs a status line:
+
+```text
+INFO: 💓 Inference heartbeat — frame 9000, counts: {'carton': 142, 'polybag': 87}
+```
+
+If you stop seeing heartbeats in the log, the inference thread has stalled.
+
+### MJPEG Generator Safety
+
+If a client disconnects mid-stream (browser tab closed, network drop), Flask's generator can raise when trying to `yield` the next frame. Without handling, this silently stops the generator — the next client sees no stream.
+
+**Fix**: Each `yield` in `generate_frames()` is wrapped in a `try/except`. On exception the generator returns cleanly, freeing the connection.
+
+---
+
+## API Reference
+
+::: isitec_app.stream_handler.StreamHandler

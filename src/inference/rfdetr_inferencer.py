@@ -14,8 +14,8 @@ except ImportError:
 class RFDETRInferencer(BaseInferencer):
     """Concrete implementation for RF-DETR Segmentation with 640px scaling."""
 
-    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
-        super().__init__(model_path, conf_threshold, device)
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None, imgsz: int = None):
+        super().__init__(model_path, conf_threshold, device, imgsz)
         # Resolve once
         if self.device == "cpu":
             self._device = "cpu"
@@ -42,6 +42,7 @@ class RFDETRInferencer(BaseInferencer):
         # 2. PIL Conversion & Inference
         image = Image.fromarray(cv2.cvtColor(input_frame, cv2.COLOR_BGR2RGB))
         detections = self.model.predict(image, threshold=self.conf_threshold)
+        del image  # release immediately — don't wait for GC at high frame rates
         
         # 3. Shared Scaling Back
         if needs_scaling:

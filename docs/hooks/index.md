@@ -39,12 +39,16 @@ Every hook method receives the **trainer instance** as its argument:
 
 ```python
 def after_epoch(self, trainer):
-    trainer.current_epoch    # Current epoch number
-    trainer.current_loss     # Current training loss
-    trainer.config           # Full merged config dict
-    trainer.output_dir       # Path to output directory
-    trainer.model_name       # "yolo" or "rfdetr"
+    trainer.current_epoch      # Current epoch number
+    trainer.current_loss       # Scalar total loss for this epoch
+    trainer.loss_components    # {"box": 0.42, "seg": 0.31, "cls": 0.18, "dfl": 0.09}
+    trainer.config             # Full merged config dict
+    trainer.output_dir         # Path to output directory
+    trainer.model_name         # "yolo" or "rfdetr"
 ```
+
+!!! tip "Hook Isolation"
+    If a hook raises an exception, it is caught, logged, and **training continues**. A broken hook cannot crash a training run.
 
 ---
 
@@ -58,7 +62,6 @@ A formatted, table-style epoch logger designed for industrial CV workflows:
 ```python
 @HOOKS.register('IndustrialLogger')
 class IndustrialLogger:
-    """A clean, epoch-level logger for Industrial Computer Vision."""
 
     def before_train(self, trainer):                        # (1)!
         header = (
@@ -71,13 +74,15 @@ class IndustrialLogger:
 
     def after_epoch(self, trainer):                         # (2)!
         epoch_str = f"{trainer.current_epoch + 1}/{trainer.config.get('epochs', 30)}"
-        gpu_mem = f"{torch.cuda.memory_reserved(0) / 1e9:.2f}G"
+        lc = getattr(trainer, 'loss_components', {})
+
+        def _fmt(key):
+            return f"{lc[key]:>10.4f}" if key in lc else f"{'--':>10}"
 
         row = (
             f"{epoch_str:>8} {gpu_mem:>10} "
-            f"{trainer.current_loss:>10.4f} {'--':>10} "
-            f"{'--':>10} {'--':>10} {'--':>10} "
-            f"{trainer.config.get('image_size', 640):>8}"
+            f"{_fmt('box')} {_fmt('seg')} {_fmt('cls')} {_fmt('dfl')} "
+            f"{'--':>10} {trainer.config.get('image_size', 640):>8}"
         )
         print(row)
 
@@ -87,17 +92,25 @@ class IndustrialLogger:
 ```
 
 1. Prints a formatted table header at the start of training
-2. Prints one row per epoch with epoch progress, GPU memory, and loss
+2. Reads `trainer.loss_components` for individual loss terms — shows `--` if a term isn't available (e.g. RF-DETR doesn't expose `box`/`dfl`)
 3. Prints a completion message with the output directory
 
-**Sample output:**
+**Sample output (YOLO):**
 
 ```text
    Epoch    GPU_mem   box_loss   seg_loss   cls_loss   dfl_loss  Instances     Size
 ---------------------------------------------------------------------------------------
-   1/200      4.23G     1.2345         --         --         --         --      640
-   2/200      4.23G     1.1892         --         --         --         --      640
-   3/200      4.24G     1.0456         --         --         --         --      640
+   1/200      4.23G     1.2345     0.8712     0.4321     0.1234         --      640
+   2/200      4.23G     1.1892     0.8401     0.4102     0.1198         --      640
+```
+
+**Sample output (RF-DETR):**
+
+```text
+   Epoch    GPU_mem   box_loss   seg_loss   cls_loss   dfl_loss  Instances     Size
+---------------------------------------------------------------------------------------
+   1/101      8.41G         --         --         --         --         --      448
+   2/101      8.42G         --         --         --         --         --      448
 ```
 
 ---
@@ -151,3 +164,9 @@ That's it. The hook system handles the rest.
 
 !!! tip "Hooks Are Optional Per-Stage"
     A hook doesn't need to implement every stage. If `SlackAlert` only has `after_train`, it's simply skipped during `before_train` and `after_epoch` broadcasts.
+
+---
+
+## API Reference
+
+::: src.training.hooks.industrial_logger.IndustrialLogger

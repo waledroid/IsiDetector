@@ -9,6 +9,7 @@ WORKDIR /opt/isitec
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
@@ -24,6 +25,10 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/opt/isitec
 
 EXPOSE 9501
+EXPOSE 9502
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:9501/ || exit 1
 
 # Run Flask Application
 CMD ["python", "isitec_app/app.py"]

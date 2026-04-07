@@ -115,47 +115,46 @@ graph LR
 
 ---
 
-## Loss Curve Logging
+## Metrics Logging & Hook Bridging
 
-RF-DETR doesn't have Ultralytics-style callbacks, so the trainer injects its own:
+RF-DETR doesn't have Ultralytics-style callbacks, so the trainer implements `_inject_framework_hooks()` to bridge RF-DETR's native `on_fit_epoch_end` event into the BaseTrainer hook system:
 
 ```python
-def log_metrics_callback(data):
-    self.history.append(data)                               # (1)!
+def _inject_framework_hooks(self):
+    def log_metrics_callback(data):
+        self.history.append(data)                               # (1)!
+        self.current_epoch = int(data.get('epoch', self.current_epoch))
+        self.current_loss = float(data.get('train/loss', 0.0))
+        self.loss_components = {                                # (2)!
+            k: float(v) for k, v in data.items()
+            if isinstance(v, (int, float)) and 'loss' in k.lower()
+        }
+        self.call_hooks('after_epoch')                         # (3)!
+        self._flush_memory()                                   # (4)!
 
-if not hasattr(self.model, 'callbacks'):
-    self.model.callbacks = {"on_fit_epoch_end": []}
-self.model.callbacks["on_fit_epoch_end"].append(log_metrics_callback)
+    if not hasattr(self.model, 'callbacks'):
+        self.model.callbacks = {"on_fit_epoch_end": []}
+    self.model.callbacks["on_fit_epoch_end"].append(log_metrics_callback)
 ```
 
-1. Each `data` dict contains `epoch`, `train_loss`, `test_loss` — accumulated across training
+1. Accumulates the full metrics dict each epoch — used for `_plot_metrics()` and `evaluate()`
+2. Any key containing `"loss"` in the metrics dict is surfaced to hooks (e.g. `train/loss`, `train/loss_ce`, `train/loss_bbox`)
+3. Broadcasts to `IndustrialLogger` and any other hooks with the current epoch state
+4. Flushes GPU VRAM cache after each epoch — critical for long training runs on 12 GB VRAM
 
-After training completes, the curves are plotted:
+After training completes, all metrics are plotted across 6 panels:
 
 ```python
-def _plot_loss_curves(self):
-    df = pd.DataFrame(self.history)
-
-    plt.figure(figsize=(10, 6))
-    if 'train_loss' in df.columns:
-        plt.plot(df['epoch'], df['train_loss'],
-                 label='Train Loss', color='blue')
-    if 'test_loss' in df.columns:
-        plt.plot(df['epoch'], df['test_loss'],
-                 label='Val Loss', color='orange')
-
-    plt.title('RF-DETR Segmentation Training & Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    plot_path = self.output_dir / 'loss_curves.png'
+def _plot_metrics(self):
+    # Panels: Loss, Detection mAP, Segmentation mAP,
+    #         Precision/Recall/F1, Per-Class AP, Learning Rate
+    ...
+    plot_path = self.output_dir / 'metrics_plot.png'
     plt.savefig(plot_path)
 ```
 
 !!! tip
-    The loss curves PNG is saved to `models/rfdetr/<timestamp>/loss_curves.png` alongside the model weights.
+    The metrics PNG is saved to `models/rfdetr/<timestamp>/metrics_plot.png` alongside the model weights. It shows train/val loss, mAP@50, mAP@50-95, segmentation mAP, per-class AP, and learning rate across all epochs.
 
 ---
 
@@ -240,3 +239,9 @@ early_stopping:
 | Small dataset (<1k images) | :robot: **RF-DETR** (DINOv2 transfers well) |
 | Maximum accuracy needed | :robot: **RF-DETR** |
 | Limited VRAM (<8 GB) | :zap: **YOLO** |
+
+---
+
+## API Reference
+
+::: src.training.trainers.rfdetr.RFDETRTrainer

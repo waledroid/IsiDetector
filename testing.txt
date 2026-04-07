@@ -1,3 +1,5 @@
+claude --resume b5dd41d9-991f-4687-9fac-12d8b7808417
+
 rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?
 
 INFERENCE USB CAMERA
@@ -7,8 +9,11 @@ FLASK WEB APP
 python isitec_app/app.py
 http://127.0.0.1:9501
 
+MKDOKS
+mkdocs serve
 
-CONVERT YOLO O NNX 
+
+CONVERT YOLO TO NNX 
 # Using the CLI is often safer for ensuring all flags are caught
 yolo export \
   model=runs/segment/models/yolov26/23-03-20262/weights/best.pt \
@@ -21,15 +26,14 @@ yolo export \
 
 
 TODAY 
-python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
-python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262_640_m/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
+python scripts/run_live.py --weights runs/segment/models/yolo/25-03-20262_640_m/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 
 python scripts/run_live.py --weights models/rfdetr/25-03-2026_0043/checkpoint_best_ema.pth --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 python scripts/run_live.py --weights models/rfdetr/25-03-2026_0043/inference_model.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 
 
 
-YESTERDAY
 
 python scripts/run_live.py --weights runs/segment/models/yolov26/23-03-20262/weights/best.pt --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 python scripts/run_live.py --weights runs/segment/models/yolov26/23-03-20262/weights/best.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
@@ -37,3 +41,219 @@ python scripts/run_live.py --weights runs/segment/models/yolov26/23-03-20262/wei
 python scripts/run_live.py --weights models/rfdetr/24-03-2026_0120/checkpoint_best_ema.pth --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 python scripts/run_live.py --weights models/rfdetr/24-03-2026_0120/inference_model.onnx --source "rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?"
 
+
+
+
+  ---                                                                                                                                                                       
+  1. Detection Accuracy (Model Quality)                 
+                                       
+  ┌───────────────────────────────┬───────────────────────────────────────────────┬────────────────────┬────────────────────────────────────────────────────┐
+  │            Metric             │               What it measures                │     Good value     │                     Limitation                     │               
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤
+  │ mAP@50                        │ Detection accuracy at IoU ≥ 0.50              │ >0.85              │ Loose overlap threshold — hides box quality issues │               
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤
+  │ mAP@50-95                     │ Average over IoU 0.50–0.95 (10 thresholds)    │ >0.65              │ More honest; harder to game                        │               
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤               
+  │ Precision                     │ Of all detections made, how many were correct │ >0.90              │ High precision, low recall = misses objects        │               
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤               
+  │ Recall                        │ Of all real objects, how many were caught     │ >0.90              │ High recall, low precision = many false alarms     │
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤               
+  │ F1 Score                      │ Harmonic mean of precision and recall         │ >0.88              │ Single balanced view                               │
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤               
+  │ Per-class AP                  │ AP broken down per class (carton, polybag)    │ —                  │ Reveals class imbalance effects                    │
+  ├───────────────────────────────┼───────────────────────────────────────────────┼────────────────────┼────────────────────────────────────────────────────┤               
+  │ Confidence score distribution │ Histogram of prediction confidences           │ Bimodal (high/low) │ Flat distribution = model is uncertain             │
+  └───────────────────────────────┴───────────────────────────────────────────────┴────────────────────┴────────────────────────────────────────────────────┘               
+                                                        
+  ---                                                                                                                                                                       
+  2. Segmentation Accuracy                              
+                                                                                                                                                                            
+  ┌──────────────────┬───────────────────────────────────┬──────────────────────────────────────────────────────────────────┐
+  │      Metric      │         What it measures          │                              Notes                               │                                               
+  ├──────────────────┼───────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Mask mAP@50      │ Like mAP@50 but for pixel masks   │ More demanding than box mAP                                      │
+  ├──────────────────┼───────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ Mask mAP@50-95   │ Averaged mask IoU                 │ Key for precise edge detection                                   │                                               
+  ├──────────────────┼───────────────────────────────────┼──────────────────────────────────────────────────────────────────┤                                               
+  │ Mask IoU         │ Per-prediction pixel overlap      │ Polybags need high mask IoU — they're translucent and edge-heavy │                                               
+  ├──────────────────┼───────────────────────────────────┼──────────────────────────────────────────────────────────────────┤                                               
+  │ Dice Coefficient │ 2×TP / (2×TP + FP + FN) on pixels │ More robust than IoU when objects are small                      │
+  └──────────────────┴───────────────────────────────────┴──────────────────────────────────────────────────────────────────┘                                               
+                                                        
+  ---                                                                                                                                                                       
+  3. Counting Accuracy (Business-Critical)              
+                                          
+  This is what actually matters for conveyor operations — detection accuracy ≠ counting accuracy.
+                                                                                                                                                                            
+  ┌──────────────────┬───────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+  │      Metric      │                     What it measures                      │                        How to compute                        │                           
+  ├──────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Count accuracy % │ `(                                                        │ predicted - ground_truth                                     │
+  ├──────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+  │ False count rate │ Objects counted more than once per crossing               │ Check if same physical object gets multiple IDs              │                           
+  ├──────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤                           
+  │ Miss rate        │ Objects that crossed but were never counted               │ Objects that slipped through at high speed or low confidence │                           
+  ├──────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤                           
+  │ ID switch rate   │ ByteTrack reassigns a new ID mid-object                   │ High = poor tracking continuity, causes double-counts        │
+  ├──────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤                           
+  │ Ghost count rate │ Detections with no real object (FP that crossed the line) │ Caused by low confidence threshold                           │
+  └──────────────────┴───────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘                           
+                                                        
+  ---                                                                                                                                                                       
+  4. Tracking Quality (ByteTrack-Specific)              
+                                          
+  ┌────────────────────────────────────────┬───────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────┐
+  │                 Metric                 │                   What it measures                    │                              Notes                              │      
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+  │ MOTA (Multi-Object Tracking Accuracy)  │ Combined: misses + false positives + ID switches      │ Standard MOT benchmark metric                                   │      
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤
+  │ MOTP (Multi-Object Tracking Precision) │ Average bounding box overlap with ground truth        │ Measures localization quality during tracking                   │      
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤      
+  │ IDF1                                   │ ID F1 — how long the same ID is assigned consistently │ High = tracker holds IDs through occlusion                      │      
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤      
+  │ ID Switches                            │ Times a tracked object gets a new ID                  │ Critical for counting — each switch is a potential double-count │
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤      
+  │ Track fragmentation                    │ How often a track is interrupted and restarted        │ Choppy tracks = unreliable trajectory data                      │
+  ├────────────────────────────────────────┼───────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────┤      
+  │ Track length distribution              │ Average/median frames a track stays alive             │ Short tracks = IDs die too early                                │
+  └────────────────────────────────────────┴───────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────┘      
+                                                        
+  ---                                                                                                                                                                       
+  5. Inference Speed (System Performance)               
+                                         
+  ┌─────────────────────────────┬─────────────────────────────────────────────────────────┬──────────────────────────────────────────────┐
+  │           Metric            │                    What it measures                     │                    Target                    │                                  
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ Latency (ms/frame)          │ Time from raw frame in to annotated frame out           │ <33ms for 30fps real-time                    │                                  
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ Throughput (FPS)            │ Frames processed per second                             │ ≥25fps for conveyor                          │                                  
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                                  
+  │ Preprocessing time          │ Frame resize, normalize, BGR→RGB conversion             │ Should be <3ms                               │                                  
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                                  
+  │ Model forward pass time     │ Pure neural network inference                           │ YOLO: ~8–15ms, RF-DETR: ~25–45ms on GPU      │
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                                  
+  │ Postprocessing time         │ NMS (YOLO) / bipartite matching (RF-DETR), mask upscale │ YOLO NMS can spike at high object density    │
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                                  
+  │ Tracker update time         │ ByteTrack association step                              │ Usually <2ms                                 │
+  ├─────────────────────────────┼─────────────────────────────────────────────────────────┼──────────────────────────────────────────────┤                                  
+  │ End-to-end pipeline latency │ Frame capture → annotated frame displayed               │ Total observable delay from camera to screen │
+  └─────────────────────────────┴─────────────────────────────────────────────────────────┴──────────────────────────────────────────────┘                                  
+                                                        
+  ---                                                                                                                                                                       
+  6. GPU / Hardware Resources                           
+                                                                                                                                                                            
+  ┌──────────────────────┬─────────────────────────────────────────────────┬───────────────────────────────────────────────────────────┐
+  │        Metric        │                What it measures                 │                      Risk threshold                       │                                    
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ GPU utilization %    │ How busy the GPU compute units are              │ <80% sustained — spikes to 100% cause frame drops         │
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ VRAM usage (MB)      │ GPU memory consumed                             │ Leave ≥1GB headroom on 12GB card                          │                                    
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤                                    
+  │ VRAM fragmentation   │ Allocated but unusable VRAM pockets             │ Caused by variable-size allocations — empty_cache() helps │                                    
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤                                    
+  │ CPU utilization %    │ Frame decoding, pre/postprocessing load         │ Flask + OpenCV decode is CPU-bound                        │
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤                                    
+  │ RAM usage (MB)       │ System memory for frame buffers, Python objects │ Watch over 12h — counted_ids pruning helps                │
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤                                    
+  │ GPU temperature (°C) │ Thermal throttling risk                         │ >85°C causes clock reduction → FPS drop                   │
+  ├──────────────────────┼─────────────────────────────────────────────────┼───────────────────────────────────────────────────────────┤                                    
+  │ PCIe bandwidth       │ Frame transfer speed CPU↔GPU                    │ Bottleneck when transferring large HD frames              │
+  └──────────────────────┴─────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘                                    
+                                                        
+  ---
+  7. Pipeline Queue / Throughput Health
+                                                                                                                                                                            
+  ┌────────────────────────────────────────┬────────────────────────────────────────────────┬────────────────────────────────────────────┐
+  │                 Metric                 │                What it measures                │                   Notes                    │                                  
+  ├────────────────────────────────────────┼────────────────────────────────────────────────┼────────────────────────────────────────────┤
+  │ Frame queue depth                      │ Frames waiting in LiveReader queue             │ High = inference can't keep up with camera │
+  ├────────────────────────────────────────┼────────────────────────────────────────────────┼────────────────────────────────────────────┤
+  │ Frame drop rate                        │ Frames captured but never processed            │ Queue overflow → q.put_nowait drops        │                                  
+  ├────────────────────────────────────────┼────────────────────────────────────────────────┼────────────────────────────────────────────┤                                  
+  │ Reader-to-inference lag                │ Time between frame capture and inference start │ Measures pipeline stall                    │                                  
+  ├────────────────────────────────────────┼────────────────────────────────────────────────┼────────────────────────────────────────────┤                                  
+  │ Camera/RTSP input FPS vs inference FPS │ Gap between source rate and processing rate    │ Gap >50% means objects are being skipped   │
+  └────────────────────────────────────────┴────────────────────────────────────────────────┴────────────────────────────────────────────┘                                  
+                                                        
+  ---                                                                                                                                                                       
+  8. Streaming / Web App Health                         
+
+  ┌───────────────────────────────┬─────────────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+  │            Metric             │                What it measures                 │                        Notes                         │
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ MJPEG encode time (ms)        │ cv2.imencode('.jpg') per frame                  │ Should be <5ms                                       │
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ MJPEG stream latency          │ Frame annotated → displayed in browser          │ Network + encode + Flask generator overhead          │                                
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ JPEG quality vs size tradeoff │ Lower quality = smaller payload = faster stream │ Default 90% is usually fine; drop to 70% on slow LAN │                                
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ Client reconnect events       │ Browser reconnects to /video_feed               │ Indicates network drops or Flask generator crashes   │
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ API response time             │ /api/stats response latency                     │ Should be <10ms — it's just a dict copy              │
+  ├───────────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────┤                                
+  │ UDP publish success rate      │ Datagrams fired vs events triggered             │ UDP is fire-and-forget — packet loss is silent       │
+  └───────────────────────────────┴─────────────────────────────────────────────────┴──────────────────────────────────────────────────────┘                                
+                                                        
+  ---                                                                                                                                                                       
+  9. Operational / Long-Run Metrics                     
+                                                                                                                                                                            
+  ┌────────────────────────┬────────────────────────────────────────────────────┬──────────────────────────────────────────┐
+  │         Metric         │                  What it measures                  │                  Notes                   │                                                
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤
+  │ Session uptime         │ Continuous runtime without crash or manual restart │ Target: full 12h shift                   │
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤
+  │ Error rate             │ Exceptions caught in inference loop per hour       │ Should be 0 on normal operation          │                                                
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤                                                
+  │ CUDA OOM events        │ Out-of-memory errors requiring restart             │ Fatal without recovery — track over time │                                                
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤                                                
+  │ Heartbeat gap          │ Time since last heartbeat log line                 │ >5min gap = inference thread stalled     │
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤                                                
+  │ CSV write success rate │ Hourly snapshots actually written vs expected      │ Failed writes = lost audit trail         │
+  ├────────────────────────┼────────────────────────────────────────────────────┼──────────────────────────────────────────┤                                                
+  │ Clock drift            │ Timestamp accuracy on CSV logs                     │ Matters for shift-boundary aggregation   │
+  └────────────────────────┴────────────────────────────────────────────────────┴──────────────────────────────────────────┘                                                
+                                                        
+  ---                                                                                                                                                                       
+  10. Domain-Specific Limitations of This System        
+                                                                                                                                                                            
+  ┌──────────────────────────────┬────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────┐
+  │          Limitation          │                     Root cause                     │                     Observable symptom                      │                       
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+  │ Polybag transparency         │ Polybags reflect IR and specular light             │ Low mask IoU, low recall for polybags                       │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
+  │ High-density crossing        │ Multiple objects crossing simultaneously           │ ID swaps → double-counts                                    │                       
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Fast conveyor speed          │ Object appears in <3 frames                        │ Track too short to cross the line with bottom-center anchor │                       
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Partial occlusion            │ One parcel behind another                          │ Track interrupted → ID switch on reappear                   │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Lighting variation           │ Factory shift changes, lamp flicker                │ Confidence scores drop unpredictably                        │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Model class imbalance        │ If cartons >> polybags in training data            │ Per-class AP diverges significantly                         │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Resolution vs speed tradeoff │ Higher res = better small object detection, slower │ RF-DETR at 640px: ~40ms; at 448px: ~25ms                    │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Line position sensitivity    │ Line at wrong X percent misses fast objects        │ Objects may jump over the line between frames               │
+  ├──────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤                       
+  │ Single counting line         │ Only one line, one direction                       │ Can't distinguish objects entering vs leaving the frame     │
+  └──────────────────────────────┴────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘                       
+                                                        
+  ---                                                                                                                                                                       
+  Quick Priority Matrix                                 
+
+  ┌───────────────┬────────────────────────────────────────────────┬──────────────────────────────────────┐
+  │   Priority    │                     Metric                     │                 Why                  │
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤
+  │ P0 (business) │ Count accuracy %, Miss rate, Ghost count rate  │ These are the deliverable            │
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤
+  │ P0 (safety)   │ Session uptime, CUDA OOM events, Heartbeat gap │ System must not die silently         │                                                                 
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤                                                                 
+  │ P1 (model)    │ mAP@50-95, Per-class AP, ID switch rate        │ Diagnose what's causing count errors │                                                                 
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤                                                                 
+  │ P1 (speed)    │ End-to-end latency, FPS, Frame drop rate       │ Must keep up with conveyor speed     │
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤                                                                 
+  │ P2 (resource) │ VRAM, GPU temp, RAM trend over 12h             │ Long-run stability                   │
+  ├───────────────┼────────────────────────────────────────────────┼──────────────────────────────────────┤                                                                 
+  │ P3 (audit)    │ CSV write success, UDP publish rate            │ Reporting and integration            │
+  └───────────────┴────────────────────────────────────────────────┴──────────────────────────────────────┘                                                                 
+                                                        

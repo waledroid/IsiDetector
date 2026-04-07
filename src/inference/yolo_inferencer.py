@@ -11,8 +11,8 @@ from src.inference.base_inferencer import BaseInferencer
 class YOLOInferencer(BaseInferencer):
     """Concrete implementation for YOLO Segmentation models with 640px scaling."""
 
-    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
-        super().__init__(model_path, conf_threshold, device)
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None, imgsz: int = None):
+        super().__init__(model_path, conf_threshold, device, imgsz)
         # Resolve once: YOLO uses int 0 for first GPU, "cpu" for CPU
         if self.device == "cpu":
             self._device = "cpu"
@@ -31,6 +31,7 @@ class YOLOInferencer(BaseInferencer):
         # 2. Inference
         results = self.model(input_frame, conf=self.conf_threshold, imgsz=self.imgsz, verbose=False, device=self._device)[0]
         detections = sv.Detections.from_ultralytics(results)
+        del results  # free GPU tensors immediately — don't wait for GC
 
         # 3. Shared Scaling Back
         if needs_scaling:

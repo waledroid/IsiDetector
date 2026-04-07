@@ -128,23 +128,30 @@ Now both `TRAINERS.get('yolo')` and `TRAINERS.get('yolov26')` return `YOLOTraine
 
 There's a critical detail: **decorators only run when the module is imported**. If nobody imports `yolo.py`, the `@TRAINERS.register('yolo')` decorator never fires.
 
-That's why `run_train.py` has these explicit "wake-up" imports:
+`run_train.py` uses a `_TRAINER_MODULES` dict and **lazy imports via `importlib`** to trigger registration only for the model type that's actually being used:
 
 ```python title="scripts/run_train.py"
+import importlib
 from src.shared.registry import TRAINERS
 
-# These imports look unused, but they trigger registration!
-import src.training.trainers.yolo    # Registers 'yolo' and 'yolov26'
-import src.training.trainers.rfdetr  # Registers 'rfdetr'
-import src.training.hooks            # Registers 'IndustrialLogger'
+_TRAINER_MODULES = {
+    'yolo':    'src.training.trainers.yolo',
+    'yolov26': 'src.training.trainers.yolo',
+    'rfdetr':  'src.training.trainers.rfdetr',
+}
+
+# Only import the module for the model_type we need — triggers registration
+model_type = config.get('model_type', 'yolo')
+importlib.import_module(_TRAINER_MODULES[model_type])
+import src.training.hooks  # Always load hooks
 ```
 
 !!! warning "Common Pitfall"
-    If you create a new trainer but forget to import its module in `run_train.py`, you'll get:
+    If you create a new trainer but forget to add it to `_TRAINER_MODULES` in `run_train.py`, you'll get:
     ```
     ❌ 'my_new_model' not found in Trainers registry. Available: ['yolo', 'yolov26', 'rfdetr']
     ```
-    Fix: add `import src.training.trainers.my_new_model` in `run_train.py`.
+    Fix: add `'my_new_model': 'src.training.trainers.my_new_model'` to `_TRAINER_MODULES`.
 
 ---
 
@@ -160,20 +167,22 @@ Here's the complete checklist for adding, say, a YOLO-NAS trainer:
 
     @TRAINERS.register('yolo-nas')
     class YOLONASTrainer(BaseTrainer):
-        def build_model(self):
-            ...
-        def train(self):
-            ...
-        def evaluate(self):
-            ...
-        def export(self, format='onnx'):
-            ...
+        def build_model(self): ...
+        def _inject_framework_hooks(self): ...
+        def train(self): ...
+        def evaluate(self) -> dict: ...
+        def export(self, format='onnx'): ...
     ```
 
-=== "Step 2: Wake It Up"
+=== "Step 2: Register It"
 
     ```python title="scripts/run_train.py"
-    import src.training.trainers.yolo_nas  # Add this line
+    _TRAINER_MODULES = {
+        'yolo':     'src.training.trainers.yolo',
+        'yolov26':  'src.training.trainers.yolo',
+        'rfdetr':   'src.training.trainers.rfdetr',
+        'yolo-nas': 'src.training.trainers.yolo_nas',  # Add this line
+    }
     ```
 
 === "Step 3: Use It"
@@ -206,3 +215,9 @@ graph LR
         E["'specular-guard'"] --> SG["SpecularGuard"]
     end
 ```
+
+---
+
+## API Reference
+
+::: src.shared.registry.Registry

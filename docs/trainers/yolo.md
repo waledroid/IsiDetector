@@ -93,41 +93,47 @@ def build_model(self):
 
 ## Hook Bridging — The Key Innovation
 
-This is the most interesting part of the trainer. Ultralytics has its **own** callback system, but IsiDetector has its **own** hook system defined in `BaseTrainer`. The trainer **bridges** between them:
+This is the most interesting part of the trainer. Ultralytics has its **own** callback system, but IsiDetector has its **own** hook system defined in `BaseTrainer`. The trainer **bridges** between them via the required abstract method `_inject_framework_hooks()`:
 
 ```python
-def _inject_hooks(self):
-    """Bridges Ultralytics callbacks to our BaseTrainer Hooks."""
+def _inject_framework_hooks(self):
+    """Bridges Ultralytics callbacks to BaseTrainer hooks."""
     def on_train_epoch_end(trainer):
-        self.current_epoch = trainer.epoch                     # (1)!
+        self.current_epoch = trainer.epoch                         # (1)!
 
         if hasattr(trainer, 'tloss') and trainer.tloss is not None:
-            self.current_loss = float(trainer.tloss.sum())     # (2)!
-        else:
-            self.current_loss = 0.0
+            self.current_loss = float(trainer.tloss.sum())         # (2)!
 
-        self.call_hooks('after_epoch')                         # (3)!
+        if hasattr(trainer, 'loss_items') and trainer.loss_items is not None:
+            items = trainer.loss_items.tolist()
+            self.loss_components = {                               # (3)!
+                k: float(v) for k, v in zip(['box','seg','cls','dfl'], items)
+            }
+
+        self.call_hooks('after_epoch')                             # (4)!
 
     self.model.add_callback("on_train_epoch_end", on_train_epoch_end)
 ```
 
 1. Copy the epoch number from Ultralytics' internal `trainer` into our `BaseTrainer.current_epoch`
 2. Extract the total loss from Ultralytics' PyTorch tensor — `.sum()` collapses it to a scalar
-3. Now broadcast to **our** hooks (e.g., `IndustrialLogger`) which read `self.current_epoch` and `self.current_loss`
+3. Populate `loss_components` with individual loss terms so `IndustrialLogger` can display each column
+4. Now broadcast to **our** hooks (e.g., `IndustrialLogger`) which read `current_epoch`, `current_loss`, and `loss_components`
 
 ```mermaid
 sequenceDiagram
     participant Ultra as Ultralytics Engine
-    participant Bridge as _inject_hooks callback
+    participant Bridge as _inject_framework_hooks callback
     participant BT as BaseTrainer state
     participant Hook as IndustrialLogger
 
     Ultra->>Bridge: on_train_epoch_end(trainer)
     Bridge->>BT: self.current_epoch = trainer.epoch
     Bridge->>BT: self.current_loss = trainer.tloss.sum()
+    Bridge->>BT: self.loss_components = {box, seg, cls, dfl}
     Bridge->>Hook: self.call_hooks('after_epoch')
-    Hook->>BT: Reads trainer.current_epoch, trainer.current_loss
-    Hook->>Hook: Prints formatted row
+    Hook->>BT: Reads current_epoch, current_loss, loss_components
+    Hook->>Hook: Prints formatted row with all loss columns
 ```
 
 ---
@@ -141,16 +147,13 @@ def train(self):
     if self.model is None:
         self.build_model()
 
-    self._inject_hooks()
+    self._setup_run_dir()          # Creates models/yolo/DD-MM-YYYY/
+    self._inject_framework_hooks() # Bridge Ultralytics → BaseTrainer hooks
 
     # Extract everything from config
     epochs = self.config.get('epochs', 300)
     batch_size = self.config.get('batch_size', 16)
     img_size = self.config.get('image_size', 640)
-    optim_cfg = self.config.get('optimizer', {})
-    sched_cfg = optim_cfg.get('scheduler', {})
-    es_cfg = self.config.get('early_stopping', {})
-    ckpt_cfg = self.config.get('checkpoint', {})
 
     # Dynamic augmentation extraction
     yolo_aug_keys = ['hsv_h', 'hsv_s', 'hsv_v', 'fliplr',
@@ -202,25 +205,19 @@ The `evaluate()` method includes WSL-specific memory management:
 
 ```python
 def evaluate(self) -> dict:
-    # Clean GPU memory before validation spike
-    gc.collect()
-    torch.cuda.empty_cache()
+    self._flush_memory()  # Free VRAM before the validation memory spike
 
-    # Suppress stdout (kills glitchy progress bars)
-    original_stdout = sys.stdout
-    sys.stdout = open(os.devnull, 'w')
-
-    try:
+    import contextlib
+    with contextlib.redirect_stdout(open(os.devnull, 'w')):  # (1)!
         results = self.model.val(
             data=self.data_yaml_path,
             batch=8,         # Lower than training batch
             workers=2,       # Prevents RAM spikes on WSL
             verbose=False
         )
-    finally:
-        sys.stdout.close()
-        sys.stdout = original_stdout
 ```
+
+1. `contextlib.redirect_stdout` is the safe alternative to manually swapping `sys.stdout` — it always restores the original even if `model.val()` raises an exception
 
 After validation, it prints a formatted Executive Summary:
 
@@ -286,3 +283,9 @@ After validation, it prints a formatted Executive Summary:
       save_best_only: true
       save_frequency: 5
     ```
+
+---
+
+## API Reference
+
+::: src.training.trainers.yolo.YOLOTrainer

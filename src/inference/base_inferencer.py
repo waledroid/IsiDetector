@@ -13,7 +13,7 @@ class BaseInferencer(ABC):
     The blueprint for all inference engines.
     Keeps the main application clean and model-agnostic.
     """
-    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None):
+    def __init__(self, model_path: str, conf_threshold: float = 0.5, device: str = None, imgsz: int = None):
         self.model_path = Path(model_path)
         self.conf_threshold = conf_threshold
         # None = auto (GPU if available, else CPU), "cpu" = force CPU, "cuda" = force GPU
@@ -37,7 +37,7 @@ class BaseInferencer(ABC):
             self.class_names = {0: "carton", 1: "polybag"}
             self.nc = 2
         
-        self.imgsz = config.get('image_size', 640)
+        self.imgsz = imgsz if imgsz is not None else config.get('image_size', 640)
         
         if not self.model_path.exists():
             raise FileNotFoundError(f"❌ Weights not found at {self.model_path}")

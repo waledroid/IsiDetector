@@ -17,22 +17,21 @@ class IndustrialLogger:
         print("-" * len(header))
 
     def after_epoch(self, trainer):
-        # Extract metrics from the trainer
-        # trainer.current_epoch is 0-indexed in some versions, adding 1 for display
         epoch_str = f"{trainer.current_epoch + 1}/{trainer.config.get('epochs', 30)}"
-        
-        # Get GPU memory (if available via torch)
+
         import torch
-        gpu_mem = f"{torch.cuda.memory_reserved(0) / 1e9:.2f}G"
-        
-        # Extract losses from trainer (these are updated via the callback we wrote in yolo.py)
-        # Note: In a full implementation, you'd pull box, seg, cls, dfl separately.
-        # For now, we'll display the summarized current_loss in the box column
-        # and placeholders for others to match your requested format.
-        
+        try:
+            gpu_mem = f"{torch.cuda.memory_reserved(0) / 1e9:.2f}G" if torch.cuda.is_available() else "N/A"
+        except Exception:
+            gpu_mem = "N/A"
+
+        lc = getattr(trainer, 'loss_components', {})
+        def _fmt(key):
+            return f"{lc[key]:>10.4f}" if key in lc else f"{'--':>10}"
+
         row = (
-            f"{epoch_str:>8} {gpu_mem:>10} {trainer.current_loss:>10.4f} "
-            f"{'--':>10} {'--':>10} {'--':>10} {'--':>10} {trainer.config.get('image_size', 640):>8}"
+            f"{epoch_str:>8} {gpu_mem:>10} {_fmt('box')} {_fmt('seg')} "
+            f"{_fmt('cls')} {_fmt('dfl')} {'--':>10} {trainer.config.get('image_size', 640):>8}"
         )
         print(row)
         

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import importlib
 import os
 import sys
 import argparse
@@ -10,12 +11,27 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-# 2. Wake up the Registry
-
+# 2. Registry and hooks (hooks have no optional dependencies so always safe to import)
 from src.shared.registry import TRAINERS
-import src.training.trainers.yolo    # Wakes up YOLO
-import src.training.trainers.rfdetr  # 🛑 Wakes up the new RF-DETR!
 import src.training.hooks
+
+# Trainer module registry — add new trainers here without touching any other code
+_TRAINER_MODULES = {
+    'yolo':    'src.training.trainers.yolo',
+    'yolov26': 'src.training.trainers.yolo',
+    'rfdetr':  'src.training.trainers.rfdetr',
+}
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base, returning the merged result."""
+    merged = base.copy()
+    for k, v in override.items():
+        if k in merged and isinstance(merged[k], dict) and isinstance(v, dict):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
 
 # Setup standard industrial logging
 logging.basicConfig(
@@ -49,7 +65,7 @@ def main():
             logger.info(f"🔗 Merging Secondary Config: {optim_path.name}")
             with open(optim_path, 'r') as f:
                 optim_config = yaml.safe_load(f)
-                config.update(optim_config)
+                config = _deep_merge(config, optim_config)
         else:
             logger.error(f"❌ Optimizer config not found at {optim_path}")
             sys.exit(1)
@@ -71,20 +87,25 @@ def main():
     logger.info(f"🚀 INITIALIZING PROJECT: {project_name.upper()}")
     logger.info(f"🔍 Requested Model Architecture: {model_type}")
 
+    # 7. Lazy-load only the trainer that is actually needed
+    trainer_module = _TRAINER_MODULES.get(model_type)
+    if trainer_module is None:
+        logger.error(f"❌ '{model_type}' is not in _TRAINER_MODULES. Register it in run_train.py.")
+        sys.exit(1)
+    importlib.import_module(trainer_module)
+
     try:
-        # 7. Registry Instantiation
+        # 8. Registry Instantiation
         TrainerClass = TRAINERS.get(model_type)
-        if not TrainerClass:
-            raise KeyError(f"No trainer registered for '{model_type}'.")
         
         trainer = TrainerClass(config)
-        
-        # 8. Execute the Pipeline
+
+        # 9. Execute the Pipeline
         trainer.train()
-        
-        # 9. Post-Training Validation & Export
+
+        # 10. Post-Training Validation & Export
         trainer.evaluate()
-        
+
         if config.get('export_model', True):
             trainer.export(format='onnx')
 

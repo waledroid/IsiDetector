@@ -1,5 +1,6 @@
 # src/shared/vision_engine.py
 import cv2
+import time
 import logging
 import supervision as sv
 import numpy as np
@@ -9,10 +10,41 @@ from src.utils.analytics_logger import DailyLogger
 logger = logging.getLogger(__name__)
 
 class VisionEngine:
+    """Unified orchestrator for detection, tracking, counting, and annotation.
+
+    The single stateful object used by both the CLI scripts and the
+    Flask web app. Wraps a model-agnostic inferencer and adds:
+
+    - **ByteTrack** persistent object tracking (IDs survive occlusion).
+    - **LineZone** crossing detection — counts each object exactly once
+      per session.
+    - **DailyLogger** hourly CSV snapshots (auto-rotates at midnight).
+    - Supervision annotators for masks, traces, bounding boxes, and labels.
+
+    The engine is model-agnostic: pass any inferencer that implements
+    :class:`~src.inference.base_inferencer.BaseInferencer`.
+
+    Args:
+        inferencer: An instance of ``YOLOInferencer``,
+            ``RFDETRInferencer``, or ``OptimizedONNXInferencer``.
+        config: The full ``train.yaml`` config dict, used for confidence
+            threshold, tracker parameters, and logging settings.
+
+    Example:
+        ```python
+        from src.inference.onnx_inferencer import OptimizedONNXInferencer
+        from src.shared.vision_engine import VisionEngine
+
+        engine = VisionEngine(
+            inferencer=OptimizedONNXInferencer("best.onnx"),
+            config=config
+        )
+        annotated, detections, event = engine.process_frame(frame, counts)
+        if event:
+            print(f"{event['class']} crossed the line (ID #{event['id']})")
+        ```
     """
-    Unified Vision Logic for Counting, Tracking, and Annotation.
-    Separates 'Smart Object Detection' from 'Data Presentation'.
-    """
+
     def __init__(self, inferencer, config: dict):
         self.inferencer = inferencer
         self.config = config
@@ -59,20 +91,49 @@ class VisionEngine:
         )
 
     def process_frame(self, frame: np.ndarray, class_totals: dict):
-        """
-        The Heavy-Lifter: Runs Detection, Tracking, and Counting in one pass.
-        :param frame: Raw RGB/BGR frame
-        :param class_totals: External dictionary to update with counts
-        :return: (Annotated Frame, Detection Results, Crossings)
+        """Run detection, tracking, and line-crossing counting on one frame.
+
+        Called once per frame from the inference thread. Thread-safe
+        provided it is called from a single thread (the inference loop
+        owns it exclusively).
+
+        Args:
+            frame: Raw BGR frame as a NumPy array (from OpenCV).
+            class_totals: Dict updated **in-place** with crossing counts
+                (e.g. ``{'carton': 12, 'polybag': 5}``). Owned by
+                ``StreamHandler``; do not pass the same dict from
+                multiple threads simultaneously.
+
+        Returns:
+            A 3-tuple ``(annotated, detections, event)``:
+
+            - ``annotated``: BGR frame with masks, traces, boxes, labels,
+              and the counting line drawn.
+            - ``detections``: ``sv.Detections`` object for the current
+              frame (tracker IDs assigned).
+            - ``event``: ``None``, or ``{"class": str, "id": int}`` when
+              a new object crosses the line this frame.
+
+        Note:
+            ``counted_ids`` is automatically pruned when it exceeds
+            50,000 entries (prevents unbounded memory growth in
+            sessions longer than 8–12 hours).
         """
         if self.line_zone is None:
             h, w = frame.shape[:2]
             self.init_line(w, h)
 
-        # 1. Core AI Logic
+        # 1. Core AI Logic (timed for performance dashboard)
+        _t0 = time.perf_counter()
         frame_input = np.ascontiguousarray(frame)
         detections = self.inferencer.predict_frame(frame_input)
+        _t1 = time.perf_counter()
         detections = self.tracker.update_with_detections(detections)
+        _t2 = time.perf_counter()
+        self.last_timing = {
+            'forward_ms': (_t1 - _t0) * 1000,
+            'tracker_ms': (_t2 - _t1) * 1000,
+        }
         
         # 2. Crossing/Trigger Logic
         in_cross, out_cross = self.line_zone.trigger(detections=detections)
@@ -88,6 +149,14 @@ class VisionEngine:
                     class_totals[name] = class_totals.get(name, 0) + 1
                     self.counted_ids.add(t_id)
                     new_event = {"class": name, "id": t_id}
+
+        # Prune counted_ids to prevent unbounded growth over long shifts.
+        # ByteTrack IDs are monotonically increasing — old IDs are never reassigned,
+        # so it is safe to discard the lower half once the set gets large.
+        if len(self.counted_ids) > 50_000:
+            sorted_ids = sorted(self.counted_ids)
+            self.counted_ids = set(sorted_ids[len(sorted_ids) // 2:])
+            logger.info(f"♻️ counted_ids pruned to {len(self.counted_ids)} entries")
 
         # 3. Update Hourly CSV Log
         self.logger.update(class_totals)

@@ -13,3 +13,4 @@ logs/
 *.pyo
 venv/
 .venv/
+isitec_app/uploads/

@@ -26,9 +26,10 @@ graph TD
 By wrapping the `sv.ByteTrack` module, the engine assigns persistent IDs to every parcel (e.g., `#104`). This ensures that even if a parcel is briefly obscured, the system remembers it until it crosses the counting line.
 
 #### 2. Trigger Management
-The `process_frame()` method handles the precise logic of "Line Crossing". 
+The `process_frame()` method handles the precise logic of "Line Crossing".
 - It detects when an object's **Bottom Center** point crosses the designated vertical line.
 - It ensures an object is **only counted once** per session, even if it hovers over the line.
+- The internal `counted_ids` set is automatically pruned when it exceeds 50,000 entries — the lower half (oldest IDs) is discarded. Since ByteTrack IDs are monotonically increasing and never reused, this is safe for sessions lasting many hours.
 
 #### 3. Real-Time Visualization
 The engine generates a fully annotated frame including:
@@ -56,4 +57,13 @@ annotated, detections, event = engine.process_frame(frame, counts)
 # 3. Handle Events
 if event:
     print(f"Parcel {event['id']} ({event['class']}) crossed the line!")
+
+# 4. Shutdown — flushes the final CSV snapshot
+engine.cleanup(counts)
 ```
+
+---
+
+## API Reference
+
+::: src.shared.vision_engine.VisionEngine

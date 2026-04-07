@@ -10,15 +10,15 @@ hooks:
 # =========================================================
 
 # ---------------------------------------------------------
-# 🚀 OPTION A: YOLOv8 (CNN) - Fast, grid-based, high batch size
+# 🚀 OPTION A: YOLOv26 (CNN) - Fast, grid-based, high batch size
 # ---------------------------------------------------------
-# model_type: "yolo"
-# model_size: "m"
-# dataset_path: "data/universal_dataset"
-# optimizer_config: "configs/optimizers/yolo_optim.yaml"
-# batch_size: 16
-# image_size: 640
-# mixed_precision: true 
+model_type: "yolo"
+model_size: "n"
+dataset_path: "data/universal_dataset"
+optimizer_config: "configs/optimizers/yolo_optim.yaml"
+batch_size: 16
+image_size: 416
+mixed_precision: true 
 # # YOLO Specific Augmentations
 # # hsv_h: 0.015  
 # # hsv_s: 0.7    
@@ -30,13 +30,13 @@ hooks:
 # ---------------------------------------------------------
 # 🤖 OPTION B: RF-DETR (Transformer) - DINOv2 Backbone, Global Context
 # ---------------------------------------------------------
-model_type: "rfdetr"
-model_size: "m"
-optimizer_config: "configs/optimizers/rfdetr_optim.yaml"
-dataset_path: "data/rfdetr_dataset"
-batch_size: 2      #4 default   # Keep low to prevent VRAM crashes
-image_size: 512
-mixed_precision: true
+# model_type: "rfdetr"
+# model_size: "m"
+# optimizer_config: "configs/optimizers/rfdetr_optim.yaml"
+# dataset_path: "data/rfdetr_dataset"
+# batch_size: 2      #4 default   # Keep low to prevent VRAM crashes
+# image_size: 512
+# mixed_precision: true
 
 
 inference:
@@ -48,3 +48,7 @@ inference:
     enabled: true
     save_interval: 3600    # 3600 = 1 Hour, 60 = 1 Minute # 15 to test
     log_dir: "logs"
+  udp:
+    enabled: true
+    host: "127.0.0.1"      # localhost — sorting controller on same machine
+    port: 9502             # consumer binds to this port to receive crossing events
