@@ -75,11 +75,11 @@ class VisionEngine:
         )
 
         # 5. Visual Annotators
-        self.mask_annotator = sv.MaskAnnotator()
-        self.trace_annotator = sv.TraceAnnotator()
-        self.box_annotator = sv.BoxAnnotator()
-        self.label_annotator = sv.LabelAnnotator(text_scale=0.5, text_thickness=1)
-        self.line_annotator = sv.LineZoneAnnotator(thickness=2, text_thickness=0, text_scale=0)
+        self.mask_annotator = sv.MaskAnnotator(opacity=0.3)
+        self.trace_annotator = sv.TraceAnnotator(thickness=1, trace_length=30)
+        self.box_annotator = sv.BoxAnnotator(thickness=1)
+        self.label_annotator = sv.LabelAnnotator(text_scale=0.3, text_thickness=1, text_padding=2)
+        self.line_annotator = sv.LineZoneAnnotator(thickness=1, text_thickness=0, text_scale=0)
 
     def init_line(self, width, height, x_percent=0.65):
         """Initializes the counting line based on frame dimensions."""

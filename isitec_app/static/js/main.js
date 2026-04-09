@@ -365,9 +365,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     detectionChart.update('none');
                 }
             }
+            // Update UDP footer indicator
+            const udpEl = document.getElementById('udpStatus');
             if (data.last_detected) {
                 statLast.textContent = `${data.last_detected.class.toUpperCase()} - ${data.last_detected.time}`;
                 statLast.removeAttribute('data-i18n');
+                const cls = data.last_detected.class.toUpperCase();
+                const ts = data.last_detected.time.split('T')[1].split('.')[0];
+                udpEl.textContent = `UDP \u2192 ${cls} @ ${ts}`;
+                udpEl.style.color = '#43a047';
+            } else if (udpEl) {
+                udpEl.textContent = 'UDP: idle';
+                udpEl.style.color = '#9aa0a6';
             }
             if (!data.is_running && statsInterval) {
                 clearInterval(statsInterval);
