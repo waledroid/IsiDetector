@@ -1,0 +1,12 @@
+services:
+  web:
+    # Override: remove GPU reservation for CPU-only machines
+    deploy:
+      resources:
+        reservations:
+          devices: []
+  rfdetr:
+    deploy:
+      resources:
+        reservations:
+          devices: []

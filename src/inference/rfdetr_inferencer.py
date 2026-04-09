@@ -6,10 +6,6 @@ from PIL import Image
 import numpy as np
 from src.inference.base_inferencer import BaseInferencer
 
-try:
-    from rfdetr import RFDETRSegMedium
-except ImportError:
-    raise ImportError("❌ Missing rfdetr package. Run: pip install rfdetr")
 
 class RFDETRInferencer(BaseInferencer):
     """Concrete implementation for RF-DETR Segmentation with 640px scaling."""
@@ -28,9 +24,15 @@ class RFDETRInferencer(BaseInferencer):
             self.model.to(self._device)
         except Exception:
             pass
-    
+
     def _load_model(self):
-        model = RFDETRSegMedium(pretrain_weights=str(self.model_path))
+        # Lazy import — rfdetr's CUDA extensions segfault at import time in some Docker containers
+        if "small" in str(self.model_path).lower():
+            from rfdetr import RFDETRSegSmall
+            model = RFDETRSegSmall(pretrain_weights=str(self.model_path))
+        else:
+            from rfdetr import RFDETRSegMedium
+            model = RFDETRSegMedium(pretrain_weights=str(self.model_path))
         model.optimize_for_inference()
         return model
 

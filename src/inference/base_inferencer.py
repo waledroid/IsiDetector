@@ -20,15 +20,26 @@ class BaseInferencer(ABC):
         self.device = device
         
         # 1. Dynamic Class Loading (Master Config)
-        self.project_root = self.model_path.parents[3] # Usually ~/logistic
-        config_path = self.project_root / "configs/train.yaml"
-        if not config_path.exists():
-            # Fallback for scripts running from root
-            config_path = Path("configs/train.yaml")
+        # Search multiple locations for the config file
+        config_path = None
+        candidates = [
+            Path(__file__).resolve().parent.parent.parent / "configs/train.yaml",  # src/inference/../../configs/
+            Path("configs/train.yaml"),                                              # CWD
+        ]
+        # Also try relative to model path (for mounted volumes in Docker)
+        for depth in range(min(5, len(self.model_path.parents))):
+            candidates.append(self.model_path.parents[depth] / "configs/train.yaml")
+        for p in candidates:
+            if p.exists():
+                config_path = p
+                break
+        if config_path is None:
+            config_path = Path("configs/train.yaml")  # will fail gracefully below
         
+        config = {}
         try:
             with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
+                config = yaml.safe_load(f) or {}
             self.raw_classes = config.get('class_names', ['carton', 'polybag'])
             self.class_names = {i: name.lower() for i, name in enumerate(self.raw_classes)}
             self.nc = len(self.raw_classes)
@@ -36,7 +47,7 @@ class BaseInferencer(ABC):
             logger.warning(f"⚠️ Could not load config at {config_path}: {e}")
             self.class_names = {0: "carton", 1: "polybag"}
             self.nc = 2
-        
+
         self.imgsz = imgsz if imgsz is not None else config.get('image_size', 640)
         
         if not self.model_path.exists():

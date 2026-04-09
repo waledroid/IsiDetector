@@ -453,10 +453,10 @@ body {
     50%      { opacity: 1;   transform: scale(1.15); }
 }
 
-/* Grid rows — increased gap for breathing room */
-.perf-row {
+/* Grid container — 3 columns by default */
+.perf-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
     margin-bottom: 24px;
 }
@@ -591,6 +591,17 @@ body {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
+.pm-delta {
+    font-size: 0.72rem;
+    font-weight: 500;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.07);
+    color: #9aa0a6;
+}
+.pm-delta.delta-up   { color: #ef5350; }
+.pm-delta.delta-down { color: #66bb6a; }
 
 /* Session comparison table */
 .table-wrap { overflow-x: auto; }
@@ -715,6 +726,56 @@ body {
     pointer-events: none;
 }
 
-@media (max-width: 860px) {
-    .perf-row, .settings-grid { grid-template-columns: 1fr; }
+/* Responsive grid adjustments */
+@media (max-width: 992px) {
+    .perf-grid { grid-template-columns: 1fr 1fr; }
+    .settings-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+    .perf-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Dev-mode modal ──────────────────────────────────────────────────────── */
+.dev-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.dev-modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 32px;
+    width: 340px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.2);
+    text-align: center;
+}
+.dev-modal h3 {
+    margin: 0 0 20px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-main, #202124);
+}
+.dev-modal input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+.dev-modal input:focus {
+    border-color: #1a73e8;
+}
+.dev-error {
+    color: #e53935;
+    font-size: 13px;
+    margin: 12px 0 0;
 }

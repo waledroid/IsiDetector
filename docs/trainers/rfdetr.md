@@ -158,24 +158,41 @@ def _plot_metrics(self):
 
 ---
 
-## ONNX Export
+## Export Pipeline
 
-RF-DETR only supports ONNX export natively:
+RF-DETR exports to ONNX natively, then the export engine **automatically converts** to OpenVINO and TensorRT:
 
 ```python
 def export(self, format: str = 'onnx'):
-    if format.lower() != 'onnx':
-        logger.warning(f"⚠️ RF-DETR only supports ONNX. Ignoring: {format}")
-
     self.model.export(
         output_dir=str(self.output_dir),
         simplify=True                                       # (1)!
     )
+
+    # Auto-convert to deployment formats
+    from src.inference.export_engine import run_pipeline
+    run_pipeline(model_dir=self.output_dir,
+                 formats={'onnx', 'openvino', 'tensorrt'})  # (2)!
 ```
 
-1. Graph simplification removes redundant operations, making the ONNX model faster for edge deployment
+1. Graph simplification removes redundant operations
+2. Produces optimized `.sim.onnx`, `openvino/model.xml`, and `tensorrt/model.engine` (if TensorRT is installed)
 
-The output file is named `inference_model.onnx` by Roboflow's convention.
+### Output Files
+
+```
+models/rfdetr/<timestamp>/
++-- checkpoint_best_ema.pth       # Training weights
++-- inference_model.onnx          # Raw ONNX
++-- inference_model.sim.onnx      # Optimized ONNX
++-- openvino/
+|   +-- model.xml                 # CPU-optimized (Intel)
+|   +-- model.bin
++-- tensorrt/
+    +-- model.engine              # GPU-optimized (NVIDIA)
+```
+
+See the [Export Engine](../inference/export.md) docs for manual conversion options.
 
 ---
 

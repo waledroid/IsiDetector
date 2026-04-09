@@ -1,0 +1,34 @@
+# Git
+.git/
+.gitignore
+
+# Training data & outputs (volume-mounted at runtime)
+data/
+runs/
+models/
+
+# Build artifacts
+site/
+__pycache__/
+*.pyc
+*.pyo
+
+# Large binary files
+*.pt
+*.pth
+*.onnx
+*.engine
+*.bin
+
+# Development files
+.claude/
+*.txt
+!requirements*.txt
+isitec_app/uploads/
+isitec_app/logs/
+isitec_app/settings.json
+
+# IDE
+.vscode/
+.idea/
+*.swp

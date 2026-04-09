@@ -14,8 +14,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.inference.yolo_inferencer import YOLOInferencer
-from src.inference.rfdetr_inferencer import RFDETRInferencer
+# Inferencers imported lazily in main() to avoid rfdetr CUDA segfault in Docker
 from src.utils.analytics_logger import DailyLogger 
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -113,17 +112,33 @@ def main():
     device = args.device  # None = auto-GPU, "cpu" = force CPU, "cuda" = force GPU
     device_label = "CPU" if device == "cpu" else "GPU"
 
-    if weights_path.endswith('.onnx'):
+    ext = Path(args.weights).suffix.lower()
+    in_docker = Path('/.dockerenv').exists()
+    if ext == '.engine':
+        from src.inference.tensorrt_inferencer import TensorRTInferencer
+        engine = TensorRTInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+        mode_text = f"TensorRT • {device_label}"
+    elif ext == '.xml':
+        from src.inference.openvino_inferencer import OpenVINOInferencer
+        engine = OpenVINOInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+        mode_text = f"OpenVINO • {device_label}"
+    elif ext == '.onnx':
         from src.inference.onnx_inferencer import ONNXInferencer
-        logger.info(f"⚡ Loading High-Speed ONNX Engine: {args.weights}")
         engine = ONNXInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
-        mode_text = f"MODE ONNX • {device_label}"
-    elif 'rfdetr' in weights_path:
-        engine = RFDETRInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
-        mode_text = f"MODE 2 • {device_label}"
-    else:
+        mode_text = f"ONNX • {device_label}"
+    elif ext == '.pth':
+        if in_docker:
+            from src.inference.remote_rfdetr_inferencer import RemoteRFDETRInferencer
+            engine = RemoteRFDETRInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+            mode_text = f"RF-DETR Remote • {device_label}"
+        else:
+            from src.inference.rfdetr_inferencer import RFDETRInferencer
+            engine = RFDETRInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
+            mode_text = f"RF-DETR • {device_label}"
+    else:  # .pt
+        from src.inference.yolo_inferencer import YOLOInferencer
         engine = YOLOInferencer(model_path=args.weights, conf_threshold=conf_thresh, device=device)
-        mode_text = f"MODE 1 • {device_label}"
+        mode_text = f"YOLO • {device_label}"
 
     # ==========================================
     # 2. SETUP ANALYTICS & TRACKING

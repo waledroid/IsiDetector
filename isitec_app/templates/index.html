@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.01">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -35,9 +35,9 @@
                         data-i18n="nav_live">Live Inference</span></button>
                 <button class="nav-btn" data-target="section-analytics"><i class="material-icons">analytics</i> <span
                         data-i18n="nav_analytics">Analytics</span></button>
-                <button class="nav-btn" data-target="section-performance"><i class="material-icons">speed</i> <span
+                <button class="nav-btn dev-only" data-target="section-performance" style="display:none"><i class="material-icons">speed</i> <span
                         data-i18n="nav_performance">Performance</span></button>
-                <button class="nav-btn" data-target="section-settings"><i class="material-icons">settings</i> <span
+                <button class="nav-btn dev-only" data-target="section-settings" style="display:none"><i class="material-icons">settings</i> <span
                         data-i18n="nav_settings">Settings</span></button>
                 <button class="nav-btn" data-target="section-about"><i class="material-icons">info</i> <span
                         data-i18n="nav_about">About</span></button>
@@ -130,7 +130,7 @@
                     <div class="video-wrapper">
                         <!-- Standard MJPEG hidden, used as source for Canvas -->
                         <img id="videoStream" src="/video_feed" style="display: none;" alt="Video Stream">
-                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; max-width: 100%; height: auto;"></canvas>
+                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; width: 100%; height: 100%; object-fit: contain;"></canvas>
                     </div>
 
                     <div class="button-group"
@@ -192,8 +192,8 @@
                 <span data-i18n="perf_empty">Start a stream to see live metrics</span>
             </div>
 
-            <!-- Row 1: Session Health + Hardware -->
-            <div class="perf-row">
+            <!-- Performance Metric Grid — 3 columns for Desktop -->
+            <div class="perf-grid">
                 <div class="perf-group" id="pg-session">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-session" title="Green: 0 errors, heartbeat < 10s"></span>
@@ -201,6 +201,7 @@
                     </div>
                     <div class="pg-metrics" id="pm-session"></div>
                 </div>
+
                 <div class="perf-group" id="pg-hardware">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-hardware" title="Green: VRAM < 70%, GPU < 80%, Temp < 75°C"></span>
@@ -208,10 +209,7 @@
                     </div>
                     <div class="pg-metrics" id="pm-hardware"></div>
                 </div>
-            </div>
 
-            <!-- Row 2: Throughput + Detection Quality -->
-            <div class="perf-row">
                 <div class="perf-group" id="pg-throughput">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-throughput" title="Green: FPS ≥ 20, Latency ≤ 50ms"></span>
@@ -219,6 +217,7 @@
                     </div>
                     <div class="pg-metrics" id="pm-throughput"></div>
                 </div>
+
                 <div class="perf-group" id="pg-detection">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-detection" title="Green: Confidence ≥ 0.75, Low-conf < 10%"></span>
@@ -226,10 +225,7 @@
                     </div>
                     <div class="pg-metrics" id="pm-detection"></div>
                 </div>
-            </div>
 
-            <!-- Row 3: Tracking + Counting Rate -->
-            <div class="perf-row">
                 <div class="perf-group" id="pg-tracking">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-tracking" title="Green: ID ratio < 2.0"></span>
@@ -237,6 +233,7 @@
                     </div>
                     <div class="pg-metrics" id="pm-tracking"></div>
                 </div>
+
                 <div class="perf-group" id="pg-counting">
                     <div class="pg-header">
                         <span class="pg-dot" id="dot-counting" title="Green: Counts active while running"></span>
@@ -332,6 +329,15 @@
         data-i18n="copyright_footer">
         &copy; Copyright Isitec International 2026
     </footer>
+
+    <!-- Dev-mode password modal (hidden) -->
+    <div class="dev-modal-overlay" id="devModal" style="display:none">
+        <div class="dev-modal">
+            <h3>Access</h3>
+            <input type="password" id="devPassword" placeholder="Enter password" autocomplete="off">
+            <p class="dev-error" id="devError" style="display:none">Invalid password</p>
+        </div>
+    </div>
 
     <script src="/static/js/main.js"></script>
 </body>

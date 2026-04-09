@@ -1,0 +1,55 @@
+# ============================================================================
+# IsiDetector — RF-DETR Inference Microservice
+# Separate container due to incompatible torch/transformers deps with YOLO
+# ============================================================================
+
+FROM nvidia/cuda:12.8.0-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3-pip python3.11-dev \
+    libgl1-mesa-glx libglib2.0-0 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+WORKDIR /opt/rfdetr
+
+# Latest torch with CUDA 12.8 (must support Blackwell sm_120 for RTX 5070)
+RUN pip install --no-cache-dir \
+    torch torchvision \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# RF-DETR ecosystem — transformers pinned to match rfdetr 1.6.0
+RUN pip install --no-cache-dir \
+    transformers==5.3.0 \
+    rfdetr==1.6.0 \
+    flask>=3.0.0 \
+    opencv-python-headless>=4.8.0 \
+    numpy>=1.24.0 \
+    supervision>=0.27.0 \
+    pillow>=10.0.0 \
+    pyyaml>=6.0
+
+# Copy only what's needed for rfdetr inference
+COPY src/__init__.py src/__init__.py
+COPY src/inference/__init__.py src/inference/__init__.py
+COPY src/inference/base_inferencer.py src/inference/base_inferencer.py
+COPY src/inference/rfdetr_inferencer.py src/inference/rfdetr_inferencer.py
+COPY configs/ configs/
+COPY rfdetr_service.py .
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/opt/rfdetr
+ENV CUDA_MODULE_LOADING=LAZY
+ENV PYTORCH_JIT=0
+ENV TORCH_CUDA_ARCH_LIST="8.9;9.0;10.0;12.0;12.0+PTX"
+
+EXPOSE 9510
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:9510/health || exit 1
+
+CMD ["python", "rfdetr_service.py"]

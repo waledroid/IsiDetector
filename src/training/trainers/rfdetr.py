@@ -339,4 +339,13 @@ class RFDETRTrainer(BaseTrainer):
 
         onnx_path = self.output_dir / "inference_model.onnx"
         logger.info(f"✅ ONNX Export complete: {onnx_path}")
+
+        # Auto-convert to all deployment formats (optimized ONNX, OpenVINO, TensorRT)
+        try:
+            from src.inference.export_engine import run_pipeline
+            logger.info("🔄 Running deployment format conversions ...")
+            run_pipeline(model_dir=self.output_dir, formats={'onnx', 'openvino', 'tensorrt'})
+        except Exception as e:
+            logger.warning(f"⚠️ Auto-conversion skipped: {e}")
+
         return str(onnx_path)

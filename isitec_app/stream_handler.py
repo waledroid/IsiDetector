@@ -26,9 +26,10 @@ def sanitize_for_json(obj):
     return obj
 
 
-# Import inferencers from the parent directory
-from src.inference.yolo_inferencer import YOLOInferencer
-from src.inference.rfdetr_inferencer import RFDETRInferencer
+# Import inferencers lazily — rfdetr triggers heavy CUDA init at import time
+# which can segfault in Docker if loaded before the app needs it.
+# YOLOInferencer, RFDETRInferencer, ONNXInferencer, OpenVINOInferencer,
+# TensorRTInferencer are all imported inside start() when needed.
 from src.shared.vision_engine import VisionEngine
 from isitec_app.performance_monitor import PerformanceMonitor
 
@@ -211,10 +212,12 @@ class StreamHandler:
         self.inf_thread = None
         self.source_is_image = False
         self.frame_ready = threading.Event()
+        self._current_source = None  # track for hot-swap detection
 
-        # Cache the STANDBY frame once — avoids recreating it on every idle generate_frames() tick
-        _blank = np.zeros((self.web_imgsz, self.web_imgsz, 3), dtype=np.uint8)
-        cv2.putText(_blank, "STANDBY", (int(self.web_imgsz / 3), int(self.web_imgsz / 2)),
+        # Cache the STANDBY frame once — 16:9 aspect ratio
+        _standby_h = int(self.web_imgsz * 9 / 16)
+        _blank = np.zeros((_standby_h, self.web_imgsz, 3), dtype=np.uint8)
+        cv2.putText(_blank, "STANDBY", (int(self.web_imgsz / 4), int(_standby_h / 2)),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
         _, _buf = cv2.imencode('.jpg', _blank)
         self._standby_frame = _buf.tobytes()
@@ -232,6 +235,10 @@ class StreamHandler:
 
     def set_language(self, lang):
         self.language = lang
+
+    def set_belt_status(self, active: bool):
+        with self.lock:
+            self.monitor.belt_active = active
 
     def set_udp_target(self, host, port):
         self.publisher.update_target(host, int(port))
@@ -296,30 +303,175 @@ class StreamHandler:
         cv2.putText(frame, mode_text, (w - 170, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         return frame
 
-    def start(self, source, model_type, weights, device=None, imgsz=None, conf_thresh=None):
-        """Start an inference session.
+    def _resolve_default_weights(self, model_type: str) -> str | None:
+        """Resolve default model weights: settings.json → auto-discover → None."""
+        import json as _json
 
-        Stops any running session first (safe to call when idle).
-        Loads the selected AI model, creates a :class:`LiveReader`
-        for the source, and starts the inference thread.
+        # 1. Try settings.json
+        settings_path = Path(__file__).parent / 'settings.json'
+        try:
+            if settings_path.exists():
+                with open(settings_path) as f:
+                    settings = _json.load(f)
+                is_detr = 'rfdetr' in model_type.lower()
+                key = 'rfdetr_weights' if is_detr else 'yolo_weights'
+                saved = settings.get(key, '')
+                if saved and Path(saved).exists():
+                    logger.info(f"Using saved default weights: {saved}")
+                    return saved
+        except Exception:
+            pass
+
+        # 2. Auto-discover weights — prioritize by hardware
+        is_detr = 'rfdetr' in model_type.lower()
+        has_gpu = self.monitor.has_gpu
+
+        if is_detr:
+            search_dirs = [Path('models/rfdetr')]
+        else:
+            search_dirs = [Path('runs/segment/models/yolo'), Path('models/yolo')]
+
+        # Priority order: GPU prefers native/ONNX, CPU prefers OpenVINO
+        if has_gpu:
+            if is_detr:
+                ext_priority = ['.pth', '.onnx', '.xml']
+            else:
+                ext_priority = ['.pt', '.onnx', '.xml']
+        else:
+            ext_priority = ['.xml', '.onnx', '.pth', '.pt']
+
+        all_files = []
+        for d in search_dirs:
+            if d.exists():
+                for ext in ext_priority:
+                    all_files.extend(d.rglob(f'*{ext}'))
+
+        if all_files:
+            # Sort by: extension priority first, then newest within same priority
+            def sort_key(p):
+                ext = p.suffix.lower()
+                priority = ext_priority.index(ext) if ext in ext_priority else 99
+                return (priority, -p.stat().st_mtime)
+
+            best = min(all_files, key=sort_key)
+            logger.info(f"Auto-discovered weights: {best} ({'GPU' if has_gpu else 'CPU'} priority)")
+            return str(best)
+
+        # 3. Nothing found
+        return None
+
+    def _build_engine(self, model_type, weights, imgsz, conf_thresh, device):
+        """Build an inferencer by resolving weights and dispatching by file extension.
+
+        Returns:
+            ``(base_engine, mode_text)`` on success.
+
+        Raises:
+            ValueError: If weights not found or format incompatible.
+            Exception: If model loading fails.
+        """
+        final_conf = conf_thresh if conf_thresh is not None else self.config.get('inference', {}).get('conf_threshold', 0.3)
+        has_gpu = self.monitor.has_gpu
+        device_label = "GPU" if has_gpu else "CPU"
+
+        model_path = weights
+        if not model_path:
+            model_path = self._resolve_default_weights(model_type)
+            if model_path is None:
+                raise ValueError(f"No model weights found for {model_type}. Go to Settings and select a model, or upload weights to the models/ folder.")
+
+        ext = Path(model_path).suffix.lower()
+        in_docker = Path('/.dockerenv').exists()
+
+        if ext == '.engine' and not has_gpu:
+            raise ValueError("TensorRT engines require an NVIDIA GPU. Use an OpenVINO (.xml) or ONNX (.onnx) model instead.")
+
+        if ext == '.engine':
+            from src.inference.tensorrt_inferencer import TensorRTInferencer
+            base_engine = TensorRTInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+            mode_text = f"TensorRT • {device_label}"
+        elif ext == '.xml':
+            from src.inference.openvino_inferencer import OpenVINOInferencer
+            base_engine = OpenVINOInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+            mode_text = f"OpenVINO • CPU"
+        elif ext == '.onnx':
+            from src.inference.onnx_inferencer import ONNXInferencer
+            onnx_device = device if device else ("cuda" if has_gpu else "cpu")
+            base_engine = ONNXInferencer(model_path=model_path, conf_threshold=final_conf, device=onnx_device, imgsz=imgsz)
+            mode_text = f"ONNX • {device_label}"
+        elif ext == '.pth':
+            if in_docker:
+                from src.inference.remote_rfdetr_inferencer import RemoteRFDETRInferencer
+                base_engine = RemoteRFDETRInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+                mode_text = f"RF-DETR Remote • {device_label}"
+            else:
+                from src.inference.rfdetr_inferencer import RFDETRInferencer
+                base_engine = RFDETRInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+                mode_text = f"RF-DETR • {device_label}"
+        else:  # .pt
+            from src.inference.yolo_inferencer import YOLOInferencer
+            base_engine = YOLOInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+            mode_text = f"YOLO • {device_label}"
+
+        return base_engine, mode_text
+
+    def start(self, source, model_type, weights, device=None, imgsz=None, conf_thresh=None):
+        """Start or hot-swap an inference session.
+
+        If a stream is already running on the same source, the model is
+        swapped without tearing down the reader or inference thread.
+        Otherwise, a full restart is performed.
 
         Args:
             source: Video source — RTSP URL, integer webcam index, or
                 path to an uploaded MP4/image file.
-            model_type: ``'yolo'`` or ``'rfdetr'``. Determines which
-                inferencer class is loaded.
-            weights: Path to the model weights file (``.pt``, ``.pth``,
-                or ``.onnx``). Falls back to the latest checkpoint if
-                the path does not exist.
-            device: ``None`` (auto — GPU if available), ``"cpu"``
-                (force CPU), or ``"cuda"`` (force GPU).
+            model_type: ``'yolo'`` or ``'rfdetr'``.
+            weights: Path to model weights (``.pt``, ``.pth``, ``.onnx``,
+                ``.xml``, ``.engine``).
+            device: ``None`` (auto), ``"cpu"``, or ``"cuda"``.
+            imgsz: Inference image size (also sets web output size).
+            conf_thresh: Confidence threshold override.
 
         Returns:
-            A ``(bool, str)`` tuple: ``(True, "Processing started.")``
-            on success, ``(False, error_message)`` on failure.
+            ``(bool, str)`` — success flag and message.
         """
-        # BUG 1 FIX: stop() acquires self.lock too — calling it inside the lock causes deadlock.
-        # stop() is safe to call when not running (returns early), so call it first, outside lock.
+        # Normalize source for comparison
+        src_val = int(source) if str(source).isdigit() else source
+
+        # Check if we can hot-swap (same source, reader alive, thread running)
+        can_hot_swap = (
+            self.running
+            and self.reader is not None
+            and self._current_source == src_val
+        )
+
+        if can_hot_swap:
+            # ── Hot-swap: keep reader + thread, swap engine only ─────────
+            try:
+                self.web_imgsz = imgsz or self.config.get('image_size', 416)
+                base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
+                new_vision = VisionEngine(inferencer=base_engine, config=self.config)
+            except ValueError as e:
+                return False, str(e)
+            except Exception as e:
+                logger.error(f"Hot-swap failed: {e}")
+                return False, f"Model Error: {str(e)}"
+
+            with self.lock:
+                old_engine = self.engine
+                self.engine = new_vision
+                self.class_totals = {name: 0 for name in base_engine.class_names.values()}
+                self.mode_text = mode_text
+
+            # Cleanup old engine in background (release VRAM, save CSV)
+            if old_engine:
+                threading.Thread(target=lambda: old_engine.cleanup({}), daemon=True).start()
+
+            self.monitor.start_session(model_type=model_type)
+            logger.info(f"🔄 Model switched to {mode_text} (hot-swap, no RTSP reconnect)")
+            return True, f"Model switched to {mode_text}."
+
+        # ── Full restart: different source or not running ────────────────
         self.stop()
 
         with self.lock:
@@ -328,33 +480,12 @@ class StreamHandler:
                 self.engine = None
 
             try:
-                # Use provided conf_thresh or fallback to config
-                final_conf = conf_thresh if conf_thresh is not None else self.config.get('inference', {}).get('conf_threshold', 0.3)
-                
-                is_detr = 'rfdetr' in model_type.lower() or (weights and 'rfdetr' in weights.lower())
-                device_label = "CPU" if device == "cpu" else "GPU"
-
-                if is_detr:
-                    model_path = weights or "models/rfdetr/25-03-2026_0043/checkpoint_best_ema.pth"
-                    if not Path(model_path).exists():
-                        found = list(Path("runs/segment/models/rfdetr").rglob("*.onnx"))
-                        if found: model_path = str(found[0])
-                    base_engine = RFDETRInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
-                    self.mode_text = f"MODE 2 (DETR • {device_label})"
-                else:
-                    model_path = weights or "runs/segment/models/yolo/25-03-20262/weights/best.pt"
-                    if not Path(model_path).exists():
-                        found_pt = list(Path("runs/segment/models/yolo").rglob("*.pt"))
-                        if found_pt:
-                            model_path = str(found_pt[0])
-                        else:
-                            found_onnx = list(Path("runs/segment/models/yolo").rglob("*.onnx"))
-                            if found_onnx: model_path = str(found_onnx[0])
-
-                    base_engine = YOLOInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
-                    self.mode_text = f"MODE 1 (YOLO • {device_label})"
-                
+                self.web_imgsz = imgsz or self.config.get('image_size', 416)
+                base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
                 self.engine = VisionEngine(inferencer=base_engine, config=self.config)
+                self.mode_text = mode_text
+            except ValueError as e:
+                return False, str(e)
             except Exception as e:
                 logger.error(f"Failed to load AI engine: {e}")
                 return False, f"Model Error: {str(e)}"
@@ -362,16 +493,14 @@ class StreamHandler:
             self.class_totals = {name: 0 for name in base_engine.class_names.values()}
             self.source_is_image = str(source).lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))
             self.monitor.start_session(model_type=model_type)
-            
-            # Launch Background Reader for Zero-Lag
-            src_val = int(source) if str(source).isdigit() else source
+
+            self._current_source = src_val
             self.reader = LiveReader(src_val)
-            
-            # Launch Inference Thread
+
             self.running = True
             self.inf_thread = threading.Thread(target=self._inference_loop, daemon=True)
             self.inf_thread.start()
-            
+
             logger.info(f"✅ Web App: Processing started ({self.mode_text})")
             return True, "Processing started."
 
@@ -379,7 +508,8 @@ class StreamHandler:
         with self.lock:
             if not self.running: return True, "Already stopped."
             self.running = False
-            
+            self._current_source = None
+
             inf_thread = self.inf_thread
             reader = self.reader
             engine = self.engine
@@ -409,8 +539,10 @@ class StreamHandler:
             except Exception as e:
                 logger.error(f"🔥 Error during cleanup: {e}")
 
-        threading.Thread(target=_cleanup, daemon=True).start()
-        return True, "Stopping session..."
+        cleanup_thread = threading.Thread(target=_cleanup, daemon=False)
+        cleanup_thread.start()
+        cleanup_thread.join(timeout=5.0)
+        return True, "Session stopped."
 
     def _inference_loop(self):
         """Inference thread: pulls frames, runs AI, pushes annotated JPEG.
@@ -429,81 +561,91 @@ class StreamHandler:
         logger.info("🎬 Inference Thread: Started")
         frame_count = 0
         consecutive_errors = 0
+        consecutive_drops = 0
 
-        while self.running:
-            with self.lock:
-                reader = self.reader
-                engine = self.engine
+        try:
+            while self.running:
+                with self.lock:
+                    reader = self.reader
+                    engine = self.engine
 
-            if not reader or not engine:
-                time.sleep(0.01)
-                continue
+                if not reader or not engine:
+                    time.sleep(0.01)
+                    continue
 
-            frame = reader.get_frame()
-            if frame is None:
-                self.monitor.track_frame_drop()
-                time.sleep(0.001)
-                continue
+                frame = reader.get_frame()
+                if frame is None:
+                    consecutive_drops += 1
+                    self.monitor.track_frame_drop()
+                    # Backoff on sustained drops: 1ms → 10ms → 50ms → 200ms cap
+                    drop_sleep = min(0.001 * (2 ** min(consecutive_drops, 8)), 0.2)
+                    time.sleep(drop_sleep)
+                    continue
+                consecutive_drops = 0
 
-            try:
-                _t_start = time.perf_counter()
-                annotated, detections, event = engine.process_frame(frame, self.class_totals)
-                _t_done = time.perf_counter()
+                try:
+                    # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz
+                    fh, fw = frame.shape[:2]
+                    if max(fh, fw) > self.web_imgsz:
+                        scale = self.web_imgsz / max(fh, fw)
+                        frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)))
 
-                stage_ms = dict(getattr(engine, 'last_timing', {}))
-                stage_ms['total_ms'] = (_t_done - _t_start) * 1000
-                self.monitor.track_frame(
-                    latency_ms=stage_ms['total_ms'],
-                    stage_ms=stage_ms,
-                    detections=detections,
-                )
-                self.monitor.notify_no_counts(self.class_totals)
+                    _t_start = time.perf_counter()
+                    annotated, detections, event = engine.process_frame(frame, self.class_totals)
+                    _t_done = time.perf_counter()
 
-                if event:
-                    ts = datetime.datetime.now().isoformat()
-                    with self.lock:
-                        self.last_detected = {"class": event['class'], "time": ts}
-                    self.publisher.publish(event['class'])
-                    self.monitor.track_udp_publish()
-                    self.monitor.track_crossing()
+                    stage_ms = dict(getattr(engine, 'last_timing', {}))
+                    stage_ms['total_ms'] = (_t_done - _t_start) * 1000
+                    self.monitor.track_frame(
+                        latency_ms=stage_ms['total_ms'],
+                        stage_ms=stage_ms,
+                        detections=detections,
+                    )
+                    self.monitor.notify_no_counts(self.class_totals)
 
-                annotated = self.draw_isi_ui(annotated, self.class_totals, self.mode_text)
+                    if event:
+                        ts = datetime.datetime.now().isoformat()
+                        with self.lock:
+                            self.last_detected = {"class": event['class'], "time": ts}
+                        self.publisher.publish(event['class'])
+                        self.monitor.track_udp_publish()
+                        self.monitor.track_crossing()
 
-                # Downsample for web throughput if needed
-                h, w = annotated.shape[:2]
-                if w > self.web_imgsz or h > self.web_imgsz:
-                    annotated = cv2.resize(annotated, (self.web_imgsz, self.web_imgsz))
+                    _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                    self.latest_annotated = buffer.tobytes()
+                    self.frame_ready.set()
 
-                # Quality 50 is much lighter for 30fps MJPEG
-                _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
-                self.latest_annotated = buffer.tobytes()
-                self.frame_ready.set()
+                    consecutive_errors = 0
+                    frame_count += 1
 
-                consecutive_errors = 0  # reset backoff on successful frame
-                frame_count += 1
+                    if frame_count % 9000 == 0:
+                        logger.info(f"💓 Inference heartbeat — frame {frame_count:,} | counts: {self.class_totals}")
+                        self.monitor.heartbeat()
 
-                # Heartbeat every ~5 min (at 30fps) so log confirms the thread is alive
-                if frame_count % 9000 == 0:
-                    logger.info(f"💓 Inference heartbeat — frame {frame_count:,} | counts: {self.class_totals}")
-                    self.monitor.heartbeat()
+                    # Periodic memory cleanup every ~60s
+                    if frame_count % 1800 == 0:
+                        import gc
+                        gc.collect()
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                        except ImportError:
+                            pass
 
-                # Periodic CUDA cache flush every ~60s — returns cached VRAM to the allocator
-                if frame_count % 1800 == 0:
-                    import torch, gc
-                    gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                except Exception as e:
+                    consecutive_errors += 1
+                    is_oom = 'out of memory' in str(e).lower()
+                    self.monitor.track_error(is_oom=is_oom)
+                    backoff = min(0.1 * (2 ** (consecutive_errors - 1)), 5.0)
+                    logger.error(f"Inference Loop Error (#{consecutive_errors}): {e} — retrying in {backoff:.1f}s")
+                    time.sleep(backoff)
 
-            except Exception as e:
-                consecutive_errors += 1
-                is_oom = 'out of memory' in str(e).lower()
-                self.monitor.track_error(is_oom=is_oom)
-                # Exponential backoff: 0.1s → 0.2s → 0.4s … capped at 5s
-                backoff = min(0.1 * (2 ** (consecutive_errors - 1)), 5.0)
-                logger.error(f"Inference Loop Error (#{consecutive_errors}): {e} — retrying in {backoff:.1f}s")
-                time.sleep(backoff)
-
-        logger.info("🛑 Inference Thread: Stopped")
+        except Exception as e:
+            logger.critical(f"🔥 Inference thread crashed: {e}", exc_info=True)
+            self.monitor.track_error(is_oom=False)
+        finally:
+            logger.info("🛑 Inference Thread: Stopped")
 
     def generate_frames(self):
         while True:

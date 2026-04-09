@@ -1,0 +1,68 @@
+services:
+  web:
+    build: .
+    image: isitec-visionai
+    ports:
+      - "9501:9501"
+      - "9502:9502/udp"
+    volumes:
+      - ./models:/opt/isitec/models
+      - ./runs:/opt/isitec/runs
+      - ./configs:/opt/isitec/configs
+      - ./isitec_app/logs:/opt/isitec/isitec_app/logs
+      - ./isitec_app/uploads:/opt/isitec/isitec_app/uploads
+      - ./isitec_app/settings.json:/opt/isitec/isitec_app/settings.json
+      - ./site:/opt/isitec/isitec_app/static/docs:ro
+      # X11 forwarding (for cv2.imshow inside container)
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /mnt/wslg:/mnt/wslg:ro
+    environment:
+      - DEV_PASSWORD=Isitec69+
+      - PORT=9501
+      - UDP_HOST=127.0.0.1
+      - UDP_PORT=9502
+      - CUDA_MODULE_LOADING=LAZY
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - XDG_RUNTIME_DIR=/mnt/wslg
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9501/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      rfdetr:
+        condition: service_healthy
+
+  rfdetr:
+    build:
+      context: .
+      dockerfile: Dockerfile.rfdetr
+    image: isitec-rfdetr
+    volumes:
+      - ./models:/opt/rfdetr/models
+      - ./configs:/opt/rfdetr/configs
+    environment:
+      - CUDA_MODULE_LOADING=LAZY
+      - PYTORCH_JIT=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9510/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5

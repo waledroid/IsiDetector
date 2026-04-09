@@ -319,4 +319,13 @@ class YOLOTrainer(BaseTrainer):
             export_path = self.model.export(format=format)
 
         logger.info(f"✅ Production Export complete: {export_path}")
+
+        # Auto-convert to all deployment formats (OpenVINO, TensorRT)
+        try:
+            from src.inference.export_engine import run_pipeline
+            logger.info("🔄 Running deployment format conversions ...")
+            run_pipeline(model_dir=Path(export_path).parent, formats={'openvino', 'tensorrt'})
+        except Exception as e:
+            logger.warning(f"⚠️ Auto-conversion skipped: {e}")
+
         return export_path

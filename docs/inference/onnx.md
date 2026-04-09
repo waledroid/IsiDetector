@@ -1,6 +1,6 @@
 # High-Speed ONNX Engine
 
-The `ONNXInferencer` is specifically designed for high-throughput industrial environments. It bypasses the overhead of heavy deep learning frameworks like PyTorch or Ultralytics during the inference phase, using **ONNX Runtime** for maximum CPU/GPU efficiency.
+The `OptimizedONNXInferencer` runs inference via **ONNX Runtime** with automatic GPU (CUDA) or CPU fallback. It supports both YOLO and RF-DETR models with full instance segmentation (bounding boxes + masks).
 
 ---
 
@@ -8,34 +8,48 @@ The `ONNXInferencer` is specifically designed for high-throughput industrial env
 
 :material-file-code: **Source**: `src/inference/onnx_inferencer.py`
 
-### 1. Vectorized Mask Decoding
-A major bottleneck in segmentation is decoding the model's Proto-masks into human-readable masks. While standard implementations use slow Python loops, our `ONNXInferencer` uses **NumPy Broadcasting** (Vectorization) to process all masks simultaneously.
+### 1. Instance Segmentation Masks
 
-Instead of:
+**YOLO masks** use a proto-mask architecture. The model outputs 32 mask prototype maps and per-detection coefficients. The engine decodes these via matrix multiplication:
+
 ```python
-# Slow way (Python Loop)
-for i in range(n):
-    mask = sigmoid(matrix_mult(protos, coeffs[i]))
+# [N, 32] @ [32, proto_h * proto_w] → [N, proto_h * proto_w]
+masks_raw = coeffs @ proto.reshape(32, -1)
+masks = sigmoid(masks_raw)  # Per-pixel probability
 ```
 
-We use:
+Each mask is cropped to its bounding box and resized to the original image dimensions.
+
+**RF-DETR masks** are per-detection predictions (108x108 each), resized and thresholded directly.
+
+### 2. Coordinate Space Handling
+
+The two model families output boxes in different formats:
+
+| Model | Format | Space | Conversion |
+|---|---|---|---|
+| **YOLO** (nms=True export) | `[x1, y1, x2, y2]` | Pixel (0-imgsz) | Scale by `orig / model` ratio |
+| **RF-DETR** | `[cx, cy, w, h]` | Normalized (0-1) | Convert center→corner, multiply by `orig_w/h` |
+
+### 3. Dynamic Input Scaling
+The engine reads the required input shape directly from the `.onnx` file metadata. This ensures compatibility with any model resolution (416, 512, 640, etc.) without code changes.
+
+### 4. GPU/CPU Auto-Detection
+
 ```python
-# Fast way (Vectorized)
-# Compute all masks in a single matrix operation
-masks = sigmoid(protos @ coeffs.T)
+if 'CUDAExecutionProvider' in ort.get_available_providers():
+    # Use GPU with optimized CUDA settings
+else:
+    # Fallback to CPU
 ```
 
-### 2. Dynamic Input Scaling
-Unlike hardcoded scripts, this engine dynamically extracts the required input shape directly from the `.onnx` file metadata. This ensures compatibility with any model resolution (e.g., 320x320, 640x640, or 1280x1280) without code changes.
-
-### 3. Automatic Class Mapping
-The engine automatically handles the differences between YOLO and RF-DETR output structures:
-- **YOLO**: Dynamically slices the score tensor based on the class count in your `train.yaml`.
-- **RF-DETR**: Automatically shifts class indices by +1 to align with Transformer-based COCO conventions.
+!!! warning "Conflict Detection"
+    If both `onnxruntime` and `onnxruntime-gpu` are installed, the CPU version may shadow the GPU version. The engine logs a warning with the fix: `pip uninstall onnxruntime -y && pip install onnxruntime-gpu`.
 
 ---
 
-## When to Use?
-- **Live Streams**: When processing 30 FPS RTSP feeds.
-- **Edge Devices**: When running on hardware with limited CPU power.
-- **Production**: This is our most stable and performant engine for long-term deployment.
+## When to Use
+
+- **GPU available**: Best balance of speed and compatibility
+- **CPU fallback**: Works but slower than [OpenVINO](openvino.md) on Intel CPUs
+- **Cross-platform**: ONNX runs on any hardware with onnxruntime installed

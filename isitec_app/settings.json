@@ -1,0 +1,8 @@
+{
+  "yolo_weights": "runs/segment/models/yolo/yolo26m_416_200/weights/best.pt",
+  "rfdetr_weights": "models/rfdetr/24-03-2026_0120/checkpoint_best_ema.pth",
+  "yolo_imgsz": 416,
+  "yolo_conf": 0.5,
+  "detr_imgsz": 416,
+  "detr_conf": 0.35
+}

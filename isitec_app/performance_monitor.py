@@ -69,6 +69,7 @@ class PerformanceMonitor:
         self._coverage  = deque(maxlen=200)  # mask/bbox area ratios
 
         # Per-session counters (reset by start_session)
+        self.belt_active       = True
         self.frame_drops       = 0
         self.error_count       = 0
         self.cuda_oom_count    = 0
@@ -79,6 +80,12 @@ class PerformanceMonitor:
         self.total_crossings   = 0
         self._last_heartbeat   = None
         self._no_count_since   = None   # timestamp when counts first stalled
+
+        # Baseline snapshot (captured at session start, before model load)
+        self._baseline_vram_mb:  float | None = None
+        self._baseline_ram_mb:   float | None = None
+        self._baseline_gpu_temp: int   | None = None
+        self._baseline_gpu_util: int   | None = None
 
         # pynvml
         self._nvml_handle = None
@@ -97,11 +104,28 @@ class PerformanceMonitor:
         except Exception:
             self._nvml_handle = None
 
+    @property
+    def has_gpu(self) -> bool:
+        """True if an NVIDIA GPU is available."""
+        if self._nvml_handle is not None:
+            return True
+        self._init_nvml()
+        return self._nvml_handle is not None
+
     def start_session(self, model_type: str = ''):
         """Reset all per-session counters. Call at the start of each stream."""
         with self.lock:
+            # Capture baseline resource usage before model loads
+            gpu = self._get_gpu()
+            ram = self._get_ram_usage()
+            self._baseline_vram_mb  = gpu['vram_used_mb']  if gpu else None
+            self._baseline_ram_mb   = ram['used_mb']       if ram else None
+            self._baseline_gpu_temp = gpu['gpu_temp_c']    if gpu else None
+            self._baseline_gpu_util = gpu['gpu_util_pct']  if gpu else None
+
             self.session_start    = time.time()
             self._model_type      = model_type
+            self.belt_active      = True
             self.frame_drops      = 0
             self.error_count      = 0
             self.cuda_oom_count   = 0
@@ -254,14 +278,12 @@ class PerformanceMonitor:
 
             # ── Detection Quality ────────────────────────────────────────────
             avg_conf     = self._avg(self._conf)
-            conf_std     = round(statistics.stdev(self._conf), 3) if len(self._conf) >= 2 else None
             low_conf_ct  = sum(1 for c in self._conf if c < 0.60)
             low_conf_r   = round(low_conf_ct / max(1, len(self._conf)), 3) if self._conf else None
             avg_det      = self._avg(self._det_count)
             avg_cov      = self._avg(self._coverage)
             detection = {
                 'avg_confidence':  round(avg_conf, 3)  if avg_conf  is not None else None,
-                'conf_std':        conf_std,
                 'low_conf_rate':   low_conf_r,
                 'avg_detections':  round(avg_det, 1)   if avg_det   is not None else None,
                 'mask_coverage':   round(avg_cov, 2)   if avg_cov   is not None else None,
@@ -282,15 +304,29 @@ class PerformanceMonitor:
             # ── Hardware ─────────────────────────────────────────────────────
             gpu   = self._get_gpu()
             ram   = self._get_ram_usage()
+            cpu   = self._get_cpu_info()
             hardware = {
+                'has_gpu':       gpu is not None,
+                # GPU fields (None if no GPU)
                 'vram_used_mb':  gpu['vram_used_mb']  if gpu else None,
                 'vram_total_mb': gpu['vram_total_mb'] if gpu else None,
                 'vram_pct':      gpu['vram_pct']      if gpu else None,
                 'gpu_util_pct':  gpu['gpu_util_pct']  if gpu else None,
                 'gpu_temp_c':    gpu['gpu_temp_c']    if gpu else None,
+                # CPU fields (always available)
+                'cpu_pct':       cpu['cpu_pct']       if cpu else None,
+                'cpu_freq_mhz':  cpu['cpu_freq_mhz']  if cpu else None,
+                'cpu_temp_c':    cpu['cpu_temp_c']    if cpu else None,
+                'cpu_cores':     cpu['cpu_cores']     if cpu else None,
+                # RAM
                 'ram_used_mb':   ram['used_mb']       if ram else None,
                 'ram_total_mb':  ram['total_mb']      if ram else None,
                 'ram_pct':       ram['pct']           if ram else None,
+                # Deltas from pre-inference baseline
+                'vram_delta_mb':    self._delta(gpu, 'vram_used_mb', self._baseline_vram_mb),
+                'ram_delta_mb':     self._delta(ram, 'used_mb',      self._baseline_ram_mb),
+                'temp_delta_c':     self._delta(gpu, 'gpu_temp_c',   self._baseline_gpu_temp),
+                'gpu_util_delta_pct': self._delta(gpu, 'gpu_util_pct', self._baseline_gpu_util),
             }
             hardware['status'] = self._status_hardware(hardware)
 
@@ -336,6 +372,11 @@ class PerformanceMonitor:
                 'avg_confidence': round(avg_conf, 3) if avg_conf else None,
                 'id_ratio':     round(total_ids / crossings, 2) if crossings > 0 else None,
                 'counts':       dict(class_totals),
+                'baseline': {
+                    'vram_mb':  self._baseline_vram_mb,
+                    'ram_mb':   self._baseline_ram_mb,
+                    'gpu_temp': self._baseline_gpu_temp,
+                },
             }
             sessions.insert(0, entry)
             sessions = sessions[:10]  # keep last 10 sessions
@@ -366,6 +407,16 @@ class PerformanceMonitor:
     @staticmethod
     def _avg(q) -> float | None:
         return statistics.mean(q) if q else None
+
+    @staticmethod
+    def _delta(current: dict | None, key: str, baseline: float | None):
+        """Return current − baseline, or None if either side is missing."""
+        if current is None or baseline is None:
+            return None
+        val = current.get(key)
+        if val is None:
+            return None
+        return round(val - baseline, 1)
 
     @staticmethod
     def _fmt_uptime(seconds: float) -> str:
@@ -402,9 +453,44 @@ class PerformanceMonitor:
             import psutil
             vm = psutil.virtual_memory()
             return {
-                'used_mb': round(vm.used / 1024**2, 1),
+                'used_mb': round((vm.total - vm.available) / 1024**2, 1),
                 'total_mb': round(vm.total / 1024**2, 1),
                 'pct': vm.percent
+            }
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_cpu_info() -> dict | None:
+        """CPU utilization, frequency, and temperature (Linux/Windows)."""
+        try:
+            import psutil
+            cpu_pct = psutil.cpu_percent(interval=None)
+            freq = psutil.cpu_freq()
+            cpu_freq_mhz = round(freq.current) if freq else None
+
+            # CPU temperature — Linux only via sensors
+            cpu_temp = None
+            if hasattr(psutil, 'sensors_temperatures'):
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    # Try common sensor names
+                    for key in ('coretemp', 'k10temp', 'cpu_thermal', 'cpu-thermal'):
+                        if key in temps and temps[key]:
+                            cpu_temp = round(temps[key][0].current, 1)
+                            break
+                    # Fallback: first available sensor
+                    if cpu_temp is None:
+                        for entries in temps.values():
+                            if entries:
+                                cpu_temp = round(entries[0].current, 1)
+                                break
+
+            return {
+                'cpu_pct': cpu_pct,
+                'cpu_freq_mhz': cpu_freq_mhz,
+                'cpu_temp_c': cpu_temp,
+                'cpu_cores': psutil.cpu_count(logical=True),
             }
         except Exception:
             return None
@@ -478,7 +564,15 @@ class PerformanceMonitor:
 
     def _status_hardware(self, d: dict) -> str:
         s = []
-        for key, (w, r) in [('vram_pct', (70, 85)), ('gpu_util_pct', (80, 90)), ('gpu_temp_c', (75, 85)), ('ram_pct', (85, 95))]:
+        thresholds = [
+            ('vram_pct',    (70, 85)),
+            ('gpu_util_pct',(80, 90)),
+            ('gpu_temp_c',  (75, 85)),
+            ('cpu_pct',     (80, 95)),
+            ('cpu_temp_c',  (75, 90)),
+            ('ram_pct',     (85, 95)),
+        ]
+        for key, (w, r) in thresholds:
             v = d.get(key)
             if v is None: continue
             if v > r:   s.append('red')
@@ -490,6 +584,8 @@ class PerformanceMonitor:
         if not is_running:
             return 'green'
         if not self.session_start:
+            return 'green'
+        if not getattr(self, 'belt_active', True):
             return 'green'
         elapsed = time.time() - self.session_start
         total = sum(class_totals.values()) if class_totals else 0

@@ -1,6 +1,6 @@
 # Inference Engines
 
-The inference layer mirrors the training layer's design — an abstract `BaseInferencer` defines the contract, and concrete implementations handle YOLO and RF-DETR specifics.
+The inference layer supports **five backends** — two native model loaders and three optimized runtime engines. All share the same `BaseInferencer` contract, so the web app and CLI dispatch by file extension.
 
 ---
 
@@ -12,29 +12,52 @@ classDiagram
         <<abstract>>
         +model_path: Path
         +conf_threshold: float
-        +model: Any
+        +device: str
+        +class_names: dict
+        +nc: int
         +_load_model()*
+        +predict_frame(frame) Detections
         +predict(source, show, save)*
         +get_summary(result)* dict
     }
 
     class YOLOInferencer {
-        +class_names: dict
-        +predict_frame(frame) Detections
-        +predict(source) Generator
-        +get_summary(result) dict
+        .pt weights
     }
-
     class RFDETRInferencer {
-        +class_names: dict
-        +predict_frame(frame) Detections
-        +predict(source) Generator
-        +get_summary(result) dict
+        .pth weights
+    }
+    class OptimizedONNXInferencer {
+        .onnx — GPU (CUDA) or CPU
+    }
+    class OpenVINOInferencer {
+        .xml — CPU (Intel optimized)
+    }
+    class TensorRTInferencer {
+        .engine — GPU (NVIDIA max speed)
     }
 
     BaseInferencer <|-- YOLOInferencer
     BaseInferencer <|-- RFDETRInferencer
+    BaseInferencer <|-- OptimizedONNXInferencer
+    BaseInferencer <|-- OpenVINOInferencer
+    BaseInferencer <|-- TensorRTInferencer
 ```
+
+## Dispatch by File Extension
+
+The web app and CLI automatically select the right engine:
+
+| Extension | Engine | Hardware | Source |
+|---|---|---|---|
+| `.pt` | `YOLOInferencer` | GPU or CPU | `yolo_inferencer.py` |
+| `.pth` | `RFDETRInferencer` | GPU or CPU | `rfdetr_inferencer.py` |
+| `.onnx` | `OptimizedONNXInferencer` | GPU (CUDA) or CPU | `onnx_inferencer.py` |
+| `.xml` | `OpenVINOInferencer` | CPU (Intel) | `openvino_inferencer.py` |
+| `.engine` | `TensorRTInferencer` | GPU only | `tensorrt_inferencer.py` |
+
+!!! note
+    On CPU-only machines, `.engine` files are **rejected** with a clear error. Use `.xml` (OpenVINO) for best CPU performance.
 
 ---
 

@@ -2,8 +2,10 @@ import sys
 import os
 import signal
 import socket
+import secrets
+import json
 import werkzeug.utils
-from flask import Flask, render_template, Response, request, jsonify
+from flask import Flask, render_template, Response, request, jsonify, send_from_directory
 import csv
 import datetime
 
@@ -16,10 +18,41 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB upload cap
 stream_handler = StreamHandler()
 
+# ── Dev-mode authentication ──────────────────────────────────────────────────
+DEV_PASSWORD = os.environ.get('DEV_PASSWORD', 'Isitec69+')
+_dev_tokens: set[str] = set()
+
+def _check_dev() -> bool:
+    """Return True if the request carries a valid dev token."""
+    token = request.headers.get('X-Dev-Token', '')
+    return token in _dev_tokens
+
+# ── Settings persistence ─────────────────────────────────────────────────────
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
+
+def _load_settings() -> dict:
+    try:
+        if os.path.exists(SETTINGS_PATH):
+            with open(SETTINGS_PATH) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_settings(data: dict):
+    with open(SETTINGS_PATH, 'w') as f:
+        json.dump(data, f, indent=2)
+
 def _shutdown(signum, frame):
     """Graceful shutdown on SIGTERM (docker stop) — saves CSV, closes UDP socket."""
-    stream_handler.stop()
-    stream_handler.publisher.close()
+    try:
+        stream_handler.stop()
+    except Exception as e:
+        print(f"Shutdown: stop() error: {e}")
+    try:
+        stream_handler.publisher.close()
+    except Exception as e:
+        print(f"Shutdown: publisher.close() error: {e}")
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, _shutdown)
@@ -28,6 +61,12 @@ signal.signal(signal.SIGINT, _shutdown)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/docs')
+@app.route('/docs/<path:path>')
+def serve_docs(path='index.html'):
+    docs_dir = os.path.join(os.path.dirname(__file__), 'static', 'docs')
+    return send_from_directory(docs_dir, path)
 
 @app.route('/video_feed')
 def video_feed():
@@ -81,8 +120,46 @@ def set_language():
 def get_stats():
     return jsonify(stream_handler.get_stats())
 
+@app.route('/api/dev-auth', methods=['POST'])
+def dev_auth():
+    password = (request.json or {}).get('password', '')
+    if password == DEV_PASSWORD:
+        token = secrets.token_hex(16)
+        _dev_tokens.add(token)
+        return jsonify({"status": "success", "token": token})
+    return jsonify({"status": "error", "message": "Invalid password"}), 403
+
+@app.route('/api/dev-check', methods=['GET'])
+def dev_check():
+    if _check_dev():
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 403
+
+@app.route('/api/dev-logout', methods=['POST'])
+def dev_logout():
+    token = request.headers.get('X-Dev-Token', '')
+    _dev_tokens.discard(token)
+    return jsonify({"status": "success"})
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def settings():
+    if request.method == 'GET':
+        return jsonify({"status": "success", "settings": _load_settings()})
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+    data = request.json or {}
+    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf')
+    current = _load_settings()
+    for k in allowed_keys:
+        if k in data:
+            current[k] = data[k]
+    _save_settings(current)
+    return jsonify({"status": "success", "settings": current})
+
 @app.route('/api/performance', methods=['GET'])
 def get_performance():
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
     return jsonify(stream_handler.get_performance())
 
 @app.route('/api/chart', methods=['GET'])
@@ -146,43 +223,64 @@ def get_models():
     project_root = os.path.dirname(os.path.dirname(__file__))
     yolo_models = []
     rfdetr_models = []
-    
+
     # Directories to scan
     scan_dirs = [project_root, os.path.join(project_root, 'models'), os.path.join(project_root, 'runs')]
     scanned_paths = set()
-    
+
+    all_exts = ('.pt', '.pth', '.onnx', '.xml', '.engine')
+
     for directory in scan_dirs:
         if not os.path.exists(directory) or not os.path.isdir(directory):
             continue
         for root_dir, _, files in os.walk(directory):
-            # Skip irrelevant large dirs to ensure speed
             if '.git' in root_dir or '__pycache__' in root_dir or 'node_modules' in root_dir:
                 continue
             for file in files:
-                if file.endswith('.pt') or file.endswith('.pth') or file.endswith('.onnx'):
-                    abs_path = os.path.join(root_dir, file)
-                    if abs_path in scanned_paths:
-                        continue
-                    scanned_paths.add(abs_path)
-                    
-                    # Store path relative to project root for cleaner display
-                    try:
-                        rel_path = os.path.relpath(abs_path, project_root)
-                    except ValueError:
-                        rel_path = abs_path
-                        
-                    entry = {"name": file, "path": rel_path}
-                    
-                    # YOLO typically uses .pt, RF-DETR uses .pth or .onnx
-                    if file.endswith('.pt'):
-                        yolo_models.append(entry)
-                    elif file.endswith('.pth') or file.endswith('.onnx'):
+                if not file.endswith(all_exts):
+                    continue
+                abs_path = os.path.join(root_dir, file)
+                if abs_path in scanned_paths:
+                    continue
+                scanned_paths.add(abs_path)
+
+                try:
+                    rel_path = os.path.relpath(abs_path, project_root)
+                except ValueError:
+                    rel_path = abs_path
+
+                entry = {"name": file, "path": rel_path}
+
+                # Skip non-model XML files (e.g. sitemap.xml)
+                if file.endswith('.xml') and 'openvino' not in root_dir.lower():
+                    continue
+
+                # Classify by directory path + filename context
+                path_lower = rel_path.lower()
+                name_lower = file.lower()
+                is_rfdetr = 'rfdetr' in path_lower or 'detr' in path_lower or 'rf-detr' in name_lower
+                is_yolo = 'yolo' in path_lower
+
+                if file.endswith('.pth'):
+                    rfdetr_models.append(entry)
+                elif file.endswith('.pt'):
+                    # .pt files with "detr" in name are RF-DETR pretrained weights
+                    if is_rfdetr:
                         rfdetr_models.append(entry)
-                        
-    # Sort alphabetically by filename
+                    else:
+                        yolo_models.append(entry)
+                elif is_rfdetr:
+                    rfdetr_models.append(entry)
+                elif is_yolo:
+                    yolo_models.append(entry)
+                else:
+                    # Unknown context — add to both so user can choose
+                    yolo_models.append(entry)
+                    rfdetr_models.append(entry)
+
     yolo_models = sorted(yolo_models, key=lambda x: x["name"])
     rfdetr_models = sorted(rfdetr_models, key=lambda x: x["name"])
-    
+
     return jsonify({
         "status": "success",
         "yolo_models": yolo_models,
@@ -191,6 +289,8 @@ def get_models():
 
 @app.route('/api/udp', methods=['GET', 'POST'])
 def udp_target():
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
     if request.method == 'GET':
         return jsonify(stream_handler.get_udp_target())
     data = request.json or {}
@@ -208,6 +308,19 @@ def udp_target():
     stream_handler.set_udp_target(host, port)
     return jsonify({"status": "success", "host": host, "port": port})
 
+@app.route('/api/belt_status', methods=['POST'])
+def set_belt_status():
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+    data = request.json or {}
+    status = data.get('status')
+    if status not in ('active', 'paused'):
+        return jsonify({"status": "error", "message": "status must be 'active' or 'paused'"}), 400
+    
+    belt_active = (status == 'active')
+    stream_handler.set_belt_status(belt_active)
+    return jsonify({"status": "success", "belt_active": belt_active})
+
 @app.route('/api/stop', methods=['POST'])
 def stop_stream():
     success, msg = stream_handler.stop()
@@ -216,12 +329,11 @@ def stop_stream():
     return jsonify({"status": "error", "message": msg}), 400
 
 if __name__ == '__main__':
-    # Using 0.0.0.0 to allow access from any IP, useful when containerized.
-    # debug=False ensures the app is more stable and won't restart on background errors.
+    port = int(os.environ.get('PORT', 9501))
     try:
-        print("🚀 Starting Flask Server on http://0.0.0.0:9501")
-        app.run(host='0.0.0.0', port=9501, debug=False, threaded=True)
+        print(f"Starting Flask Server on http://0.0.0.0:{port}")
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
     except Exception as e:
-        print(f"🔥 Flask Critical Error: {e}")
+        print(f"Flask Critical Error: {e}")
     finally:
-        print("💀 Flask Process Exiting...")
+        print("Flask Process Exiting...")

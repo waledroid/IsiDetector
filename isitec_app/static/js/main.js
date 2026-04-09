@@ -168,6 +168,71 @@ document.addEventListener('DOMContentLoaded', () => {
     btnEn.addEventListener('click', () => setLanguage('en'));
     btnFr.addEventListener('click', () => setLanguage('fr'));
 
+    // ── Dev-mode authentication ────────────────────────────────────────────
+    const devModal  = document.getElementById('devModal');
+    const devPassIn = document.getElementById('devPassword');
+    const devError  = document.getElementById('devError');
+
+    function devToken() { return sessionStorage.getItem('dev_token') || ''; }
+    function devHeaders() { return devToken() ? { 'X-Dev-Token': devToken() } : {}; }
+
+    function unlockDevUI() {
+        document.querySelectorAll('.dev-only').forEach(el => el.style.display = '');
+    }
+    function lockDevUI() {
+        sessionStorage.removeItem('dev_token');
+        document.querySelectorAll('.dev-only').forEach(el => el.style.display = 'none');
+        const activePanel = document.querySelector('.panel.active');
+        if (activePanel && (activePanel.id === 'section-performance' || activePanel.id === 'section-settings')) {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelector('[data-target="section-live"]').classList.add('active');
+            document.getElementById('section-live').classList.add('active');
+        }
+    }
+
+    // Double-click logo to open modal
+    document.querySelector('.header-logo').addEventListener('dblclick', () => {
+        if (devToken()) { lockDevUI(); return; }
+        devPassIn.value = '';
+        devError.style.display = 'none';
+        devModal.style.display = 'flex';
+        devPassIn.focus();
+    });
+
+    // Enter → submit, Escape → cancel
+    devPassIn.addEventListener('keydown', async (e) => {
+        if (e.key === 'Escape') { devModal.style.display = 'none'; return; }
+        if (e.key !== 'Enter') return;
+        try {
+            const res = await fetch('/api/dev-auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: devPassIn.value })
+            });
+            const d = await res.json();
+            if (res.ok && d.token) {
+                sessionStorage.setItem('dev_token', d.token);
+                unlockDevUI();
+                devModal.style.display = 'none';
+            } else {
+                devError.style.display = 'block';
+            }
+        } catch (e) {
+            devError.style.display = 'block';
+        }
+    });
+
+    // Close modal on overlay click
+    devModal.addEventListener('click', (e) => { if (e.target === devModal) devModal.style.display = 'none'; });
+
+    // On page load: re-validate existing token
+    if (devToken()) {
+        fetch('/api/dev-check', { headers: devHeaders() })
+            .then(r => { if (r.ok) unlockDevUI(); else lockDevUI(); })
+            .catch(() => lockDevUI());
+    }
+
     // --- Navigation Panel Switcher ---
     const navBtns = document.querySelectorAll('.nav-btn');
     const panels = document.querySelectorAll('.panel');
@@ -562,7 +627,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const analyticsVisible = document.getElementById('section-analytics')?.classList.contains('active');
         if (!perfVisible && !analyticsVisible) return;
         try {
-            const res = await fetch('/api/performance');
+            const res = await fetch('/api/performance', { headers: devHeaders() });
+            if (res.status === 403) return;  // not authenticated — skip silently
             const d = await res.json();
 
             // Show/hide empty-state banner
@@ -618,62 +684,76 @@ document.addEventListener('DOMContentLoaded', () => {
              + pmRow('Heartbeat',    d.heartbeat_age_s != null ? fmt(d.heartbeat_age_s, 's', 0) : '<span class="pm-na">—</span>');
     }
 
+    function deltaTag(val, unit, invert) {
+        // invert=true means negative is bad (e.g. FPS drop) — not used here
+        if (val == null) return '';
+        const sign = val >= 0 ? '+' : '';
+        const cls  = val > 0 ? 'delta-up' : val < 0 ? 'delta-down' : '';
+        return `<span class="pm-delta ${cls}">${sign}${Math.round(val)}${unit}</span>`;
+    }
+
+    function buildProgressBar(label, pct, valueHtml, thresholds) {
+        const [warnAt, critAt] = thresholds || [80, 90];
+        const barClass = pct > critAt ? 'bar-red' : pct > warnAt ? 'bar-yellow' : 'bar-green';
+        return `<div class="pm-row" style="flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; width:100%;">
+                <span class="pm-label">${label}</span>
+                <span class="pm-value">${valueHtml}</span>
+            </div>
+            <div class="pm-bar-wrap">
+                <div class="pm-bar-track"><div class="pm-bar-fill ${barClass}" style="width:${pct}%"></div></div>
+                <span class="pm-bar-label">${pct}%</span>
+            </div>
+        </div>`;
+    }
+
     function buildHardwareRows(d) {
         let html = '';
-        // VRAM progress bar
-        if (d.vram_used_mb != null && d.vram_total_mb != null) {
-            const pct = Math.round(d.vram_pct || 0);
-            const barClass = pct > 85 ? 'bar-red' : pct > 70 ? 'bar-yellow' : 'bar-green';
-            html += `<div class="pm-row" style="flex-direction:column; gap:4px;">
-                <div style="display:flex; justify-content:space-between; width:100%;">
-                    <span class="pm-label">VRAM</span>
-                    <span class="pm-value">${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(1)} GB</span>
-                </div>
-                <div class="pm-bar-wrap">
-                    <div class="pm-bar-track"><div class="pm-bar-fill ${barClass}" style="width:${pct}%"></div></div>
-                    <span class="pm-bar-label">${pct}%</span>
-                </div>
-            </div>`;
+
+        if (d.has_gpu) {
+            // ── GPU mode ────────────────────────────────────────────────
+            if (d.vram_used_mb != null && d.vram_total_mb != null) {
+                const pct = Math.round(d.vram_pct || 0);
+                const delta = d.vram_delta_mb != null ? deltaTag(d.vram_delta_mb / 1024, ' GB', false) : '';
+                html += buildProgressBar('VRAM',
+                    pct, `${(d.vram_used_mb/1024).toFixed(1)} / ${(d.vram_total_mb/1024).toFixed(1)} GB${delta}`,
+                    [70, 85]);
+            }
+            if (d.gpu_util_pct != null) {
+                const pct = Math.round(d.gpu_util_pct);
+                const delta = deltaTag(d.gpu_util_delta_pct, '%', false);
+                html += buildProgressBar('GPU Util', pct, `${pct}%${delta}`, [80, 90]);
+            }
+            const tempVal = d.gpu_temp_c != null
+                ? fmt(d.gpu_temp_c, '°C', 0) + deltaTag(d.temp_delta_c, '°C', false)
+                : '<span class="pm-na">—</span>';
+            html += pmRow('GPU Temp', tempVal);
         } else {
-            html += pmRow('VRAM', '<span class="pm-na">—</span>');
+            // ── CPU-only mode ───────────────────────────────────────────
+            if (d.cpu_pct != null) {
+                const pct = Math.round(d.cpu_pct);
+                html += buildProgressBar('CPU Util', pct, `${pct}%`, [80, 95]);
+            }
+            if (d.cpu_freq_mhz != null) {
+                html += pmRow('CPU Freq', fmt(d.cpu_freq_mhz, ' MHz', 0));
+            }
+            if (d.cpu_cores != null) {
+                html += pmRow('CPU Cores', fmt(d.cpu_cores, '', 0));
+            }
+            html += pmRow('CPU Temp', d.cpu_temp_c != null ? fmt(d.cpu_temp_c, '°C', 0) : '<span class="pm-na">—</span>');
         }
-        // GPU Util progress bar
-        if (d.gpu_util_pct != null) {
-            const pct = Math.round(d.gpu_util_pct);
-            const barClass = pct > 90 ? 'bar-red' : pct > 80 ? 'bar-yellow' : 'bar-green';
-            html += `<div class="pm-row" style="flex-direction:column; gap:4px;">
-                <div style="display:flex; justify-content:space-between; width:100%;">
-                    <span class="pm-label">GPU Util</span>
-                    <span class="pm-value">${pct}%</span>
-                </div>
-                <div class="pm-bar-wrap">
-                    <div class="pm-bar-track"><div class="pm-bar-fill ${barClass}" style="width:${pct}%"></div></div>
-                    <span class="pm-bar-label">${pct}%</span>
-                </div>
-            </div>`;
-        } else {
-            html += pmRow('GPU Util', '<span class="pm-na">—</span>');
-        }
-        html += pmRow('GPU Temp', d.gpu_temp_c != null ? fmt(d.gpu_temp_c, '°C', 0) : '<span class="pm-na">—</span>');
-        
-        // RAM progress bar
+
+        // RAM — always shown
         if (d.ram_used_mb != null && d.ram_total_mb != null) {
             const pct = Math.round(d.ram_pct || 0);
-            const barClass = pct > 90 ? 'bar-red' : pct > 80 ? 'bar-yellow' : 'bar-green';
-            html += `<div class="pm-row" style="flex-direction:column; gap:4px;">
-                <div style="display:flex; justify-content:space-between; width:100%;">
-                    <span class="pm-label">System RAM</span>
-                    <span class="pm-value">${(d.ram_used_mb/1024).toFixed(1)} / ${(d.ram_total_mb/1024).toFixed(1)} GB</span>
-                </div>
-                <div class="pm-bar-wrap">
-                    <div class="pm-bar-track"><div class="pm-bar-fill ${barClass}" style="width:${pct}%"></div></div>
-                    <span class="pm-bar-label">${pct}%</span>
-                </div>
-            </div>`;
+            const delta = d.ram_delta_mb != null ? deltaTag(d.ram_delta_mb / 1024, ' GB', false) : '';
+            html += buildProgressBar('System RAM', pct,
+                `${(d.ram_used_mb/1024).toFixed(1)} / ${(d.ram_total_mb/1024).toFixed(1)} GB${delta}`,
+                [85, 95]);
         } else {
             html += pmRow('System RAM', '<span class="pm-na">—</span>');
         }
-        
+
         return html;
     }
 
@@ -687,7 +767,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildDetectionRows(d) {
         return pmRow('Avg Confidence', fmt(d.avg_confidence, '', 2))
-             + pmRow('Conf σ',         fmt(d.conf_std, '', 3))
              + pmRow('Low-Conf Rate',  d.low_conf_rate != null ? (d.low_conf_rate * 100).toFixed(1) + '%' : '<span class="pm-na">—</span>')
              + pmRow('Dets / Frame',   fmt(d.avg_detections, '', 1))
              + pmRow('Mask Coverage',  fmt(d.mask_coverage, '', 2));
@@ -735,7 +814,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Fetch sessions for Analytics tab ─────────────────────────────────────
     async function fetchSessionsForAnalytics() {
         try {
-            const res = await fetch('/api/performance');
+            const res = await fetch('/api/performance', { headers: devHeaders() });
+            if (res.status === 403) return;
             const d = await res.json();
             updateSessionsTable(d.sessions);
         } catch (e) {
@@ -759,31 +839,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function applySliderValue(id, val) {
+        const slider = document.getElementById(`set_${id}`);
+        const valSpan = document.getElementById(`val_${id}`);
+        if (slider && valSpan && val != null) {
+            slider.value = val;
+            valSpan.textContent = id.includes('imgsz') ? `${val}px` : parseFloat(val).toFixed(2);
+        }
+    }
+
     async function loadSettings() {
-        // Load sliders from localStorage
+        // 1. Fetch server-side settings (source of truth)
+        let serverSettings = {};
+        try {
+            const sRes = await fetch('/api/settings');
+            const sData = await sRes.json();
+            if (sData.status === 'success') serverSettings = sData.settings || {};
+        } catch (e) { console.warn('Could not load server settings', e); }
+
+        // 2. Apply sliders: server → localStorage fallback
         ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
-            const saved = localStorage.getItem(`isitec_${id}`);
-            if (saved) {
-                const slider = document.getElementById(`set_${id}`);
-                const valSpan = document.getElementById(`val_${id}`);
-                if (slider && valSpan) {
-                    slider.value = saved;
-                    valSpan.textContent = id.includes('imgsz') ? `${saved}px` : parseFloat(saved).toFixed(2);
-                }
-            }
+            const val = serverSettings[id] || localStorage.getItem(`isitec_${id}`);
+            if (val != null) applySliderValue(id, val);
         });
 
-        // Fetch models from API
+        // 3. Fetch model list and populate dropdowns
         try {
             const res = await fetch('/api/models');
             const data = await res.json();
             if (data.status === 'success') {
                 const yoloSelect = document.getElementById('set_yolo_weights');
                 const detrSelect = document.getElementById('set_detr_weights');
-                
-                // Clear loading options
-                yoloSelect.innerHTML = '<option value="">Default weights</option>';
-                detrSelect.innerHTML = '<option value="">Default weights</option>';
+
+                yoloSelect.innerHTML = '<option value="">Auto-detect</option>';
+                detrSelect.innerHTML = '<option value="">Auto-detect</option>';
 
                 data.yolo_models.forEach(m => {
                     yoloSelect.innerHTML += `<option value="${m.path}">${m.name} (${m.path})</option>`;
@@ -792,11 +881,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     detrSelect.innerHTML += `<option value="${m.path}">${m.name} (${m.path})</option>`;
                 });
 
-                // Restore saved selection
-                const savedYolo = localStorage.getItem('isitec_yolo_weights');
+                // Restore: server settings → localStorage fallback
+                const savedYolo = serverSettings.yolo_weights || localStorage.getItem('isitec_yolo_weights');
                 if (savedYolo) yoloSelect.value = savedYolo;
-                
-                const savedDetr = localStorage.getItem('isitec_detr_weights');
+
+                const savedDetr = serverSettings.rfdetr_weights || localStorage.getItem('isitec_detr_weights');
                 if (savedDetr) detrSelect.value = savedDetr;
             }
         } catch (e) {
@@ -806,17 +895,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnSaveSettings = document.getElementById('btnSaveSettings');
     if (btnSaveSettings) {
-        btnSaveSettings.addEventListener('click', () => {
-            // Save Selects
-            localStorage.setItem('isitec_yolo_weights', document.getElementById('set_yolo_weights').value);
-            localStorage.setItem('isitec_detr_weights', document.getElementById('set_detr_weights').value);
-            
-            // Save Sliders
+        btnSaveSettings.addEventListener('click', async () => {
+            const settings = {
+                yolo_weights:  document.getElementById('set_yolo_weights').value,
+                rfdetr_weights: document.getElementById('set_detr_weights').value,
+                yolo_imgsz:    parseInt(document.getElementById('set_yolo_imgsz').value),
+                yolo_conf:     parseFloat(document.getElementById('set_yolo_conf').value),
+                detr_imgsz:    parseInt(document.getElementById('set_detr_imgsz').value),
+                detr_conf:     parseFloat(document.getElementById('set_detr_conf').value),
+            };
+
+            // Save to localStorage (immediate cache)
+            localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
+            localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights);
             ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
-                localStorage.setItem(`isitec_${id}`, document.getElementById(`set_${id}`).value);
+                localStorage.setItem(`isitec_${id}`, settings[id]);
             });
 
-            // Show confirmation
+            // Save to server (persistent)
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                    body: JSON.stringify(settings)
+                });
+            } catch (e) { console.warn('Server settings save failed', e); }
+
             const confirmMsg = document.getElementById('saveConfirm');
             confirmMsg.classList.remove('hidden');
             setTimeout(() => confirmMsg.classList.add('hidden'), 3000);
