@@ -61,7 +61,37 @@ Supported locales include:
 
 Operators can switch between model backends mid-stream without losing session data. Clicking "Start" in the UI with a different weight file while a stream is already running triggers a hot-swap path (`StreamHandler.start() → can_hot_swap` branch).
 
-What persists across the swap:
+### Accepted weight formats
+
+The hot-swap route accepts five weight formats. `StreamHandler._build_engine()` dispatches by file extension — no config flag needed:
+
+| Extension | Backend | Device | Used when |
+|---|---|---|---|
+| `.pt` | **Ultralytics YOLO** (PyTorch) | CUDA if available, else CPU | You have the native YOLO checkpoint from training |
+| `.pth` | **RF-DETR** (PyTorch, via the `rfdetr` library) | CUDA required | Native RF-DETR checkpoint. In Docker this routes to the `rfdetr` sidecar over HTTP (`http://rfdetr:9510`); bare-metal uses the local `RFDETRInferencer` |
+| `.onnx` | **ONNX Runtime** | CUDA if available, else CPU | Portable cross-framework export. Works for both YOLO and RF-DETR — the engine auto-detects the family from the graph (see [ONNX Engine](../inference/onnx.md)) |
+| `.xml` | **OpenVINO** | Intel CPU | Fastest CPU backend on Intel hardware. Requires the companion `.bin` file alongside the `.xml` |
+| `.engine` | **TensorRT** | NVIDIA GPU only (rejects with a clear error on CPU-only hosts) | Production-grade GPU inference, typically 1.5–3× faster than ONNX-CUDA. Static-shape only — recompile per input size |
+
+The resulting `mode_text` displayed in the UI footer reflects the chosen backend and device:
+
+- `YOLO • GPU`, `YOLO • CPU`
+- `RF-DETR • GPU`, `RF-DETR Remote • GPU` (via sidecar)
+- `ONNX • GPU`, `ONNX • CPU`
+- `OpenVINO • CPU`
+- `TensorRT • GPU`
+
+### Auto-discovery
+
+If the UI sends `weights: null`, the backend falls back to `_resolve_default_weights(model_type)` — which reads `isitec_app/settings.json` for a user-chosen default (`yolo_weights` / `rfdetr_weights`), and if empty, auto-discovers the newest weight file under `models/yolo/` or `models/rfdetr/` respecting a per-device extension priority list:
+
+- GPU + YOLO: prefer `.pt` → `.onnx` → `.xml`
+- GPU + RF-DETR: prefer `.pth` → `.onnx` → `.xml`
+- CPU: prefer `.xml` → `.onnx` → `.pth` → `.pt`
+
+So an operator without credentials can click "Start" and the backend picks the fastest weight format available on the current hardware.
+
+### State preserved across the swap
 
 | State | Behaviour |
 |---|---|
