@@ -138,7 +138,7 @@
                         <button id="btnStart" class="btn btn-primary"
                             style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
                             <i class="material-icons" style="font-size: 24px;">play_arrow</i> <span
-                                data-i18n="start_tracking">Start Tracking</span>
+                                data-i18n="start_tracking">Start</span>
                         </button>
                         <button id="btnStop" class="btn btn-danger"
                             style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -300,6 +300,36 @@
                                 <input type="range" id="set_detr_conf" min="0.1" max="0.95" step="0.05" value="0.35">
                                 <span class="slider-val" id="val_detr_conf">0.35</span>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TRACKING LINE CONFIG -->
+                <div class="settings-group" style="grid-column: 1 / -1;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#607d8b;">LINE</span>
+                        <h3>Tracking Line</h3>
+                    </div>
+                    <div class="sg-body">
+                        <label>Orientation</label>
+                        <div class="line-btn-group">
+                            <button class="line-btn active" id="btnLineVertical" title="Vertical line (left-right counting)">
+                                <i class="material-icons">swap_horiz</i> Vertical
+                            </button>
+                            <button class="line-btn" id="btnLineHorizontal" title="Horizontal line (top-bottom counting)">
+                                <i class="material-icons">swap_vert</i> Horizontal
+                            </button>
+                        </div>
+
+                        <label>Position (<span id="linePositionVal">65</span>%)</label>
+                        <div class="line-btn-group">
+                            <button class="line-btn" id="btnLineBack" title="Move line back (-5%)">
+                                <i class="material-icons">arrow_back</i> Back
+                            </button>
+                            <input type="range" id="linePositionSlider" min="10" max="90" step="5" value="65" style="flex:1;">
+                            <button class="line-btn" id="btnLineForward" title="Move line forward (+5%)">
+                                <i class="material-icons">arrow_forward</i> Forward
+                            </button>
                         </div>
                     </div>
                 </div>

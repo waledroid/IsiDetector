@@ -13,10 +13,10 @@
       
       
       
-        <link rel="prev" href="../">
+        <link rel="prev" href="../export/">
       
       
-        <link rel="next" href="../../preprocessing/">
+        <link rel="next" href="../openvino/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>High-Speed ONNX - IsiDetector</title>
+        <title>ONNX Engine - IsiDetector</title>
       
     
     
@@ -52,6 +52,8 @@
         <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
       
     
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
       <link rel="stylesheet" href="../../stylesheets/extra.css">
     
@@ -116,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              High-Speed ONNX
+              ONNX Engine
             
           </span>
         </div>
@@ -896,6 +898,8 @@
       
         
       
+        
+      
     
     
     
@@ -1052,6 +1056,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1108,6 +1118,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1127,7 +1165,7 @@
   <span class="md-ellipsis">
     
   
-    High-Speed ONNX
+    ONNX Engine
   
 
     
@@ -1145,7 +1183,7 @@
   <span class="md-ellipsis">
     
   
-    High-Speed ONNX
+    ONNX Engine
   
 
     
@@ -1183,10 +1221,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-vectorized-mask-decoding" class="md-nav__link">
+  <a href="#1-instance-segmentation-masks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Vectorized Mask Decoding
+        1. Instance Segmentation Masks
       
     </span>
   </a>
@@ -1194,10 +1232,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-dynamic-input-scaling" class="md-nav__link">
+  <a href="#2-coordinate-space-handling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Dynamic Input Scaling
+        2. Coordinate Space Handling
       
     </span>
   </a>
@@ -1205,10 +1243,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-automatic-class-mapping" class="md-nav__link">
+  <a href="#3-dynamic-input-scaling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Automatic Class Mapping
+        3. Dynamic Input Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-gpucpu-auto-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. GPU/CPU Auto-Detection
       
     </span>
   </a>
@@ -1224,7 +1273,7 @@
   <a href="#when-to-use" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When to Use?
+        When to Use
       
     </span>
   </a>
@@ -1240,9 +1289,93 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openvino/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenVINO Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tensorrt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TensorRT Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modules/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance Monitor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1349,10 +1482,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-vectorized-mask-decoding" class="md-nav__link">
+  <a href="#1-instance-segmentation-masks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Vectorized Mask Decoding
+        1. Instance Segmentation Masks
       
     </span>
   </a>
@@ -1360,10 +1493,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-dynamic-input-scaling" class="md-nav__link">
+  <a href="#2-coordinate-space-handling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Dynamic Input Scaling
+        2. Coordinate Space Handling
       
     </span>
   </a>
@@ -1371,10 +1504,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-automatic-class-mapping" class="md-nav__link">
+  <a href="#3-dynamic-input-scaling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Automatic Class Mapping
+        3. Dynamic Input Scaling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-gpucpu-auto-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. GPU/CPU Auto-Detection
       
     </span>
   </a>
@@ -1390,7 +1534,7 @@
   <a href="#when-to-use" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When to Use?
+        When to Use
       
     </span>
   </a>
@@ -1418,34 +1562,62 @@
 
 
 <h1 id="high-speed-onnx-engine">High-Speed ONNX Engine<a class="headerlink" href="#high-speed-onnx-engine" title="Permanent link">&para;</a></h1>
-<p>The <code>ONNXInferencer</code> is specifically designed for high-throughput industrial environments. It bypasses the overhead of heavy deep learning frameworks like PyTorch or Ultralytics during the inference phase, using <strong>ONNX Runtime</strong> for maximum CPU/GPU efficiency.</p>
+<p>The <code>OptimizedONNXInferencer</code> runs inference via <strong>ONNX Runtime</strong> with automatic GPU (CUDA) or CPU fallback. It supports both YOLO and RF-DETR models with full instance segmentation (bounding boxes + masks).</p>
 <hr />
 <h2 id="technical-overview">Technical Overview<a class="headerlink" href="#technical-overview" title="Permanent link">&para;</a></h2>
 <p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg></span> <strong>Source</strong>: <code>src/inference/onnx_inferencer.py</code></p>
-<h3 id="1-vectorized-mask-decoding">1. Vectorized Mask Decoding<a class="headerlink" href="#1-vectorized-mask-decoding" title="Permanent link">&para;</a></h3>
-<p>A major bottleneck in segmentation is decoding the model's Proto-masks into human-readable masks. While standard implementations use slow Python loops, our <code>ONNXInferencer</code> uses <strong>NumPy Broadcasting</strong> (Vectorization) to process all masks simultaneously.</p>
-<p>Instead of:
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Slow way (Python Loop)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">mask</span> <span class="o">=</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">matrix_mult</span><span class="p">(</span><span class="n">protos</span><span class="p">,</span> <span class="n">coeffs</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
-</span></code></pre></div></p>
-<p>We use:
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Fast way (Vectorized)</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Compute all masks in a single matrix operation</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">masks</span> <span class="o">=</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">protos</span> <span class="o">@</span> <span class="n">coeffs</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
-</span></code></pre></div></p>
-<h3 id="2-dynamic-input-scaling">2. Dynamic Input Scaling<a class="headerlink" href="#2-dynamic-input-scaling" title="Permanent link">&para;</a></h3>
-<p>Unlike hardcoded scripts, this engine dynamically extracts the required input shape directly from the <code>.onnx</code> file metadata. This ensures compatibility with any model resolution (e.g., 320x320, 640x640, or 1280x1280) without code changes.</p>
-<h3 id="3-automatic-class-mapping">3. Automatic Class Mapping<a class="headerlink" href="#3-automatic-class-mapping" title="Permanent link">&para;</a></h3>
-<p>The engine automatically handles the differences between YOLO and RF-DETR output structures:
-- <strong>YOLO</strong>: Dynamically slices the score tensor based on the class count in your <code>train.yaml</code>.
-- <strong>RF-DETR</strong>: Automatically shifts class indices by +1 to align with Transformer-based COCO conventions.</p>
+<h3 id="1-instance-segmentation-masks">1. Instance Segmentation Masks<a class="headerlink" href="#1-instance-segmentation-masks" title="Permanent link">&para;</a></h3>
+<p><strong>YOLO masks</strong> use a proto-mask architecture. The model outputs 32 mask prototype maps and per-detection coefficients. The engine decodes these via matrix multiplication:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># [N, 32] @ [32, proto_h * proto_w] → [N, proto_h * proto_w]</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">masks_raw</span> <span class="o">=</span> <span class="n">coeffs</span> <span class="o">@</span> <span class="n">proto</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">masks</span> <span class="o">=</span> <span class="n">sigmoid</span><span class="p">(</span><span class="n">masks_raw</span><span class="p">)</span>  <span class="c1"># Per-pixel probability</span>
+</span></code></pre></div>
+<p>Each mask is cropped to its bounding box and resized to the original image dimensions.</p>
+<p><strong>RF-DETR masks</strong> are per-detection predictions (108x108 each), resized and thresholded directly.</p>
+<h3 id="2-coordinate-space-handling">2. Coordinate Space Handling<a class="headerlink" href="#2-coordinate-space-handling" title="Permanent link">&para;</a></h3>
+<p>The two model families output boxes in different formats:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Format</th>
+<th>Space</th>
+<th>Conversion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>YOLO</strong> (nms=True export)</td>
+<td><code>[x1, y1, x2, y2]</code></td>
+<td>Pixel (0-imgsz)</td>
+<td>Scale by <code>orig / model</code> ratio</td>
+</tr>
+<tr>
+<td><strong>RF-DETR</strong></td>
+<td><code>[cx, cy, w, h]</code></td>
+<td>Normalized (0-1)</td>
+<td>Convert center→corner, multiply by <code>orig_w/h</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-dynamic-input-scaling">3. Dynamic Input Scaling<a class="headerlink" href="#3-dynamic-input-scaling" title="Permanent link">&para;</a></h3>
+<p>The engine reads the required input shape directly from the <code>.onnx</code> file metadata. This ensures compatibility with any model resolution (416, 512, 640, etc.) without code changes.</p>
+<h3 id="4-gpucpu-auto-detection">4. GPU/CPU Auto-Detection<a class="headerlink" href="#4-gpucpu-auto-detection" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">if</span> <span class="s1">&#39;CUDAExecutionProvider&#39;</span> <span class="ow">in</span> <span class="n">ort</span><span class="o">.</span><span class="n">get_available_providers</span><span class="p">():</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="c1"># Use GPU with optimized CUDA settings</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">else</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="c1"># Fallback to CPU</span>
+</span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Conflict Detection</p>
+<p>If both <code>onnxruntime</code> and <code>onnxruntime-gpu</code> are installed, the CPU version may shadow the GPU version. The engine logs a warning with the fix: <code>pip uninstall onnxruntime -y &amp;&amp; pip install onnxruntime-gpu</code>.</p>
+</div>
 <hr />
-<h2 id="when-to-use">When to Use?<a class="headerlink" href="#when-to-use" title="Permanent link">&para;</a></h2>
+<h2 id="when-to-use">When to Use<a class="headerlink" href="#when-to-use" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Live Streams</strong>: When processing 30 FPS RTSP feeds.</li>
-<li><strong>Edge Devices</strong>: When running on hardware with limited CPU power.</li>
-<li><strong>Production</strong>: This is our most stable and performant engine for long-term deployment.</li>
+<li><strong>GPU available</strong>: Best balance of speed and compatibility</li>
+<li><strong>CPU fallback</strong>: Works but slower than <a href="../openvino/">OpenVINO</a> on Intel CPUs</li>
+<li><strong>Cross-platform</strong>: ONNX runs on any hardware with onnxruntime installed</li>
 </ul>
 
 
@@ -1483,11 +1655,10 @@
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
   
+    <div class="md-copyright__highlight">
+      for ISITEC International 2026
+    </div>
   
-    Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
-    </a>
   
 </div>
       

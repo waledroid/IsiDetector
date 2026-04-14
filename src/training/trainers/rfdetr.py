@@ -14,7 +14,7 @@ from src.training.base_trainer import BaseTrainer
 from src.shared.registry import TRAINERS
 
 try:
-    from rfdetr import RFDETRSegMedium, RFDETRSegSmall
+    from rfdetr import RFDETRSegMedium, RFDETRSegSmall, RFDETRSegNano
     from rfdetr.utilities import box_ops
 except ImportError:
     raise ImportError("❌ Missing dependency. Run: pip install rfdetr")
@@ -46,8 +46,8 @@ class RFDETRTrainer(BaseTrainer):
       collected during training — no separate validation pass needed.
 
     Attributes:
-        model_size: ``'m'`` (Medium, DINOv2-B/14) or ``'s'`` (Small,
-            DINOv2-S/14).
+        model_size: ``'n'`` (Nano), ``'s'`` (Small, DINOv2-S/14),
+            or ``'m'`` (Medium, DINOv2-B/14, default).
         dataset_path: ``Path`` to the COCO-format dataset root
             (must contain ``train/``, ``valid/``, ``test/`` subdirs
             with ``_annotations.coco.json`` files).
@@ -64,7 +64,7 @@ class RFDETRTrainer(BaseTrainer):
     def build_model(self):
         """Initialise the RF-DETR model and apply the memory-safe postprocess patch.
 
-        Loads ``RFDETRSegMedium`` or ``RFDETRSegSmall`` (DINOv2 pretrained
+        Loads ``RFDETRSegNano``, ``RFDETRSegSmall``, or ``RFDETRSegMedium`` (DINOv2 pretrained
         weights are downloaded automatically on first run).
 
         After loading, monkey-patches the postprocessing layer so that
@@ -78,10 +78,12 @@ class RFDETRTrainer(BaseTrainer):
         torch.cuda.empty_cache()
         logger.info(f"🏗️ Initializing RF-DETR SEGMENTATION ({self.model_size}) with DINOv2...")
 
-        if self.model_size == 'm':
-            self.model = RFDETRSegMedium()
-        else:
+        if self.model_size == 'n':
+            self.model = RFDETRSegNano()
+        elif self.model_size == 's':
             self.model = RFDETRSegSmall()
+        else:
+            self.model = RFDETRSegMedium()
 
         # 🛑 MONKEY-PATCH: Memory Safe Post-Processing
         # Offloads large mask interpolations (e.g. 5MP images) to CPU to prevent CUDA OOM

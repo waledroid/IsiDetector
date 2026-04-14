@@ -1,5 +1,55 @@
 claude --resume b5dd41d9-991f-4687-9fac-12d8b7808417
 
+
+  docker compose up -d --build                                                      
+  ┌────────────────────────┬─────────────────────────┬─────────────────────────────┐
+  │        Command         │   Deletes container?    │          Use when           │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ docker compose up -d   │ No — reuses existing    │ Daily start                 │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ docker compose stop    │ No — pauses it          │ Pause temporarily           │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ docker compose start   │ No — resumes paused     │ Resume after stop           │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ docker compose down    │ Yes — removes container │ Cleanup or restart fresh    │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ docker compose restart │ No — restops + starts   │ After config change         │
+  ├────────────────────────┼─────────────────────────┼─────────────────────────────┤
+  │ ./run_start.sh         │ Yes — runs down then up │ First install or full reset │
+  └────────────────────────┴─────────────────────────┴─────────────────────────────┘
+  
+
+  Images
+  - docker images — list images
+  - docker build -t isitec-visionai -f isitec_app/Dockerfile . — build
+  - docker rmi <image> — remove image
+  - docker pull <image> — download
+
+  Containers
+  - docker ps — list running
+  - docker ps -a — list all (incl. stopped)
+  - docker run -p 9501:9501 -p 9502:9502 isitec-visionai — start
+  - docker run -d --name isitec -p 9501:9501 isitec-visionai — run detached with name
+  - docker stop <container> — graceful stop
+  - docker kill <container> — force kill
+  - docker rm <container> — remove stopped
+  - docker restart <container> — restart
+
+  Inspect / Debug
+  - docker logs -f <container> — follow logs
+  - docker exec -it <container> bash — shell into running container
+  - docker inspect <container> — full config/state
+  - docker stats — live CPU/mem usage
+
+  Cleanup
+  - docker system prune -a — remove unused images/containers/networks
+  - docker volume prune — remove unused volumes
+
+  Project-specific
+  docker run -p 9501:9501 -e UDP_HOST=192.168.1.50 -e UDP_PORT=9502 isitec-visionai
+
+
+
 rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?
 
 INFERENCE USB CAMERA
@@ -257,3 +307,35 @@ python scripts/run_live.py --weights models/rfdetr/24-03-2026_0120/inference_mod
   │ P3 (audit)    │ CSV write success, UDP publish rate            │ Reporting and integration            │
   └───────────────┴────────────────────────────────────────────────┴──────────────────────────────────────┘                                                                 
                                                         
+
+Manual (for existing models)                                                                                                      
+                                                            
+  # Auto-discover ONNX in a model directory, convert to all formats                                                                 
+  python -m src.inference.export_engine --model-dir models/rfdetr/31-03-2026_1117 --format all
+
+  # Convert only to OpenVINO
+  python -m src.inference.export_engine --model-dir runs/segment/models/yolo/yolo26m_640_200/weights --format openvino
+
+  # From raw .pt weights (no pre-existing ONNX) — auto-detects imgsz
+  python -m src.inference.export_engine --weights runs/segment/models/yolo/yolo26m_416_200/weights/best.pt --format all
+
+  # Override image size
+  python -m src.inference.export_engine --weights best.pt --imgsz 512 --format onnx openvino
+
+  # Just optimize an existing ONNX (no conversion)
+  python -m src.inference.export_engine --model-dir models/rfdetr/28-03-2026_2257 --format onnx
+                                                                                                                                    
+  Format flags                                                                                                                      
+                                                                                                                                    
+  ┌──────────┬─────────────────────────────────────────────────────────────────────────────┐                                        
+  │ --format │                                What it does                                 │
+  ├──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ onnx     │ Discovers/creates ONNX, runs onnxsim → .sim.onnx                            │
+  ├──────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ openvino │ Converts best ONNX → openvino/model.xml + model.bin                         │                                        
+  ├──────────┼─────────────────────────────────────────────────────────────────────────────┤                                        
+  │ tensorrt │ Converts best ONNX → tensorrt/model.engine (skips if trtexec not installed) │                                        
+  ├──────────┼─────────────────────────────────────────────────────────────────────────────┤                                        
+  │ all      │ All of the above (default)                                                  │
+  └──────────┴─────────────────────────────────────────────────────────────────────────────┘                                        
+                                                            

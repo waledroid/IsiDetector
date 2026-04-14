@@ -148,7 +148,7 @@ def settings():
     if not _check_dev():
         return jsonify({"status": "error", "message": "Unauthorized"}), 403
     data = request.json or {}
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf')
+    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position')
     current = _load_settings()
     for k in allowed_keys:
         if k in data:
@@ -308,6 +308,29 @@ def udp_target():
     stream_handler.set_udp_target(host, port)
     return jsonify({"status": "success", "host": host, "port": port})
 
+@app.route('/api/line', methods=['GET', 'POST'])
+def line_config():
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+    if request.method == 'GET':
+        return jsonify(stream_handler.get_line_config())
+    data = request.json or {}
+    orientation = data.get('orientation')
+    position = data.get('position')
+    if orientation and orientation not in ('vertical', 'horizontal'):
+        return jsonify({"status": "error", "message": "orientation must be 'vertical' or 'horizontal'"}), 400
+    if position is not None:
+        position = float(position)
+        if not (0.1 <= position <= 0.9):
+            return jsonify({"status": "error", "message": "position must be 0.1-0.9"}), 400
+    stream_handler.set_line_config(orientation=orientation, position=position)
+    current = _load_settings()
+    config = stream_handler.get_line_config()
+    current['line_orientation'] = config['orientation']
+    current['line_position'] = config['position']
+    _save_settings(current)
+    return jsonify({"status": "success", **config})
+
 @app.route('/api/belt_status', methods=['POST'])
 def set_belt_status():
     if not _check_dev():
@@ -329,7 +352,7 @@ def stop_stream():
     return jsonify({"status": "error", "message": msg}), 400
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 9501))
+    port = int(os.environ.get('PORT', 9505))
     try:
         print(f"Starting Flask Server on http://0.0.0.0:{port}")
         app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

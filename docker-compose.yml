@@ -17,6 +17,7 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - /mnt/wslg:/mnt/wslg:ro
     environment:
+      - TZ=Europe/Paris
       - DEV_PASSWORD=Isitec69+
       - PORT=9501
       - UDP_HOST=127.0.0.1
@@ -51,6 +52,7 @@ services:
       - ./models:/opt/rfdetr/models
       - ./configs:/opt/rfdetr/configs
     environment:
+      - TZ=Europe/Paris
       - CUDA_MODULE_LOADING=LAZY
       - PYTORCH_JIT=0
     deploy:

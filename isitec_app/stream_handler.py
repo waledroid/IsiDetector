@@ -151,6 +151,11 @@ class LiveReader:
 
                     ret, frame = self.cap.read()
                     if not ret:
+                        if self.is_file:
+                            # EOF on file — loop cleanly without the 1s stutter or false "disconnect" warning.
+                            self.cap.release()
+                            self.cap = None
+                            continue
                         logger.warning(f"⚠️ LiveReader: Stream disconnected. Retrying...")
                         self.cap.release()
                         self.cap = None
@@ -233,6 +238,32 @@ class StreamHandler:
         # Performance Monitor — collects real-time metrics for /api/performance
         self.monitor = PerformanceMonitor()
 
+        # Background preload of the default RF-DETR ONNX. DINOv2 graphs take
+        # 3-8s of CUDA kernel compilation on first load; doing it now means
+        # the operator's first hot-swap to RF-DETR is near-instant.
+        threading.Thread(target=self._preload_default_onnx, daemon=True).start()
+
+    def _preload_default_onnx(self):
+        try:
+            settings_path = Path(__file__).parent / 'settings.json'
+            if not settings_path.exists():
+                return
+            with open(settings_path) as f:
+                settings = json.load(f)
+            path = settings.get('rfdetr_weights')
+            if not path or not str(path).lower().endswith('.onnx'):
+                return
+            # Paths in settings.json are relative to the repo root.
+            abs_path = Path(path)
+            if not abs_path.is_absolute():
+                abs_path = Path(__file__).resolve().parent.parent / path
+            if not abs_path.exists():
+                return
+            from src.inference.onnx_inferencer import preload_onnx
+            preload_onnx(str(abs_path))
+        except Exception as e:
+            logger.warning(f"RF-DETR ONNX preload skipped: {e}")
+
     def set_language(self, lang):
         self.language = lang
 
@@ -245,6 +276,39 @@ class StreamHandler:
 
     def get_udp_target(self):
         return {"host": self.publisher.host, "port": self.publisher.port, "enabled": self.publisher.enabled}
+
+    def set_line_config(self, orientation=None, position=None):
+        """Update line orientation/position live. Re-initializes the LineZone."""
+        with self.lock:
+            engine = self.engine
+            if not engine:
+                return
+            if orientation is not None:
+                engine.line_orientation = orientation
+            if position is not None:
+                engine.line_position = max(0.1, min(0.9, float(position)))
+            if engine.line_zone is not None:
+                engine.init_line(engine._frame_w, engine._frame_h,
+                                 engine.line_position, engine.line_orientation)
+
+    def get_line_config(self):
+        with self.lock:
+            engine = self.engine
+            if engine:
+                return {"orientation": engine.line_orientation, "position": engine.line_position}
+        return {"orientation": "vertical", "position": 0.65}
+
+    def _apply_line_settings(self, engine):
+        """Load line settings from settings.json and apply to engine."""
+        settings_path = Path(__file__).parent / 'settings.json'
+        try:
+            if settings_path.exists():
+                with open(settings_path) as f:
+                    settings = json.load(f)
+                engine.line_orientation = settings.get('line_orientation', 'vertical')
+                engine.line_position = settings.get('line_position', 0.65)
+        except Exception:
+            pass
 
     def get_stats(self):
         with self.lock:
@@ -446,11 +510,10 @@ class StreamHandler:
         )
 
         if can_hot_swap:
-            # ── Hot-swap: keep reader + thread, swap engine only ─────────
+            # ── Hot-swap: keep reader, thread, tracker, counts, line — swap model only ─
             try:
                 self.web_imgsz = imgsz or self.config.get('image_size', 416)
                 base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
-                new_vision = VisionEngine(inferencer=base_engine, config=self.config)
             except ValueError as e:
                 return False, str(e)
             except Exception as e:
@@ -458,17 +521,20 @@ class StreamHandler:
                 return False, f"Model Error: {str(e)}"
 
             with self.lock:
-                old_engine = self.engine
-                self.engine = new_vision
-                self.class_totals = {name: 0 for name in base_engine.class_names.values()}
+                old_inferencer = self.engine.inferencer if self.engine else None
+                self.engine.swap_inferencer(base_engine)
+                # Backfill class_totals with any NEW class names the new model exposes
+                # (without zeroing existing counts for classes that still apply).
+                for name in base_engine.class_names.values():
+                    self.class_totals.setdefault(name, 0)
                 self.mode_text = mode_text
 
-            # Cleanup old engine in background (release VRAM, save CSV)
-            if old_engine:
-                threading.Thread(target=lambda: old_engine.cleanup({}), daemon=True).start()
+            # Free the old inferencer's resources in the background — nothing
+            # session-level to clean up because logger + tracker are shared.
+            del old_inferencer
 
             self.monitor.start_session(model_type=model_type)
-            logger.info(f"🔄 Model switched to {mode_text} (hot-swap, no RTSP reconnect)")
+            logger.info(f"🔄 Model switched to {mode_text} (hot-swap — counts preserved)")
             return True, f"Model switched to {mode_text}."
 
         # ── Full restart: different source or not running ────────────────
@@ -483,6 +549,7 @@ class StreamHandler:
                 self.web_imgsz = imgsz or self.config.get('image_size', 416)
                 base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
                 self.engine = VisionEngine(inferencer=base_engine, config=self.config)
+                self._apply_line_settings(self.engine)
                 self.mode_text = mode_text
             except ValueError as e:
                 return False, str(e)

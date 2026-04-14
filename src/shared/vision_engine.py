@@ -81,13 +81,58 @@ class VisionEngine:
         self.label_annotator = sv.LabelAnnotator(text_scale=0.3, text_thickness=1, text_padding=2)
         self.line_annotator = sv.LineZoneAnnotator(thickness=1, text_thickness=0, text_scale=0)
 
-    def init_line(self, width, height, x_percent=0.65):
-        """Initializes the counting line based on frame dimensions."""
-        line_x = int(width * x_percent)
+        # 6. Line configuration (can be overridden before first frame)
+        self.line_orientation = 'vertical'
+        self.line_position = 0.65
+        self._frame_w = 0
+        self._frame_h = 0
+
+    def swap_inferencer(self, new_inferencer):
+        """Replace the model without losing counts, tracker IDs, or line state.
+
+        Rebuilds palette-dependent annotators against the new inferencer's
+        class_names so per-class colours reflect the new model's convention
+        (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, counted_ids,
+        line_zone, and logger are preserved so hot-swap keeps counts running.
+        """
+        self.inferencer = new_inferencer
+        self.class_names_list = list(new_inferencer.class_names.values())
+
+        # Rebuild only the annotators whose palette is indexed by class_id.
+        # Trace and line annotators don't depend on class_id — leave them.
+        self.mask_annotator = sv.MaskAnnotator(opacity=0.3)
+        self.box_annotator = sv.BoxAnnotator(thickness=1)
+        self.label_annotator = sv.LabelAnnotator(
+            text_scale=0.3, text_thickness=1, text_padding=2,
+        )
+
+    def init_line(self, width, height, position=0.65, orientation='vertical'):
+        """Initializes the counting line based on frame dimensions.
+
+        Args:
+            width: Frame width in pixels.
+            height: Frame height in pixels.
+            position: Line position as a fraction (0.1–0.9). For vertical
+                lines this is the x-offset; for horizontal, the y-offset.
+            orientation: ``'vertical'`` (default) or ``'horizontal'``.
+        """
+        self.line_position = position
+        self.line_orientation = orientation
+        self._frame_w = width
+        self._frame_h = height
+
+        if orientation == 'horizontal':
+            line_y = int(height * position)
+            start = sv.Point(0, line_y)
+            end = sv.Point(width, line_y)
+        else:
+            line_x = int(width * position)
+            start = sv.Point(line_x, 0)
+            end = sv.Point(line_x, height)
+
         self.line_zone = sv.LineZone(
-            start=sv.Point(line_x, 0), 
-            end=sv.Point(line_x, height),
-            triggering_anchors=[sv.Position.BOTTOM_CENTER]
+            start=start, end=end,
+            triggering_anchors=[sv.Position.BOTTOM_CENTER],
         )
 
     def process_frame(self, frame: np.ndarray, class_totals: dict):
@@ -121,7 +166,7 @@ class VisionEngine:
         """
         if self.line_zone is None:
             h, w = frame.shape[:2]
-            self.init_line(w, h)
+            self.init_line(w, h, self.line_position, self.line_orientation)
 
         # 1. Core AI Logic (timed for performance dashboard)
         _t0 = time.perf_counter()

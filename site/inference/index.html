@@ -16,7 +16,7 @@
         <link rel="prev" href="../hooks/">
       
       
-        <link rel="next" href="onnx/">
+        <link rel="next" href="export/">
       
       
         
@@ -52,6 +52,8 @@
         <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
       
     
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
       <link rel="stylesheet" href="../stylesheets/extra.css">
     
@@ -896,6 +898,8 @@
       
         
       
+        
+      
     
     
     
@@ -1052,6 +1056,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1111,6 +1121,34 @@
   
   
     <li class="md-nav__item">
+      <a href="export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="onnx/" class="md-nav__link">
         
   
@@ -1118,7 +1156,63 @@
   <span class="md-ellipsis">
     
   
-    High-Speed ONNX
+    ONNX Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="openvino/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenVINO Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="tensorrt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TensorRT Engine
   
 
     
@@ -1135,6 +1229,34 @@
           </ul>
         </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance Monitor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1233,6 +1355,17 @@
     <span class="md-ellipsis">
       
         Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dispatch-by-file-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispatch by File Extension
       
     </span>
   </a>
@@ -1360,7 +1493,7 @@
 
 
 <h1 id="inference-engines">Inference Engines<a class="headerlink" href="#inference-engines" title="Permanent link">&para;</a></h1>
-<p>The inference layer mirrors the training layer's design — an abstract <code>BaseInferencer</code> defines the contract, and concrete implementations handle YOLO and RF-DETR specifics.</p>
+<p>The inference layer supports <strong>five backends</strong> — two native model loaders and three optimized runtime engines. All share the same <code>BaseInferencer</code> contract, so the web app and CLI dispatch by file extension.</p>
 <hr />
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
 <pre class="mermaid"><code>classDiagram
@@ -1368,28 +1501,84 @@
         &lt;&lt;abstract&gt;&gt;
         +model_path: Path
         +conf_threshold: float
-        +model: Any
+        +device: str
+        +class_names: dict
+        +nc: int
         +_load_model()*
+        +predict_frame(frame) Detections
         +predict(source, show, save)*
         +get_summary(result)* dict
     }
 
     class YOLOInferencer {
-        +class_names: dict
-        +predict_frame(frame) Detections
-        +predict(source) Generator
-        +get_summary(result) dict
+        .pt weights
     }
-
     class RFDETRInferencer {
-        +class_names: dict
-        +predict_frame(frame) Detections
-        +predict(source) Generator
-        +get_summary(result) dict
+        .pth weights
+    }
+    class OptimizedONNXInferencer {
+        .onnx — GPU (CUDA) or CPU
+    }
+    class OpenVINOInferencer {
+        .xml — CPU (Intel optimized)
+    }
+    class TensorRTInferencer {
+        .engine — GPU (NVIDIA max speed)
     }
 
     BaseInferencer &lt;|-- YOLOInferencer
-    BaseInferencer &lt;|-- RFDETRInferencer</code></pre>
+    BaseInferencer &lt;|-- RFDETRInferencer
+    BaseInferencer &lt;|-- OptimizedONNXInferencer
+    BaseInferencer &lt;|-- OpenVINOInferencer
+    BaseInferencer &lt;|-- TensorRTInferencer</code></pre>
+<h2 id="dispatch-by-file-extension">Dispatch by File Extension<a class="headerlink" href="#dispatch-by-file-extension" title="Permanent link">&para;</a></h2>
+<p>The web app and CLI automatically select the right engine:</p>
+<table>
+<thead>
+<tr>
+<th>Extension</th>
+<th>Engine</th>
+<th>Hardware</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.pt</code></td>
+<td><code>YOLOInferencer</code></td>
+<td>GPU or CPU</td>
+<td><code>yolo_inferencer.py</code></td>
+</tr>
+<tr>
+<td><code>.pth</code></td>
+<td><code>RFDETRInferencer</code></td>
+<td>GPU or CPU</td>
+<td><code>rfdetr_inferencer.py</code></td>
+</tr>
+<tr>
+<td><code>.onnx</code></td>
+<td><code>OptimizedONNXInferencer</code></td>
+<td>GPU (CUDA) or CPU</td>
+<td><code>onnx_inferencer.py</code></td>
+</tr>
+<tr>
+<td><code>.xml</code></td>
+<td><code>OpenVINOInferencer</code></td>
+<td>CPU (Intel)</td>
+<td><code>openvino_inferencer.py</code></td>
+</tr>
+<tr>
+<td><code>.engine</code></td>
+<td><code>TensorRTInferencer</code></td>
+<td>GPU only</td>
+<td><code>tensorrt_inferencer.py</code></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>On CPU-only machines, <code>.engine</code> files are <strong>rejected</strong> with a clear error. Use <code>.xml</code> (OpenVINO) for best CPU performance.</p>
+</div>
 <hr />
 <h2 id="baseinferencer">BaseInferencer<a class="headerlink" href="#baseinferencer" title="Permanent link">&para;</a></h2>
 <p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg></span> <strong>Source</strong>: <code>src/inference/base_inferencer.py</code></p>
@@ -1614,11 +1803,10 @@
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
   
+    <div class="md-copyright__highlight">
+      for ISITEC International 2026
+    </div>
   
-    Made with
-    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
-      Material for MkDocs
-    </a>
   
 </div>
       

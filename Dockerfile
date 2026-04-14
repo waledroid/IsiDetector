@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv python3-pip python3.11-dev \
     libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6 \
-    curl \
+    curl tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3
@@ -60,6 +60,7 @@ ENV PORT=9501
 ENV DEV_PASSWORD=Isitec69+
 ENV CUDA_MODULE_LOADING=LAZY
 ENV TORCH_CUDA_ARCH_LIST="8.9;9.0;10.0;12.0;12.0+PTX"
+ENV TZ=Europe/Paris
 
 # ── Runtime directories (will be volume-mounted) ────────────────────────────
 RUN mkdir -p models isitec_app/logs isitec_app/uploads

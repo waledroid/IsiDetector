@@ -726,6 +726,30 @@ body {
     pointer-events: none;
 }
 
+/* Tracking Line Controls */
+.line-btn-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.line-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+.line-btn:hover { background: #f1f3f4; }
+.line-btn.active { background: #e8eaf6; border-color: #3f51b5; color: #3f51b5; }
+.line-btn .material-icons { font-size: 18px; }
+
 /* Responsive grid adjustments */
 @media (max-width: 992px) {
     .perf-grid { grid-template-columns: 1fr 1fr; }

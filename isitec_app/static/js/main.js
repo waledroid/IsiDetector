@@ -15,7 +15,7 @@ const translations = {
         "src_camera": "Camera",
         "choose_file": "Choose File",
         "drag_drop": "or drag and drop here",
-        "start_tracking": "Start Tracking",
+        "start_tracking": "Start",
         "stop": "Stop",
         "analytics_overview": "Analytics & Logging Overview",
         "analytics_soon": "Historical logs are stored in the /logs directory and parsed in the live dashboard natively.",
@@ -66,7 +66,7 @@ const translations = {
         "src_camera": "Caméra",
         "choose_file": "Choisir un fichier",
         "drag_drop": "ou glissez et déposez ici",
-        "start_tracking": "Démarrer le suivi",
+        "start_tracking": "Démarrer",
         "stop": "Arrêter",
         "analytics_overview": "Aperçu de l'analytique et des journaux",
         "analytics_soon": "Les journaux historiques sont stockés dans /logs et analysés dans le tableau de bord.",
@@ -836,7 +836,53 @@ document.addEventListener('DOMContentLoaded', () => {
     startPerfPolling();
 
     // ── Settings Panel Logic ────────────────────────────────────────────────
-    
+
+    // ── Tracking Line Controls ──────────────────────────────────────────
+    const lineSlider = document.getElementById('linePositionSlider');
+    const linePosVal = document.getElementById('linePositionVal');
+    let lineOrientation = 'vertical';
+
+    function updateLinePreview(orientation, position) {
+        fetch('/api/line', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...devHeaders() },
+            body: JSON.stringify({ orientation, position: position / 100 })
+        }).catch(e => console.error('Line update failed', e));
+    }
+
+    document.getElementById('btnLineVertical').addEventListener('click', () => {
+        lineOrientation = 'vertical';
+        document.getElementById('btnLineVertical').classList.add('active');
+        document.getElementById('btnLineHorizontal').classList.remove('active');
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+    });
+
+    document.getElementById('btnLineHorizontal').addEventListener('click', () => {
+        lineOrientation = 'horizontal';
+        document.getElementById('btnLineHorizontal').classList.add('active');
+        document.getElementById('btnLineVertical').classList.remove('active');
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+    });
+
+    document.getElementById('btnLineBack').addEventListener('click', () => {
+        lineSlider.value = Math.max(10, parseInt(lineSlider.value) - 5);
+        linePosVal.textContent = lineSlider.value;
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+    });
+
+    document.getElementById('btnLineForward').addEventListener('click', () => {
+        lineSlider.value = Math.min(90, parseInt(lineSlider.value) + 5);
+        linePosVal.textContent = lineSlider.value;
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+    });
+
+    lineSlider.addEventListener('input', (e) => {
+        linePosVal.textContent = e.target.value;
+    });
+    lineSlider.addEventListener('change', (e) => {
+        updateLinePreview(lineOrientation, parseInt(e.target.value));
+    });
+
     // Bind slider values to display spans
     ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
         const slider = document.getElementById(`set_${id}`);
@@ -871,6 +917,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const val = serverSettings[id] || localStorage.getItem(`isitec_${id}`);
             if (val != null) applySliderValue(id, val);
         });
+
+        // Restore line settings
+        const savedOrientation = serverSettings.line_orientation || 'vertical';
+        const savedPosition = Math.round((serverSettings.line_position || 0.65) * 100);
+        lineSlider.value = savedPosition;
+        linePosVal.textContent = savedPosition;
+        lineOrientation = savedOrientation;
+        document.getElementById('btnLineVertical').classList.toggle('active', savedOrientation === 'vertical');
+        document.getElementById('btnLineHorizontal').classList.toggle('active', savedOrientation === 'horizontal');
 
         // 3. Fetch model list and populate dropdowns
         try {
@@ -912,6 +967,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 yolo_conf:     parseFloat(document.getElementById('set_yolo_conf').value),
                 detr_imgsz:    parseInt(document.getElementById('set_detr_imgsz').value),
                 detr_conf:     parseFloat(document.getElementById('set_detr_conf').value),
+                line_orientation: lineOrientation,
+                line_position: parseInt(lineSlider.value) / 100,
             };
 
             // Save to localStorage (immediate cache)

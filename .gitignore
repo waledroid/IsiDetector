@@ -14,3 +14,8 @@ logs/
 venv/
 .venv/
 isitec_app/uploads/
+
+# Session-local tutorials and diagnostics (not for shared repo)
+MODULAR.md
+ONNX_TUTORIAL.md
+a.py
