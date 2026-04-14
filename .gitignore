@@ -21,3 +21,6 @@ isitec_api/logs/
 MODULAR.md
 ONNX_TUTORIAL.md
 a.py
+
+# Per-host deployment marker written by run_start.sh
+.deployment.env

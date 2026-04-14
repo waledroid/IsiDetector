@@ -3,13 +3,18 @@
 # fully warm — waits for the ONNX preload log line, then launches Chrome
 # (or the default browser if Chrome isn't installed).
 #
+# Reads .deployment.env written by run_start.sh to pick the right
+# compose profile. On a fresh machine run ./run_start.sh first; after
+# that ./up.sh is the daily starter.
+#
 # Usage:
-#   ./scripts/up.sh
+#   ./up.sh
 #
 # Environment overrides:
 #   URL=http://localhost:9501   destination to open
 #   TIMEOUT_SEC=300             max seconds to wait for readiness
 #   NO_BROWSER=1                start the stack but don't open a browser
+#   FORCE_CPU=1                 ignore .deployment.env and use CPU compose
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,15 +23,45 @@ URL="${URL:-http://localhost:9501}"
 READY_PATTERN="ONNX preload (CUDA kernels warm"
 TIMEOUT_SEC="${TIMEOUT_SEC:-300}"
 
+# ── Detect compose profile ──────────────────────────────────────────────────
+# Priority: FORCE_CPU env var → .deployment.env marker → autodetect nvidia-smi
+COMPOSE_MODE="gpu"
+SUDO_DOCKER=""
+
+if [[ -f .deployment.env ]]; then
+    # shellcheck disable=SC1091
+    source .deployment.env
+fi
+
+if [[ "${FORCE_CPU:-0}" == "1" ]]; then
+    COMPOSE_MODE="cpu"
+elif [[ ! -f .deployment.env ]]; then
+    # No run_start.sh marker — autodetect
+    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+        COMPOSE_MODE="gpu"
+    else
+        COMPOSE_MODE="cpu"
+    fi
+fi
+
+if [[ "$COMPOSE_MODE" == "cpu" ]]; then
+    COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
+    echo "▶ Using CPU compose profile"
+else
+    COMPOSE_CMD="$SUDO_DOCKER docker compose"
+    echo "▶ Using GPU compose profile"
+fi
+
+# ── Start the stack ─────────────────────────────────────────────────────────
 echo "▶ Starting IsiDetector stack (docker compose up -d --build)..."
-docker compose up -d --build
+$COMPOSE_CMD up -d --build
 
 echo "▶ Waiting for web container to finish ONNX preload (timeout ${TIMEOUT_SEC}s)..."
 
 # grep -m 1 exits after first match → SIGPIPE propagates up → docker logs -f
 # dies cleanly. `timeout` bounds the wait so a broken preload path can't
 # hang the script forever.
-if timeout "${TIMEOUT_SEC}s" docker compose logs -f web 2>/dev/null \
+if timeout "${TIMEOUT_SEC}s" $COMPOSE_CMD logs -f web 2>/dev/null \
         | grep --line-buffered -m 1 "$READY_PATTERN"; then
     echo "✓ Web container ready"
 else
@@ -38,6 +73,7 @@ if [[ "${NO_BROWSER:-0}" == "1" ]]; then
     exit 0
 fi
 
+# ── Open the UI ─────────────────────────────────────────────────────────────
 open_url() {
     local url="$1"
 
