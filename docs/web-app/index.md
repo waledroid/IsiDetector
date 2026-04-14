@@ -7,7 +7,7 @@ The Web Application provides a modern, responsive interface for managing your In
 ## System Overview
 
 The platform is built using:
-- **Backend**: Python Flask (Robust, lightweight).
+- **Backend**: Python Flask (Robust, lightweight) — or FastAPI (`isitec_api/`) as an alternative async backend with identical AI behaviour.
 - **Inference Engine**: Asynchronous `StreamHandler` for non-blocking AI processing.
 - **Communication**: MJPEG Streaming for low-latency visual feedback.
 - **Frontend**: Clean Material Design with responsive analytics.
@@ -62,12 +62,36 @@ A lightweight daemon thread runs every 10 seconds to keep the process alive on p
 The web app is accessible internally on port **9501**.
 
 ```bash
-# To start the platform
+# Flask backend
 python isitec_app/app.py
+
+# FastAPI backend (alternative, same port, same UI)
+uvicorn isitec_api.app:app --host 0.0.0.0 --port 9501
 ```
 
-It can also be deployed via Docker for industrial servers:
+### Docker Compose (production)
+
+`docker-compose.yml` orchestrates the full stack:
+
 ```bash
-docker build -t isitec-platform ./isitec_app
-docker run -p 9501:9501 isitec-platform
+docker compose up -d --build
 ```
+
+- **`web` container** — Flask app (`isitec_app/`), ONNX Runtime, YOLO. Port 9501 (HTTP), 9502/udp (sorter telemetry).
+- **`rfdetr` sidecar** — Isolated PyTorch + `rfdetr` library for native `.pth` inference. Port 9510 (internal only, never exposed to the host).
+
+Both images set `TZ=Europe/Paris` and install `tzdata` so in-container timestamps match the host's wall clock. The `web` container also preloads the default RF-DETR ONNX at startup to warm the CUDA kernel cache — first hot-swap to RF-DETR after boot completes in ~2 s instead of 5–8 s.
+
+Override deployment timezone by editing both `Dockerfile`s + `docker-compose.yml`, or by adding `TZ=${TZ:-Europe/Paris}` to the compose env block for per-host customisation.
+
+### FastAPI Backend (isitec_api)
+
+A parallel FastAPI implementation lives in `isitec_api/` — same UI, same REST endpoints, same `StreamHandler` behaviour (including persistent hot-swap, ONNX preload, silent file-loop). It shares the core modules (`src/inference/*`, `src/shared/vision_engine.py`) with the Flask version, so any fix to those is automatically inherited.
+
+Use the FastAPI backend when you need:
+
+- Native async handlers (e.g. long-running WebSocket streams, `isitec_api/websockets.py`).
+- ASGI deployment (`uvicorn`, `hypercorn`, `gunicorn -k uvicorn.workers.UvicornWorker`).
+- Automatic OpenAPI schema + Swagger UI at `/docs`.
+
+Otherwise the Flask backend is the default and well-tested on long-running industrial shifts.

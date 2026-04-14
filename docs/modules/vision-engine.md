@@ -37,6 +37,13 @@ The engine generates a fully annotated frame including:
 - **Tracing**: Visual lines showing the path the parcel has taken.
 - **Labels**: High-contrast text overlays with Object IDs and Class Names.
 
+#### 4. Persistent Hot-Swap
+The `swap_inferencer(new_inferencer)` method replaces the model **in place** without tearing down session state. The tracker, `counted_ids` set, line zone, and daily CSV logger all survive — counts keep accumulating and tracker IDs stay stable across the swap. Only the inferencer reference and the palette-dependent annotators (`mask_annotator`, `box_annotator`, `label_annotator`) are rebuilt so that class-ID colours reflect the new model's convention.
+
+This lets operators swap between YOLO (`.pt`, `.onnx`) and RF-DETR (`.pth`, `.onnx`) mid-shift with no loss of session data and no double-counts for objects mid-crossing during the transition.
+
+See [Platform Functionalities → Persistent Model Hot-Swap](../web-app/functionalities.md#persistent-model-hot-swap) for the end-to-end operator-facing behaviour.
+
 ---
 
 ## Implementation Example

@@ -57,7 +57,56 @@ Supported locales include:
 
 ---
 
-## 6. Backend API (Fast Integration)
+## 6. Persistent Model Hot-Swap
+
+Operators can switch between model backends mid-stream without losing session data. Clicking "Start" in the UI with a different weight file while a stream is already running triggers a hot-swap path (`StreamHandler.start() → can_hot_swap` branch).
+
+What persists across the swap:
+
+| State | Behaviour |
+|---|---|
+| Running counts (`class_totals`) | Preserved — not reset to zero |
+| Tracker IDs (`ByteTrack`) | Preserved — same instance keeps running |
+| Counted-crossing set (`counted_ids`) | Preserved — no double-count on mid-crossing objects |
+| Line zone position | Preserved |
+| Daily CSV logger | Preserved — keeps writing to the same file |
+| Stream reader + RTSP connection | Preserved — no reconnect |
+
+What changes:
+
+- The inferencer (`self.engine.inferencer`) points to the new model.
+- Palette-dependent annotators are rebuilt so colours reflect the new model's class-ID convention — operators **see colours flip** as visual confirmation the swap actually took effect.
+
+Implementation: `VisionEngine.swap_inferencer(new_inferencer)` does the in-place replacement. `StreamHandler` keeps the `class_totals` dict alive and uses `setdefault` to backfill any new class names the new model exposes, never zeroing existing buckets.
+
+!!! tip "Why colours flip on YOLO ↔ RF-DETR swap"
+    YOLO emits `class_id ∈ {0, 1}` (carton, polybag). RF-DETR emits `class_id ∈ {1, 2}` (background class 0 reserved by DETR convention). `supervision`'s annotators colour by `class_id` via a palette lookup, so the two families land on different palette slots. This divergence is intentional — operators get an instant visual signal that the swap worked without reading logs.
+
+Hot-swap latency:
+
+- YOLO `.pt`/`.onnx` ↔ YOLO or RF-DETR ONNX: **~2 seconds** (CUDA session construction for the new model).
+- First swap to RF-DETR ONNX after cold start: same 2 s if the default `rfdetr_weights` was preloaded (see `preload_onnx` in [ONNX Engine §5](../inference/onnx.md)); 5–8 s otherwise.
+- Swap to a different **source** (file / RTSP URL) falls through to the full-restart path — counts reset intentionally because it's a new session.
+
+---
+
+## 7. Deployment Time Alignment
+
+Both container images set `TZ=Europe/Paris` and include the `tzdata` package. Timestamps produced inside the containers — CSV analytics rows, UDP event `ts` fields, session summaries in `logs/sessions.json`, the `/api/stats` "last detected" field — all match the host's wall-clock time.
+
+The same `TZ` value is also exported via `docker-compose.yml → services.*.environment` for belt-and-braces overrides. Change `Europe/Paris` in three places (both `Dockerfile`s and `docker-compose.yml`) if the rig is deployed outside France, or externalise via `TZ=${TZ:-Europe/Paris}` in the compose file.
+
+---
+
+## 8. File-Source Loop Without Stutter
+
+When an uploaded MP4 reaches its last frame, the `LiveReader` silently reopens the file and keeps delivering frames from the beginning. There is no 1-second pause, no `Stream disconnected` warning in the logs, and no visible stutter in the MJPEG feed at the loop boundary.
+
+RTSP and webcam sources still log a warning and back off 1 second on genuine disconnects — the silent-loop path only applies when `self.is_file` is True.
+
+---
+
+## 9. Backend API (Fast Integration)
 
 For industrial control systems (SCADA/PLC) that need to interact with IsiDetector externally, the following REST APIs are available:
 
@@ -77,7 +126,7 @@ For industrial control systems (SCADA/PLC) that need to interact with IsiDetecto
 
 ---
 
-## 7. Long-Run Stability (12-Hour Shifts)
+## 10. Long-Run Stability (12-Hour Shifts)
 
 The web app is designed to run uninterrupted across full production shifts. Several mechanisms work together to prevent the common failure modes of long-running inference loops.
 
