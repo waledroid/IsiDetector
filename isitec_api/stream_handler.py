@@ -476,6 +476,8 @@ class StreamHandler:
             thickness=max(1, round(2 * scale)),
             text_thickness=0,
             text_scale=0,
+            display_in_count=False,
+            display_out_count=False,
         )
         logger.info(f"🎨 Annotators tuned for {sz}px (scale={scale:.2f}, mask_opacity=0.5)")
 
