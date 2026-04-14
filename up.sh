@@ -58,15 +58,18 @@ $COMPOSE_CMD up -d --build
 
 echo "▶ Waiting for web container to finish ONNX preload (timeout ${TIMEOUT_SEC}s)..."
 
-# grep -m 1 exits after first match → SIGPIPE propagates up → docker logs -f
-# dies cleanly. `timeout` bounds the wait so a broken preload path can't
-# hang the script forever.
+# grep -m 1 exits after first match → SIGPIPE kills docker logs -f → its
+# exit status becomes 141. With `set -o pipefail` that 141 would propagate
+# and the `if` would misread grep's success as failure. Turn pipefail off
+# just for this pipeline so the check reflects grep's real exit code.
+set +o pipefail
 if timeout "${TIMEOUT_SEC}s" $COMPOSE_CMD logs -f web 2>/dev/null \
         | grep --line-buffered -m 1 "$READY_PATTERN"; then
     echo "✓ Web container ready"
 else
     echo "⚠ Readiness marker not seen within ${TIMEOUT_SEC}s — opening browser anyway"
 fi
+set -o pipefail
 
 if [[ "${NO_BROWSER:-0}" == "1" ]]; then
     echo "ℹ NO_BROWSER=1 — skipping browser launch"
