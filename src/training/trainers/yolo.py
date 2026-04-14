@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @TRAINERS.register('yolov26')
 @TRAINERS.register('yolo')
 class YOLOTrainer(BaseTrainer):
-    """Trainer for YOLOv12 instance segmentation, wrapping Ultralytics.
+    """Trainer for YOLOv26 instance segmentation, wrapping Ultralytics.
 
     Registered under ``'yolo'`` and ``'yolov26'`` — both keys resolve to
     this class. Set ``model_type: "yolo"`` in ``configs/train.yaml`` to

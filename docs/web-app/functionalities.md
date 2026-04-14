@@ -8,7 +8,7 @@ Deep-dive into the core features of the IsiDetector Web App.
 
 The platform supports two distinct perception modes reachable via the "Modes" dropdown:
 
-- **Mode 1 (YOLO)**: Speed-optimized detection using the **YOLOv12-seg** architecture. Best for high-speed conveyor belts.
+- **Mode 1 (YOLO)**: Speed-optimized detection using the **YOLOv26-seg** architecture (NMS-free via one-to-one label assignment). Best for high-speed conveyor belts.
 - **Mode 2 (RF-DETR)**: Transformer-based detection. Highly accurate for complex, overlapping objects or varying light conditions.
 
 ---

@@ -1,6 +1,8 @@
-# YOLOv12-seg Trainer
+# YOLOv26-seg Trainer
 
-The `YOLOTrainer` wraps Ultralytics' YOLOv12 segmentation engine into the modular `BaseTrainer` interface. It handles model initialisation, dataset configuration, hook bridging, and the full train/eval/export cycle.
+The `YOLOTrainer` wraps Ultralytics' YOLOv26 segmentation engine into the modular `BaseTrainer` interface. It handles model initialisation, dataset configuration, hook bridging, and the full train/eval/export cycle.
+
+YOLOv26 is the NMS-free variant: it uses one-to-one label assignment during training so the ONNX export at inference time emits top-K post-filtered detections directly, with no `cv2.dnn.NMSBoxes` step required downstream.
 
 :material-file-code: **Source**: `src/training/trainers/yolo.py`
 :material-tag: **Registry Names**: `"yolo"`, `"yolov26"`
@@ -31,7 +33,7 @@ def __init__(self, config: dict):
 ```
 
 1. Calls `BaseTrainer.__init__()` which creates output dirs, initialises state vars, and attaches hooks
-2. Model size determines which pretrained weights to load (`yolov12n-seg.pt`, `yolov12m-seg.pt`, etc.)
+2. Model size determines which pretrained weights to load (`yolo26n-seg.pt`, `yolo26m-seg.pt`, etc.)
 3. Immediately checks for / generates the `data.yaml` that YOLO requires
 
 ---
@@ -77,17 +79,19 @@ def build_model(self):
     if resume_path:
         self.model = YOLO(resume_path)       # Resume from checkpoint
     else:
-        model_name = f"yolov12{self.model_size}-seg.pt"
+        model_name = f"yolo26{self.model_size}-seg.pt"
         self.model = YOLO(model_name)        # Fresh pretrained weights
 ```
 
-| `model_size` | Weights File | Parameters | Speed |
+| `model_size` | Weights File | Speed | Accuracy |
 |---|---|---|---|
-| `n` | `yolov12n-seg.pt` | ~3.4M | Fastest |
-| `s` | `yolov12s-seg.pt` | ~11.8M | Fast |
-| `m` | `yolov12m-seg.pt` | ~27.3M | Balanced |
-| `l` | `yolov12l-seg.pt` | ~46.0M | Accurate |
-| `x` | `yolov12x-seg.pt` | ~71.8M | Most Accurate |
+| `n` (nano) | `yolo26n-seg.pt` | Fastest | Good |
+| `s` (small) | `yolo26s-seg.pt` | Fast | Better |
+| `m` (medium) | `yolo26m-seg.pt` | Balanced | Strong |
+| `l` (large) | `yolo26l-seg.pt` | Slower | Very strong |
+| `x` (xlarge) | `yolo26x-seg.pt` | Slowest | Highest |
+
+Weights are pulled automatically from Ultralytics' model hub on first use if the file is not present locally.
 
 ---
 

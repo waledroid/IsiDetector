@@ -10,7 +10,7 @@ hide:
 <p class="hero-subtitle">
   A modular, config-driven instance segmentation pipeline for industrial parcel detection.
   <br/>
-  Switch between <strong>YOLOv12-seg</strong> and <strong>RF-DETR-Seg</strong> with one line of YAML.
+  Switch between <strong>YOLOv26-seg</strong> and <strong>RF-DETR-Seg</strong> with one line of YAML.
 </p>
 
 [Get Started :material-arrow-right:](getting-started.md){ .md-button .md-button--primary }
@@ -29,7 +29,7 @@ IsiDetector is built for **logistics and warehouse** environments where you need
 
 ### 🧠 Two Architectures, One Interface
 
-Train with a CNN-based **YOLOv12-seg** for speed, or a Transformer-based **RF-DETR-Seg** (DINOv2 backbone) for global context. Both share the exact same API.
+Train with a CNN-based **YOLOv26-seg** for speed, or a Transformer-based **RF-DETR-Seg** (DINOv2 backbone) for global context. Both share the exact same API.
 
 </div>
 <div class="card" markdown>
@@ -90,7 +90,7 @@ logistic/
 ├── src/                              # 🏗️ Core Engine
 │   ├── shared/registry.py            # Global module registry
 │   ├── training/                     # Training logic
-│   │   ├── trainers/                 # YOLOv12 & RF-DETR implementations
+│   │   ├── trainers/                 # YOLOv26 & RF-DETR implementations
 │   │   └── hooks/                    # Logging & Metrics system
 │   └── inference/                    # High-speed ONNX & Torch engines
 ├── models/                           # 🧠 Pretrained & Exported weights

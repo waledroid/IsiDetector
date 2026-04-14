@@ -119,7 +119,7 @@ nav:
     - Functionalities: web-app/functionalities.md
   - Trainers:
     - trainers/index.md
-    - YOLOv12-seg: trainers/yolo.md
+    - YOLOv26-seg: trainers/yolo.md
     - RF-DETR-Seg: trainers/rfdetr.md
   - Modules:
     - modules/index.md

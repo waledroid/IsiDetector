@@ -45,7 +45,7 @@ cd IsiDetector
 
 ## Dataset Setup
 
-### YOLO Format (for YOLOv12-seg)
+### YOLO Format (for YOLOv26-seg)
 
 Your dataset should follow the standard YOLO segmentation layout:
 
