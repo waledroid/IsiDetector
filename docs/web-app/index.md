@@ -71,18 +71,19 @@ uvicorn isitec_api.app:app --host 0.0.0.0 --port 9501
 
 ### Docker Compose (production)
 
-`docker-compose.yml` orchestrates the full stack:
+Two helper scripts wrap the whole lifecycle:
 
 ```bash
-docker compose up -d --build
+./run_start.sh       # first time on a fresh host: installs Docker, builds images
+./up.sh              # daily start: launches the stack and opens Chrome when ready
 ```
+
+The stack runs as **two containers**:
 
 - **`web` container** — Flask app (`isitec_app/`), ONNX Runtime, YOLO. Port 9501 (HTTP), 9502/udp (sorter telemetry).
 - **`rfdetr` sidecar** — Isolated PyTorch + `rfdetr` library for native `.pth` inference. Port 9510 (internal only, never exposed to the host).
 
-Both images set `TZ=Europe/Paris` and install `tzdata` so in-container timestamps match the host's wall clock. The `web` container also preloads the default RF-DETR ONNX at startup to warm the CUDA kernel cache — first hot-swap to RF-DETR after boot completes in ~2 s instead of 5–8 s.
-
-Override deployment timezone by editing both `Dockerfile`s + `docker-compose.yml`, or by adding `TZ=${TZ:-Europe/Paris}` to the compose env block for per-host customisation.
+See [**Deployment (Docker)**](../deployment.md) for the full walkthrough — site-delivery packaging, GPU vs CPU compose profiles, volume-mount semantics, timezone, ONNX preload timing, troubleshooting.
 
 ### FastAPI Backend (isitec_api)
 
