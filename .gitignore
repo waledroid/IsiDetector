@@ -14,6 +14,8 @@ logs/
 venv/
 .venv/
 isitec_app/uploads/
+isitec_api/uploads/
+isitec_api/logs/
 
 # Session-local tutorials and diagnostics (not for shared repo)
 MODULAR.md
