@@ -71,13 +71,23 @@ class UDPPublisher:
         self.enabled = enabled
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def publish(self, class_name):
+    def publish(self, class_name, event_id=None):
+        """Emit one UDP datagram per line-crossing event.
+
+        Optional ``event_id`` (tracker ID) is included in the payload as
+        ``"id"`` so the sorter can dedupe and trace individual objects.
+        Omitted when ``None`` — backward-compatible with consumers that
+        only read ``class``.
+        """
         if not self.enabled:
             return
-        payload = json.dumps({
+        msg = {
             "class": str(class_name),
-            "ts": datetime.datetime.now().isoformat()   # microsecond precision
-        }).encode()
+            "ts": datetime.datetime.now().isoformat(),
+        }
+        if event_id is not None:
+            msg["id"] = int(event_id)
+        payload = json.dumps(msg).encode()
         try:
             self._sock.sendto(payload, (self.host, self.port))
             logger.debug(f"[UDP] → {self.host}:{self.port} | {payload.decode()}")
@@ -276,8 +286,13 @@ class StreamHandler:
     def get_udp_target(self):
         return {"host": self.publisher.host, "port": self.publisher.port, "enabled": self.publisher.enabled}
 
-    def set_line_config(self, orientation=None, position=None):
-        """Update line orientation/position live. Re-initializes the LineZone."""
+    def set_line_config(self, orientation=None, position=None, belt_direction=None):
+        """Update line orientation / position / belt direction live.
+
+        Re-initializes the LineZone so the new trigger anchor (derived
+        from orientation × belt_direction) takes effect immediately
+        without restarting the stream.
+        """
         with self.lock:
             engine = self.engine
             if not engine:
@@ -286,16 +301,23 @@ class StreamHandler:
                 engine.line_orientation = orientation
             if position is not None:
                 engine.line_position = max(0.1, min(0.9, float(position)))
+            if belt_direction is not None:
+                engine.belt_direction = belt_direction
             if engine.line_zone is not None:
                 engine.init_line(engine._frame_w, engine._frame_h,
-                                 engine.line_position, engine.line_orientation)
+                                 engine.line_position, engine.line_orientation,
+                                 belt_direction=engine.belt_direction)
 
     def get_line_config(self):
         with self.lock:
             engine = self.engine
             if engine:
-                return {"orientation": engine.line_orientation, "position": engine.line_position}
-        return {"orientation": "vertical", "position": 0.65}
+                return {
+                    "orientation": engine.line_orientation,
+                    "position": engine.line_position,
+                    "belt_direction": engine.belt_direction,
+                }
+        return {"orientation": "vertical", "position": 0.5, "belt_direction": "left_to_right"}
 
     def _apply_line_settings(self, engine):
         """Load line settings from settings.json and apply to engine."""
@@ -305,7 +327,8 @@ class StreamHandler:
                 with open(settings_path) as f:
                     settings = json.load(f)
                 engine.line_orientation = settings.get('line_orientation', 'vertical')
-                engine.line_position = settings.get('line_position', 0.65)
+                engine.line_position = settings.get('line_position', 0.5)
+                engine.belt_direction = settings.get('belt_direction', 'left_to_right')
         except Exception:
             pass
 
@@ -693,7 +716,7 @@ class StreamHandler:
                         frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)))
 
                     _t_start = time.perf_counter()
-                    annotated, detections, event = engine.process_frame(frame, self.class_totals)
+                    annotated, detections, new_events = engine.process_frame(frame, self.class_totals)
                     _t_done = time.perf_counter()
 
                     stage_ms = dict(getattr(engine, 'last_timing', {}))
@@ -705,11 +728,13 @@ class StreamHandler:
                     )
                     self.monitor.notify_no_counts(self.class_totals)
 
-                    if event:
+                    # One UDP datagram PER crossing — two close-together
+                    # objects in the same frame now trigger two sort gates.
+                    for event in new_events:
                         ts = datetime.datetime.now().isoformat()
                         with self.lock:
-                            self.last_detected = {"class": event['class'], "time": ts}
-                        self.publisher.publish(event['class'])
+                            self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
+                        self.publisher.publish(event['class'], event_id=event['id'])
                         self.monitor.track_udp_publish()
                         self.monitor.track_crossing()
 

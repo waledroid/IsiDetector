@@ -6,5 +6,6 @@
   "detr_imgsz": 416,
   "detr_conf": 0.35,
   "line_orientation": "vertical",
-  "line_position": 0.8
+  "line_position": 0.5,
+  "belt_direction": "left_to_right"
 }

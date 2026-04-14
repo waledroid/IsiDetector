@@ -83,9 +83,20 @@ class VisionEngine:
 
         # 6. Line configuration (can be overridden before first frame)
         self.line_orientation = 'vertical'
-        self.line_position = 0.65
+        self.line_position = 0.5
+        self.belt_direction = 'left_to_right'
         self._frame_w = 0
         self._frame_h = 0
+
+    # Belt direction → leading-edge anchor map. The leading edge is the side
+    # of the bbox that enters the line zone FIRST given the belt's motion.
+    # Using the leading edge maximises the sorter's reaction window.
+    _ANCHOR_MAP = {
+        ('vertical',   'left_to_right'): sv.Position.CENTER_RIGHT,
+        ('vertical',   'right_to_left'): sv.Position.CENTER_LEFT,
+        ('horizontal', 'top_to_bottom'): sv.Position.BOTTOM_CENTER,
+        ('horizontal', 'bottom_to_top'): sv.Position.TOP_CENTER,
+    }
 
     def swap_inferencer(self, new_inferencer):
         """Replace the model without losing counts, tracker IDs, or line state.
@@ -106,7 +117,8 @@ class VisionEngine:
             text_scale=0.3, text_thickness=1, text_padding=2,
         )
 
-    def init_line(self, width, height, position=0.65, orientation='vertical'):
+    def init_line(self, width, height, position=0.5, orientation='vertical',
+                   belt_direction=None):
         """Initializes the counting line based on frame dimensions.
 
         Args:
@@ -115,9 +127,15 @@ class VisionEngine:
             position: Line position as a fraction (0.1–0.9). For vertical
                 lines this is the x-offset; for horizontal, the y-offset.
             orientation: ``'vertical'`` (default) or ``'horizontal'``.
+            belt_direction: One of ``'left_to_right'``, ``'right_to_left'``,
+                ``'top_to_bottom'``, ``'bottom_to_top'``. Determines which
+                side of the bbox is the leading edge and therefore the
+                trigger anchor. If ``None``, uses ``self.belt_direction``.
         """
         self.line_position = position
         self.line_orientation = orientation
+        if belt_direction is not None:
+            self.belt_direction = belt_direction
         self._frame_w = width
         self._frame_h = height
 
@@ -130,9 +148,15 @@ class VisionEngine:
             start = sv.Point(line_x, 0)
             end = sv.Point(line_x, height)
 
+        # Pick the leading-edge anchor based on orientation + belt direction.
+        anchor = self._ANCHOR_MAP.get(
+            (orientation, self.belt_direction),
+            sv.Position.BOTTOM_CENTER,   # safe fallback
+        )
+
         self.line_zone = sv.LineZone(
             start=start, end=end,
-            triggering_anchors=[sv.Position.BOTTOM_CENTER],
+            triggering_anchors=[anchor],
         )
 
     def process_frame(self, frame: np.ndarray, class_totals: dict):
@@ -156,8 +180,10 @@ class VisionEngine:
               and the counting line drawn.
             - ``detections``: ``sv.Detections`` object for the current
               frame (tracker IDs assigned).
-            - ``event``: ``None``, or ``{"class": str, "id": int}`` when
-              a new object crosses the line this frame.
+            - ``events``: list of ``{"class": str, "id": int}`` dicts —
+              one entry per new line crossing this frame. Empty list if
+              no crossings. Multiple entries if several objects crossed
+              in the same frame (close-together on the belt).
 
         Note:
             ``counted_ids`` is automatically pruned when it exceeds
@@ -184,16 +210,19 @@ class VisionEngine:
         in_cross, out_cross = self.line_zone.trigger(detections=detections)
         all_crossings = in_cross | out_cross
         
-        new_event = None
+        # Collect EVERY new crossing this frame — the caller publishes one
+        # UDP datagram per event so the sorter never misses a trigger when
+        # two close-together objects cross in the same frame.
+        new_events = []
         for i, crossed in enumerate(all_crossings):
             if crossed and detections.tracker_id is not None:
-                t_id = detections.tracker_id[i]
+                t_id = int(detections.tracker_id[i])
                 if t_id not in self.counted_ids:
-                    class_id = detections.class_id[i]
+                    class_id = int(detections.class_id[i])
                     name = self.inferencer.class_names.get(class_id, "object")
                     class_totals[name] = class_totals.get(name, 0) + 1
                     self.counted_ids.add(t_id)
-                    new_event = {"class": name, "id": t_id}
+                    new_events.append({"class": name, "id": t_id})
 
         # Prune counted_ids to prevent unbounded growth over long shifts.
         # ByteTrack IDs are monotonically increasing — old IDs are never reassigned,
@@ -221,7 +250,7 @@ class VisionEngine:
         
         annotated = self.line_annotator.annotate(frame=annotated, line_counter=self.line_zone)
         
-        return annotated, detections, new_event
+        return annotated, detections, new_events
 
     def cleanup(self, class_totals):
         """Safe shutdown."""

@@ -148,7 +148,7 @@ def settings():
     if not _check_dev():
         return jsonify({"status": "error", "message": "Unauthorized"}), 403
     data = request.json or {}
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position')
+    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
     current = _load_settings()
     for k in allowed_keys:
         if k in data:
@@ -317,17 +317,22 @@ def line_config():
     data = request.json or {}
     orientation = data.get('orientation')
     position = data.get('position')
+    belt_direction = data.get('belt_direction')
     if orientation and orientation not in ('vertical', 'horizontal'):
         return jsonify({"status": "error", "message": "orientation must be 'vertical' or 'horizontal'"}), 400
     if position is not None:
         position = float(position)
         if not (0.1 <= position <= 0.9):
             return jsonify({"status": "error", "message": "position must be 0.1-0.9"}), 400
-    stream_handler.set_line_config(orientation=orientation, position=position)
+    valid_directions = ('left_to_right', 'right_to_left', 'top_to_bottom', 'bottom_to_top')
+    if belt_direction and belt_direction not in valid_directions:
+        return jsonify({"status": "error", "message": f"belt_direction must be one of {valid_directions}"}), 400
+    stream_handler.set_line_config(orientation=orientation, position=position, belt_direction=belt_direction)
     current = _load_settings()
     config = stream_handler.get_line_config()
     current['line_orientation'] = config['orientation']
     current['line_position'] = config['position']
+    current['belt_direction'] = config['belt_direction']
     _save_settings(current)
     return jsonify({"status": "success", **config})
 

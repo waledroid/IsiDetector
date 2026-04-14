@@ -319,15 +319,20 @@
                             </button>
                         </div>
 
-                        <label>Position (<span id="linePositionVal">65</span>%)</label>
+                        <label>Position (<span id="linePositionVal">50</span>%)</label>
                         <div class="line-btn-group">
                             <button class="line-btn" id="btnLineBack" title="Move line back (-5%)">
                                 <i class="material-icons">arrow_back</i> Back
                             </button>
-                            <input type="range" id="linePositionSlider" min="10" max="90" step="5" value="65" style="flex:1;">
+                            <input type="range" id="linePositionSlider" min="10" max="90" step="5" value="50" style="flex:1;">
                             <button class="line-btn" id="btnLineForward" title="Move line forward (+5%)">
                                 <i class="material-icons">arrow_forward</i> Forward
                             </button>
+                        </div>
+
+                        <label title="Direction of belt motion determines which side of the bounding box (the 'leading edge') fires the trigger">Belt Direction</label>
+                        <div class="line-btn-group" id="beltDirectionGroup">
+                            <!-- Populated by main.js based on current orientation -->
                         </div>
                     </div>
                 </div>

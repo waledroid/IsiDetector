@@ -861,13 +861,49 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Tracking Line Controls ──────────────────────────────────────────
     const lineSlider = document.getElementById('linePositionSlider');
     const linePosVal = document.getElementById('linePositionVal');
+    const beltDirectionGroup = document.getElementById('beltDirectionGroup');
     let lineOrientation = 'vertical';
+    let beltDirection = 'left_to_right';
 
-    function updateLinePreview(orientation, position) {
+    const BELT_DIRECTION_OPTIONS = {
+        vertical: [
+            ['left_to_right', 'Left → Right'],
+            ['right_to_left', 'Right → Left'],
+        ],
+        horizontal: [
+            ['top_to_bottom', 'Top → Bottom'],
+            ['bottom_to_top', 'Bottom → Top'],
+        ],
+    };
+
+    function renderBeltDirectionButtons() {
+        const options = BELT_DIRECTION_OPTIONS[lineOrientation];
+        const valid = options.some(([v]) => v === beltDirection);
+        if (!valid) beltDirection = options[0][0];
+
+        beltDirectionGroup.innerHTML = '';
+        options.forEach(([value, label]) => {
+            const btn = document.createElement('button');
+            btn.className = 'line-btn' + (value === beltDirection ? ' active' : '');
+            btn.textContent = label;
+            btn.addEventListener('click', () => {
+                beltDirection = value;
+                renderBeltDirectionButtons();
+                updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
+            });
+            beltDirectionGroup.appendChild(btn);
+        });
+    }
+
+    function updateLinePreview(orientation, position, belt) {
         fetch('/api/line', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...devHeaders() },
-            body: JSON.stringify({ orientation, position: position / 100 })
+            body: JSON.stringify({
+                orientation,
+                position: position / 100,
+                belt_direction: belt,
+            })
         }).catch(e => console.error('Line update failed', e));
     }
 
@@ -875,34 +911,38 @@ document.addEventListener('DOMContentLoaded', () => {
         lineOrientation = 'vertical';
         document.getElementById('btnLineVertical').classList.add('active');
         document.getElementById('btnLineHorizontal').classList.remove('active');
-        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+        renderBeltDirectionButtons();
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     document.getElementById('btnLineHorizontal').addEventListener('click', () => {
         lineOrientation = 'horizontal';
         document.getElementById('btnLineHorizontal').classList.add('active');
         document.getElementById('btnLineVertical').classList.remove('active');
-        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+        renderBeltDirectionButtons();
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     document.getElementById('btnLineBack').addEventListener('click', () => {
         lineSlider.value = Math.max(10, parseInt(lineSlider.value) - 5);
         linePosVal.textContent = lineSlider.value;
-        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     document.getElementById('btnLineForward').addEventListener('click', () => {
         lineSlider.value = Math.min(90, parseInt(lineSlider.value) + 5);
         linePosVal.textContent = lineSlider.value;
-        updateLinePreview(lineOrientation, parseInt(lineSlider.value));
+        updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     lineSlider.addEventListener('input', (e) => {
         linePosVal.textContent = e.target.value;
     });
     lineSlider.addEventListener('change', (e) => {
-        updateLinePreview(lineOrientation, parseInt(e.target.value));
+        updateLinePreview(lineOrientation, parseInt(e.target.value), beltDirection);
     });
+
+    renderBeltDirectionButtons();
 
     ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
         const slider = document.getElementById(`set_${id}`);
@@ -938,12 +978,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
-        const savedPosition = Math.round((serverSettings.line_position || 0.65) * 100);
+        const savedPosition = Math.round((serverSettings.line_position || 0.5) * 100);
+        const savedBeltDir = serverSettings.belt_direction
+            || (savedOrientation === 'vertical' ? 'left_to_right' : 'top_to_bottom');
         lineSlider.value = savedPosition;
         linePosVal.textContent = savedPosition;
         lineOrientation = savedOrientation;
+        beltDirection = savedBeltDir;
         document.getElementById('btnLineVertical').classList.toggle('active', savedOrientation === 'vertical');
         document.getElementById('btnLineHorizontal').classList.toggle('active', savedOrientation === 'horizontal');
+        renderBeltDirectionButtons();
 
         try {
             const res = await fetch('/api/models');
@@ -985,6 +1029,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 detr_conf:     parseFloat(document.getElementById('set_detr_conf').value),
                 line_orientation: lineOrientation,
                 line_position: parseInt(lineSlider.value) / 100,
+                belt_direction: beltDirection,
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);

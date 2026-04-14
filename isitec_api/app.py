@@ -188,7 +188,7 @@ async def get_settings():
 
 @app.post("/api/settings")
 async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position')
+    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
     current = _load_settings()
     for k in allowed_keys:
         if k in request_body:
@@ -352,6 +352,7 @@ def get_line(_token: str = Depends(require_dev)):
 def set_line(request_body: dict, _token: str = Depends(require_dev)):
     orientation = request_body.get('orientation')
     position = request_body.get('position')
+    belt_direction = request_body.get('belt_direction')
     if orientation and orientation not in ('vertical', 'horizontal'):
         return JSONResponse(
             {"status": "error", "message": "orientation must be 'vertical' or 'horizontal'"},
@@ -364,11 +365,18 @@ def set_line(request_body: dict, _token: str = Depends(require_dev)):
                 {"status": "error", "message": "position must be 0.1-0.9"},
                 status_code=400,
             )
-    stream_handler.set_line_config(orientation=orientation, position=position)
+    valid_directions = ('left_to_right', 'right_to_left', 'top_to_bottom', 'bottom_to_top')
+    if belt_direction and belt_direction not in valid_directions:
+        return JSONResponse(
+            {"status": "error", "message": f"belt_direction must be one of {valid_directions}"},
+            status_code=400,
+        )
+    stream_handler.set_line_config(orientation=orientation, position=position, belt_direction=belt_direction)
     current = _load_settings()
     config = stream_handler.get_line_config()
     current['line_orientation'] = config['orientation']
     current['line_position'] = config['position']
+    current['belt_direction'] = config['belt_direction']
     _save_settings(current)
     return {"status": "success", **config}
 
