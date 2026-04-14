@@ -46,7 +46,7 @@ graph LR
     B -->|Latest frame| C[_inference_loop<br/>Daemon Thread]
     C --> D[VisionEngine<br/>ByteTrack + Line Count]
     D --> E[latest_annotated<br/>JPEG buffer]
-    E --> F[/video_feed<br/>MJPEG stream]
+    E --> F["/video_feed<br/>MJPEG stream"]
     D -->|line_crossed event| G[TelemetryPublisher<br/>MQTT log]
 ```
 

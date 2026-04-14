@@ -22,7 +22,7 @@ Everything else (`docker-compose.yml`, `Dockerfile`, `src/`, `isitec_app/`, weig
 ```mermaid
 graph LR
     Host[Host Machine]
-    subgraph Compose Stack
+    subgraph compose_stack[Compose Stack]
         Web[web container<br/>Flask + ONNX + YOLO<br/>port 9501 + 9502/udp]
         Rfdetr[rfdetr container<br/>PyTorch + rfdetr lib<br/>port 9510 internal]
     end
