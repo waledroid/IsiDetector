@@ -365,14 +365,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     detectionChart.update('none');
                 }
             }
-            // Update UDP footer indicator
+            // Update UDP footer indicator — show tracker id so operators can
+            // correlate the UI line with the UDP datagram the sorter receives.
             const udpEl = document.getElementById('udpStatus');
             if (data.last_detected) {
-                statLast.textContent = `${data.last_detected.class.toUpperCase()} - ${data.last_detected.time}`;
-                statLast.removeAttribute('data-i18n');
                 const cls = data.last_detected.class.toUpperCase();
                 const ts = data.last_detected.time.split('T')[1].split('.')[0];
-                udpEl.textContent = `UDP \u2192 ${cls} @ ${ts}`;
+                const id = data.last_detected.id;
+                const idStr = (id !== undefined && id !== null) ? ` #${id}` : '';
+                statLast.textContent = `${cls}${idStr} - ${data.last_detected.time}`;
+                statLast.removeAttribute('data-i18n');
+                udpEl.textContent = `UDP \u2192 ${cls}${idStr} @ ${ts}`;
                 udpEl.style.color = '#43a047';
             } else if (udpEl) {
                 udpEl.textContent = 'UDP: idle';
