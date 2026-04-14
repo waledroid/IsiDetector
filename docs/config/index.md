@@ -126,7 +126,7 @@ The master `train.yaml` acts as a switchboard. Only **one engine block** should 
 # =========================================================
 
 # ---------------------------------------------------------
-# 🚀 OPTION A: YOLOv8 (CNN) - Fast, grid-based
+# 🚀 OPTION A: YOLOv26 (CNN, NMS-free) - Fast one-to-one assignment
 # ---------------------------------------------------------
 # model_type: "yolo"
 # model_size: "m"

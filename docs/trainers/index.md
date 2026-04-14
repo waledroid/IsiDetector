@@ -10,9 +10,9 @@ Two model architectures, one unified interface.
 <div class="grid-container" markdown>
 <div class="card" markdown>
 
-### ⚡ YOLOv8-Seg
+### ⚡ YOLOv26-Seg
 
-CNN-based instance segmentation. Grid-based detection, fast inference, high batch sizes. Wraps Ultralytics with hook bridging and dynamic augmentation injection.
+CNN-based, NMS-free instance segmentation. One-to-one label assignment during training, fast inference, high batch sizes. Wraps Ultralytics with hook bridging and dynamic augmentation injection.
 
 [:material-arrow-right: Read More](yolo.md)
 
