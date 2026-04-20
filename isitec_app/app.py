@@ -148,6 +148,23 @@ def settings():
     if not _check_dev():
         return jsonify({"status": "error", "message": "Unauthorized"}), 403
     data = request.json or {}
+
+    # Guard against a known-broken combination before it reaches the
+    # inference path. OpenVINO 2026 mistranslates RF-DETR's transformer
+    # ops — the IR produces zero detections. Reject the save so the user
+    # sees an immediate, actionable error in the Settings panel rather
+    # than discovering it after clicking Start.
+    rfdetr_w = data.get('rfdetr_weights', '')
+    if isinstance(rfdetr_w, str) and rfdetr_w.lower().endswith('.xml'):
+        return jsonify({
+            "status": "error",
+            "message": (
+                "RF-DETR is not supported via OpenVINO IR (.xml) — the "
+                "conversion produces wrong logits. Pick an RF-DETR .onnx "
+                "or .pth file instead."
+            ),
+        }), 400
+
     allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
     current = _load_settings()
     for k in allowed_keys:

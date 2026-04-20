@@ -65,6 +65,25 @@ class OpenVINOInferencer(BaseInferencer):
                              for i in range(len(self.compiled.outputs))]
         self.is_rfdetr = any(n in self.output_names
                               for n in ('dets', 'pred_logits', 'bboxes', 'labels'))
+
+        # Hard-refuse RF-DETR OpenVINO IR. OpenVINO 2026 mistranslates the
+        # transformer / Einsum ops in RF-DETR's segmentation head, yielding
+        # logits that diverge from ONNX by |Δ| up to ~9 — the model loads
+        # happily but returns zero detections at inference. Raise now with
+        # a clear remediation, rather than letting the operator stare at a
+        # working-looking dashboard that never counts anything. Direct the
+        # user to the two working RF-DETR paths: ONNX (CPU or CUDA) and
+        # native .pth (GPU only). See OPENVINO_TUTORIAL.md §11 for the full
+        # investigation.
+        if self.is_rfdetr:
+            raise ValueError(
+                "RF-DETR is not supported via OpenVINO — the converted IR "
+                "produces wrong logits on OpenVINO 2026 (known transformer/"
+                "Einsum conversion limitation). Switch to an RF-DETR .onnx "
+                "or .pth weight instead (ONNX CPU works correctly; use GPU "
+                f"for real-time). Rejected model: {xml_path}"
+            )
+
         self._has_mask_output = len(self.compiled.outputs) > 1
         self._num_outputs = len(self.compiled.outputs)
 

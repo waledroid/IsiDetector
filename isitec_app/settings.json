@@ -1,11 +1,11 @@
 {
-  "yolo_weights": "runs/segment/models/yolo/17-04-2026/weights/openvino/model.xml",
-  "rfdetr_weights": "models/rfdetr/24-03-2026_0120/openvino/model.xml",
+  "yolo_weights": "runs/segment/models/yolo/17-04-2026/weights/last.pt",
+  "rfdetr_weights": "models/rfdetr/24-03-2026_0120/inference_model.onnx",
   "yolo_imgsz": 320,
   "yolo_conf": 0.55,
   "detr_imgsz": 416,
   "detr_conf": 0.35,
   "line_orientation": "vertical",
-  "line_position": 0.5,
+  "line_position": 0.6,
   "belt_direction": "left_to_right"
 }

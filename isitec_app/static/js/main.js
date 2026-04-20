@@ -1037,21 +1037,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 belt_direction: beltDirection,
             };
 
-            // Save to localStorage (immediate cache)
+            // Save to server first — if it rejects (e.g. RF-DETR .xml,
+            // known-broken), surface the error and skip the cache write
+            // so the UI stays honest about what was actually accepted.
+            let serverOk = false;
+            let serverMsg = '';
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                    body: JSON.stringify(settings)
+                });
+                const body = await res.json().catch(() => ({}));
+                serverOk = res.ok && body.status === 'success';
+                serverMsg = body.message || `HTTP ${res.status}`;
+            } catch (e) {
+                serverMsg = String(e);
+                console.warn('Server settings save failed', e);
+            }
+
+            if (!serverOk) {
+                alert(`Settings not saved:\n\n${serverMsg}`);
+                return;
+            }
+
+            // Only cache locally once the server has accepted the values.
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
             localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights);
             ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
                 localStorage.setItem(`isitec_${id}`, settings[id]);
             });
-
-            // Save to server (persistent)
-            try {
-                await fetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
-                    body: JSON.stringify(settings)
-                });
-            } catch (e) { console.warn('Server settings save failed', e); }
 
             const confirmMsg = document.getElementById('saveConfirm');
             confirmMsg.classList.remove('hidden');
