@@ -1,0 +1,20 @@
+# Overlay for GPU hosts — applied alongside docker-compose.yml when a
+# CUDA-capable NVIDIA GPU is detected. run_start.sh / up.sh add this
+# file automatically; you don't reference it by hand.
+#
+# What it adds:
+#   - nvidia device reservation for the web service (CUDA inference +
+#     TensorRT engine path)
+#
+# The rfdetr sidecar already declares its own reservation in the base
+# file and is gated behind `profiles: ["gpu"]`, so no override needed.
+
+services:
+  web:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

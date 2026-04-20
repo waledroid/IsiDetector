@@ -89,11 +89,13 @@ fi
 if [[ "$COMPOSE_MODE" == "cpu" ]]; then
     COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
     READY_PATTERN="Running on http://"   # Flask startup banner — works on both CPU and GPU
-    echo "▶ Using CPU compose profile (Dockerfile.cpu)"
+    echo "▶ Using CPU compose profile (Dockerfile.cpu, rfdetr sidecar skipped)"
 else
-    COMPOSE_CMD="$SUDO_DOCKER docker compose"
+    # docker-compose.gpu.yml adds the nvidia device reservation; --profile gpu
+    # activates the rfdetr sidecar (gated in docker-compose.yml).
+    COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu"
     READY_PATTERN="ONNX preload (CUDA kernels warm"
-    echo "▶ Using GPU compose profile"
+    echo "▶ Using GPU compose profile (rfdetr sidecar enabled)"
 fi
 
 # ── Start the stack ─────────────────────────────────────────────────────────

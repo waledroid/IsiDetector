@@ -7,20 +7,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cpu
-    # Drop the GPU device reservation so compose up works on hosts
-    # with no NVIDIA GPU (and no nvidia-container-toolkit installed).
-    deploy:
-      resources:
-        reservations:
-          devices: []
-  rfdetr:
-    # RF-DETR native .pth inference is GPU-only in practice (transformer
-    # backbone + DINOv2 attention are too slow on CPU for real-time).
-    # Sidecar is left in the compose topology for parity but is
-    # effectively unused on CPU hosts — the web service won't try to
-    # reach it unless an operator picks a .pth weight, which the CPU
-    # backends don't accept.
-    deploy:
-      resources:
-        reservations:
-          devices: []
+    # No GPU device reservation needed — the base file is now
+    # device-agnostic. docker-compose.gpu.yml adds nvidia reservations
+    # for GPU hosts.
+    # The base 'depends_on: rfdetr' uses `required: false` so web
+    # starts fine when the rfdetr sidecar is profile-gated off on CPU.

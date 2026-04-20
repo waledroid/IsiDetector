@@ -18,7 +18,7 @@ services:
       - /mnt/wslg:/mnt/wslg:ro
     environment:
       - TZ=Europe/Paris
-      - DEV_PASSWORD=Isitec69+
+      - DEV_PASSWORD=${DEV_PASSWORD:-change-me}
       - PORT=9501
       - UDP_HOST=127.0.0.1
       - UDP_PORT=9502
@@ -26,13 +26,9 @@ services:
       - DISPLAY=${DISPLAY:-:0}
       - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
       - XDG_RUNTIME_DIR=/mnt/wslg
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # GPU device reservation is added via docker-compose.gpu.yml — the
+    # base file stays device-agnostic so CPU hosts don't need any
+    # nested-array override gymnastics to drop the nvidia request.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9501/"]
@@ -42,8 +38,18 @@ services:
     depends_on:
       rfdetr:
         condition: service_healthy
+        # required: false → web still starts when rfdetr is absent
+        # (CPU mode, where the 'gpu' profile isn't active and the
+        # sidecar is skipped entirely). Needs Compose 2.24+.
+        required: false
 
   rfdetr:
+    # Activated only when the 'gpu' profile is passed — the sidecar runs
+    # PyTorch + RF-DETR natively and needs CUDA. On CPU hosts this service
+    # is skipped entirely (no build, no start, no 'nvidia runtime' error).
+    # run_start.sh / up.sh add --profile gpu automatically when a GPU is
+    # detected; CPU runs don't pass the flag so this whole block is inert.
+    profiles: ["gpu"]
     build:
       context: .
       dockerfile: Dockerfile.rfdetr

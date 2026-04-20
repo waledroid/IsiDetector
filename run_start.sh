@@ -275,15 +275,19 @@ info "Project directory: ${SCRIPT_DIR}"
 mkdir -p models configs isitec_app/logs isitec_app/uploads
 success "Runtime directories ready"
 
-# Determine compose command (GPU vs CPU, with sudo if needed)
+# Determine compose command (GPU vs CPU, with sudo if needed).
+# On GPU we pass --profile gpu so the rfdetr sidecar (which needs CUDA)
+# is built and started. On CPU we skip the profile → rfdetr is inert.
 if [ "$HAS_GPU" = true ]; then
-    COMPOSE_CMD="$SUDO_DOCKER docker compose"
+    COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu"
     info "Using GPU compose profile"
     info "  → Image: Dockerfile (nvidia/cuda:12.8 + CUDA torch + onnxruntime-gpu + tensorrt)"
+    info "  → rfdetr sidecar: enabled (--profile gpu)"
 else
     COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
     info "Using CPU compose profile"
     info "  → Image: Dockerfile.cpu (python:3.11-slim + CPU torch + onnxruntime CPU + openvino)"
+    info "  → rfdetr sidecar: skipped (needs CUDA)"
 fi
 
 # Stop existing container if running (preserves it, just stops)
