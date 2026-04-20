@@ -2,10 +2,38 @@
 # ============================================================================
 # IsiDetector — Docker Install & Launch Script
 # Works on any fresh Ubuntu 22.04 / 24.04 machine (with or without GPU)
-# Usage: chmod +x run_start.sh && ./run_start.sh
+#
+# Usage:
+#   ./run_start.sh              # auto-detect GPU and pick image accordingly
+#   ./run_start.sh --force-cpu  # build the CPU image even if a GPU is present
+#   ./run_start.sh --force-gpu  # build the CUDA image even if no GPU is detected
+#   ./run_start.sh -h | --help  # print this usage and exit
+#
+# Overrides are useful for:
+#   - Testing the CPU image on a dev box with a GPU
+#   - Building the CUDA image on a CI runner with drivers but no GPU attached
+#   - Reproducing a customer environment locally
 # ============================================================================
 
 set -e
+
+# ── Parse CLI flags ─────────────────────────────────────────────────────────
+FORCE_MODE=""
+for arg in "$@"; do
+    case "$arg" in
+        --force-cpu|--cpu)  FORCE_MODE="cpu" ;;
+        --force-gpu|--gpu)  FORCE_MODE="gpu" ;;
+        -h|--help)
+            sed -n '2,16p' "$0" | sed 's/^# *//'
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Try: $0 --help" >&2
+            exit 2
+            ;;
+    esac
+done
 
 # ── Colors & Helpers ────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -72,6 +100,24 @@ if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
 else
     warn "No NVIDIA GPU detected"
     info "Mode: CPU inference (OpenVINO optimized)"
+fi
+
+# Apply --force-cpu / --force-gpu override, if passed on the CLI. Warn
+# loudly so the operator sees the mismatch in the log — forcing GPU on a
+# machine without drivers will fail at runtime container start (not here
+# at build time), so we don't block it, but we do flag it.
+if [ -n "$FORCE_MODE" ]; then
+    if [ "$FORCE_MODE" = "cpu" ] && [ "$HAS_GPU" = true ]; then
+        warn "--force-cpu: ignoring detected GPU (${GPU_NAME}); building the CPU image instead"
+        HAS_GPU=false
+    elif [ "$FORCE_MODE" = "gpu" ] && [ "$HAS_GPU" = false ]; then
+        warn "--force-gpu: no GPU detected, but building the CUDA image anyway"
+        warn "             the image will build fine, but 'docker compose up' will fail if"
+        warn "             nvidia-container-toolkit is missing or no NVIDIA driver is loaded"
+        HAS_GPU=true
+    else
+        info "Override requested (${FORCE_MODE}) matches auto-detection — no change"
+    fi
 fi
 
 # ── Stage 2: Install Docker Engine ──────────────────────────────────────────
