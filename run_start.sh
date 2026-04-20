@@ -233,9 +233,11 @@ success "Runtime directories ready"
 if [ "$HAS_GPU" = true ]; then
     COMPOSE_CMD="$SUDO_DOCKER docker compose"
     info "Using GPU compose profile"
+    info "  → Image: Dockerfile (nvidia/cuda:12.8 + CUDA torch + onnxruntime-gpu + tensorrt)"
 else
     COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
-    info "Using CPU compose profile (no GPU reservation)"
+    info "Using CPU compose profile"
+    info "  → Image: Dockerfile.cpu (python:3.11-slim + CPU torch + onnxruntime CPU + openvino)"
 fi
 
 # Stop existing container if running (preserves it, just stops)
@@ -248,7 +250,11 @@ else
 fi
 
 # Build the image (cached layers are reused automatically)
-info "Building Docker image (first build takes 5-10 minutes, subsequent builds are cached)..."
+if [ "$HAS_GPU" = true ]; then
+    info "Building Docker image (first GPU build takes 5-10 minutes, subsequent builds are cached)..."
+else
+    info "Building Docker image (first CPU build takes 2-4 minutes, subsequent builds are cached)..."
+fi
 $COMPOSE_CMD build
 success "Docker image ready"
 
