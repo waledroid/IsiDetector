@@ -3,7 +3,7 @@ import secrets
 from fastapi import Header, HTTPException
 
 # ── Dev-mode authentication ──────────────────────────────────────────────────
-DEV_PASSWORD = os.environ.get('DEV_PASSWORD', 'Isitec69+')
+DEV_PASSWORD = os.environ.get('DEV_PASSWORD', 'change-me')
 _dev_tokens: set[str] = set()
 
 

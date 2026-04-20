@@ -273,7 +273,7 @@ echo -e "  ${BOLD}Docs:${NC}         http://localhost:9501/docs"
 echo -e "  ${BOLD}UDP Target:${NC}   127.0.0.1:9502"
 echo -e ""
 echo -e "  ${BOLD}Model weights:${NC} Place .pt / .onnx / .xml files in ${SCRIPT_DIR}/models/"
-echo -e "  ${BOLD}Dev access:${NC}   Double-click logo, password: Isitec69+"
+echo -e "  ${BOLD}Dev access:${NC}   Double-click logo, password: set via \$DEV_PASSWORD env var (default: change-me)"
 echo -e ""
 
 if [ "$HAS_GPU" = false ]; then

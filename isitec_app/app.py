@@ -19,7 +19,7 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB upload cap
 stream_handler = StreamHandler()
 
 # ── Dev-mode authentication ──────────────────────────────────────────────────
-DEV_PASSWORD = os.environ.get('DEV_PASSWORD', 'Isitec69+')
+DEV_PASSWORD = os.environ.get('DEV_PASSWORD', 'change-me')
 _dev_tokens: set[str] = set()
 
 def _check_dev() -> bool:
