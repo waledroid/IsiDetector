@@ -662,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatePerfGroup('detection',   d.detection,   buildDetectionRows);
                 updatePerfGroup('tracking',    d.tracking,    buildTrackingRows);
                 updatePerfGroup('counting',    d.counting,    buildCountingRows);
+                updatePerfGroup('udp',         d.udp,         buildUdpRows);
             }
             // Always update sessions table (now in Analytics)
             updateSessionsTable(d.sessions);
@@ -804,6 +805,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const rateStr = rates[k] != null ? ` (${rates[k]}/hr)` : '';
             return pmRow(k.charAt(0).toUpperCase() + k.slice(1), `${totals[k]}${rateStr}`);
         }).join('');
+    }
+
+    function buildUdpRows(d) {
+        // Trigger→wire latency for the sort-gate datagram. Operators and
+        // automation engineers read this to size their PLC scan budget.
+        return pmRow('Datagrams sent', fmt(d.published, '', 0))
+             + pmRow('Samples',        fmt(d.samples, '', 0))
+             + pmRow('p50',            fmt(d.p50_us, ' µs', 0))
+             + pmRow('p95',            fmt(d.p95_us, ' µs', 0))
+             + pmRow('p99',            fmt(d.p99_us, ' µs', 0))
+             + pmRow('Max',            fmt(d.max_us, ' µs', 0));
     }
 
     // ── Session Comparison Table ─────────────────────────────────────────────

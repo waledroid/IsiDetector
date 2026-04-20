@@ -67,6 +67,7 @@ class PerformanceMonitor:
         self._conf      = deque(maxlen=500)  # per-detection confidence scores
         self._det_count = deque(maxlen=100)  # detections per frame
         self._coverage  = deque(maxlen=200)  # mask/bbox area ratios
+        self._udp_latency_us = deque(maxlen=200)  # trigger→wire µs per UDP datagram
 
         # Per-session counters (reset by start_session)
         self.belt_active       = True
@@ -143,6 +144,7 @@ class PerformanceMonitor:
             self._conf.clear()
             self._det_count.clear()
             self._coverage.clear()
+            self._udp_latency_us.clear()
 
     # ── Metric hooks ──────────────────────────────────────────────────────────
 
@@ -200,9 +202,21 @@ class PerformanceMonitor:
             if is_oom:
                 self.cuda_oom_count += 1
 
-    def track_udp_publish(self):
+    def track_udp_publish(self, latency_ns: int = 0):
+        """Record a UDP datagram emission.
+
+        Args:
+            latency_ns: Trigger→wire latency in nanoseconds, as
+                returned by ``UDPPublisher.publish``. Surfaces in the
+                snapshot as p50/p95/p99/max µs so the automation
+                engineer can see the real sort-trigger budget.
+                Skipped (not appended) when zero — e.g. publisher
+                disabled or sendto failed.
+        """
         with self.lock:
             self.udp_published += 1
+            if latency_ns > 0:
+                self._udp_latency_us.append(latency_ns / 1000.0)
 
     def track_csv_write(self, success: bool):
         with self.lock:
@@ -333,6 +347,20 @@ class PerformanceMonitor:
             # counting status is set by get_performance() which has class_totals
             counting = {'status': 'green'}
 
+            # ── UDP sort-trigger latency ─────────────────────────────────────
+            # Trigger→wire interval (JSON encode + sendto syscall) per
+            # datagram. Surfaces the deterministic budget the automation
+            # PLC can rely on for sort-gate scheduling.
+            udp = {
+                'published':    self.udp_published,
+                'samples':      len(self._udp_latency_us),
+                'p50_us':       self._pct(self._udp_latency_us, 50),
+                'p95_us':       self._pct(self._udp_latency_us, 95),
+                'p99_us':       self._pct(self._udp_latency_us, 99),
+                'max_us':       round(max(self._udp_latency_us), 1) if self._udp_latency_us else None,
+            }
+            udp['status'] = self._status_udp(udp)
+
             sessions = self._load_sessions()
 
         return {
@@ -342,6 +370,7 @@ class PerformanceMonitor:
             'tracking':   tracking,
             'hardware':   hardware,
             'counting':   counting,
+            'udp':        udp,
             'sessions':   sessions,
         }
 
@@ -407,6 +436,15 @@ class PerformanceMonitor:
     @staticmethod
     def _avg(q) -> float | None:
         return statistics.mean(q) if q else None
+
+    @staticmethod
+    def _pct(q, pct: int) -> float | None:
+        """Nearest-rank percentile of a deque, ``None`` if empty."""
+        if not q:
+            return None
+        s = sorted(q)
+        idx = max(0, min(len(s) - 1, int(round(pct / 100.0 * len(s))) - 1))
+        return round(s[idx], 1)
 
     @staticmethod
     def _delta(current: dict | None, key: str, baseline: float | None):
@@ -579,6 +617,18 @@ class PerformanceMonitor:
             elif v > w: s.append('yellow')
             else:        s.append('green')
         return self._worst(s) if s else 'green'
+
+    def _status_udp(self, d: dict) -> str:
+        """Green: p95 < 500 µs. Yellow: < 1 ms. Red: ≥ 1 ms or no samples
+        while crossings happened."""
+        p95 = d.get('p95_us')
+        if p95 is None:
+            return 'green'  # no data yet — not a failure
+        if p95 >= 1000:
+            return 'red'
+        if p95 >= 500:
+            return 'yellow'
+        return 'green'
 
     def _status_counting(self, class_totals: dict, is_running: bool) -> str:
         if not is_running:

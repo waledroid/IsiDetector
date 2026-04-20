@@ -24,3 +24,6 @@ a.py
 
 # Per-host deployment marker written by run_start.sh
 .deployment.env
+
+# Compression tool scratch outputs (if stages ever write to a central dir)
+Compression/outputs/

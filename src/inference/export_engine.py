@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -150,6 +151,26 @@ def _export_rfdetr(weights_path: Path, imgsz: int = None) -> Path:
 
 # ── Format Converters ────────────────────────────────────────────────────────
 
+@contextlib.contextmanager
+def _silence_torch_export_pt2_probe():
+    """Mute ``torch.export``'s pt2-archive probe failure.
+
+    ``openvino.convert_model()`` probes the input as a PyTorch pt2
+    archive before falling back to the ONNX frontend. On an ONNX file
+    the probe fails and logs a multi-line ``PytorchStreamReader`` stack
+    trace at WARNING level, even though the fallback path succeeds.
+    Scope the level bump to just the conversion call so unrelated
+    torch warnings elsewhere in the run stay visible.
+    """
+    lg = logging.getLogger("torch.export")
+    prev_level = lg.level
+    lg.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        lg.setLevel(prev_level)
+
+
 def convert_openvino(onnx_path: Path, output_dir: Path = None) -> Path:
     """Convert ONNX → OpenVINO IR (.xml + .bin)."""
     import openvino as ov
@@ -166,7 +187,8 @@ def convert_openvino(onnx_path: Path, output_dir: Path = None) -> Path:
         return xml_path
 
     logger.info(f"Converting {onnx_path} → OpenVINO IR ...")
-    ov_model = ov.convert_model(str(onnx_path))
+    with _silence_torch_export_pt2_probe():
+        ov_model = ov.convert_model(str(onnx_path))
     ov.save_model(ov_model, str(xml_path))
 
     bin_path = output_dir / 'model.bin'

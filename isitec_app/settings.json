@@ -1,7 +1,7 @@
 {
-  "yolo_weights": "runs/segment/models/yolo/yolo26n_416_200/weights/best.sim.onnx",
+  "yolo_weights": "runs/segment/models/yolo/17-04-2026/weights/best.pt",
   "rfdetr_weights": "models/rfdetr/24-03-2026_0120/inference_model.sim.onnx",
-  "yolo_imgsz": 416,
+  "yolo_imgsz": 320,
   "yolo_conf": 0.5,
   "detr_imgsz": 416,
   "detr_conf": 0.35,

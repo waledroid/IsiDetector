@@ -16,7 +16,7 @@ optimizer:
 
 early_stopping:
   enabled: true
-  patience: 50     # 🛑 Aggressive cutoff: Stop if no improvement for 10 epochs
+  patience: 30     # 🛑 Aggressive cutoff: Stop if no improvement for 10 epochs
   min_delta: 0.0005
   monitor: "mAP50"
   mode: "max"

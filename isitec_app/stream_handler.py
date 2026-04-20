@@ -80,9 +80,17 @@ class UDPPublisher:
                 ``"id"`` so downstream consumers (sorter controllers)
                 can dedupe and trace individual objects. Omitted from
                 the payload if ``None`` — backward-compatible.
+
+        Returns:
+            Trigger-to-wire latency in nanoseconds (JSON encode +
+            ``sendto`` syscall), or ``0`` when publishing was skipped
+            or failed. The PerformanceMonitor surfaces this as a
+            histogram so the automation engineer can see the actual
+            sort-trigger budget.
         """
         if not self.enabled:
-            return
+            return 0
+        t0 = time.perf_counter_ns()
         msg = {
             "class": str(class_name),
             "ts": datetime.datetime.now().isoformat(),  # microsecond precision
@@ -92,9 +100,12 @@ class UDPPublisher:
         payload = json.dumps(msg).encode()
         try:
             self._sock.sendto(payload, (self.host, self.port))
-            logger.debug(f"[UDP] → {self.host}:{self.port} | {payload.decode()}")
+            elapsed = time.perf_counter_ns() - t0
+            logger.debug(f"[UDP] → {self.host}:{self.port} | {payload.decode()} | {elapsed / 1000:.0f} µs")
+            return elapsed
         except Exception as e:
             logger.warning(f"[UDP] Send failed: {e}")
+            return 0
 
     def update_target(self, host, port):
         """Retarget to a different host/port at runtime — no socket recreation needed."""
@@ -702,8 +713,8 @@ class StreamHandler:
                         ts = datetime.datetime.now().isoformat()
                         with self.lock:
                             self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
-                        self.publisher.publish(event['class'], event_id=event['id'])
-                        self.monitor.track_udp_publish()
+                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'])
+                        self.monitor.track_udp_publish(latency_ns=latency_ns)
                         self.monitor.track_crossing()
 
                     _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
