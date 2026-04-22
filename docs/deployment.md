@@ -299,6 +299,105 @@ So adding a new `.onnx` weight is as simple as dropping it into `models/yolo/<ru
 
 ---
 
+## Production Network Lock-down (`net.sh`)
+
+Once inference runs on a site PC and the UDP handshake with the automation engineer's PLC is working, **the PC's IP, gateway, and DNS must not drift**. A DHCP lease expiry, router reboot, or Wi-Fi reconnect can silently rotate the IP — and the automaticien's firewall whitelist breaks on the spot.
+
+`net.sh` (repo root) freezes the current DHCP-issued config into a static NetworkManager profile and provides a ready-to-email manual for the automaticien. **No site-specific value is hardcoded** — the script discovers everything at runtime, so the same one command works on every customer PC.
+
+### Commands
+
+```bash
+./net.sh                    # same as 'show' — current network + UDP publisher state
+./net.sh show
+./net.sh apply              # freeze discovered values as a static config (needs sudo)
+./net.sh apply --force      # skip confirm prompt (for scripts / cron)
+./net.sh revert             # restore DHCP (needs sudo)
+./net.sh test               # reachability checks + live UDP egress probe
+./net.sh manual             # French mini-manual for the automaticien
+./net.sh manual --en        # English variant
+./net.sh --help
+```
+
+### What `apply` writes
+
+```
+ipv4.method                     manual
+ipv4.addresses                  <current IP/CIDR, discovered>
+ipv4.gateway                    <default gateway, discovered>
+ipv4.dns                        <active DNS, discovered>
+ipv4.ignore-auto-dns            yes
+ipv6.method                     link-local
+connection.autoconnect          yes
+connection.autoconnect-priority 100
+```
+
+No change to what the PC is doing — it's the exact config DHCP just handed out, converted to static. That's why it always works: we're freezing a known-good state, not imposing a theoretical one.
+
+### Override flags (if discovery is wrong)
+
+```bash
+./net.sh apply --ip 192.168.2.225/24          # pin a specific address
+./net.sh apply --gateway 192.168.2.1          # override discovered gateway
+./net.sh apply --dns "8.8.8.8 1.1.1.1"        # override DNS servers
+./net.sh apply --conn "my-connection-name"    # operate on a non-active profile
+```
+
+### Cross-site deployment
+
+Bringing the repo to a new customer PC with a different Wi-Fi / subnet / automate IP needs **zero file edits**:
+
+```bash
+git pull origin dev
+./net.sh show         # confirm discovery found sensible values
+sudo ./net.sh apply   # freeze them in place
+./net.sh manual       # print the French handshake doc with this site's IPs
+```
+
+If discovery can't find a sensible value on some machine (no NetworkManager connection, IP in the Docker bridge range, no default gateway), the script errors cleanly with a "pass `--X` explicitly" hint instead of writing a bad config.
+
+### Automaticien handshake
+
+The mini-manual from `./net.sh manual` contains:
+
+- Our source IP (frozen by `apply`)
+- The automate's IP + port (read live from the running container's `UDP_HOST`/`UDP_PORT`)
+- Payload format spec (same JSON the `UDPPublisher` emits)
+- Three listener recipes: Python / netcat / PowerShell
+- iptables and Windows-Firewall allowlist templates
+- A one-packet validation handshake (`test-from-abdul`) — proves path end-to-end
+
+Run it, paste the output into email or a ticket, and you have a self-contained doc that the other side can action without needing access to this repo.
+
+### Example operator workflow on a new site
+
+```bash
+# Fresh PC with Ubuntu Desktop + NM, just reached the stage where ./up.sh
+# is running and inference streams properly:
+
+./net.sh show                   # see 'IPv4 method: auto' (DHCP)
+sudo ./net.sh apply             # answer 'y' to the diff — config now locked
+./net.sh test                   # all 5 rows ✅
+./net.sh manual | xclip -selection clipboard
+                                # paste into email to the automation engineer
+```
+
+After `apply`, a `reboot` or `sudo nmcli connection down <CONN> && up <CONN>` leaves the IP / gateway / DNS identical — the whole point of the lock-down.
+
+### When to `revert`
+
+- Moving the PC to a different network where DHCP is mandatory
+- Troubleshooting a gateway/DNS change where you want DHCP to auto-pick new values
+- Decommissioning the PC
+
+```bash
+sudo ./net.sh revert
+```
+
+The script re-enables DHCP and clears the static fields atomically.
+
+---
+
 ## Troubleshooting
 
 ### `docker compose up` hangs for 30+ seconds at startup
