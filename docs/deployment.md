@@ -1,19 +1,21 @@
 # Deployment — Docker, Scripts, and Site Bring-Up
 
-IsiDetector ships as a two-container Docker stack. This page walks through everything from unboxing on a fresh host to daily operation on a production line.
+IsiDetector ships as a Docker stack that runs identically on **CPU-only** industrial PCs (Intel i5/i7 typical) and **NVIDIA-GPU** machines (for faster real-time inference). This page walks through everything from an empty Ubuntu install to a running production line with UDP handshake to the automation engineer.
 
 ---
 
-## The Two Scripts
+## Deployment Scripts — What Each Does
 
-Two shell scripts at the repo root drive the whole deployment lifecycle:
+Four shell scripts at the repo root cover the full lifecycle:
 
 | Script | Role | When to run |
 |---|---|---|
-| [`run_start.sh`](#run_startsh-one-time-host-bootstrap) | One-time host bootstrap — installs Docker, NVIDIA toolkit, builds images, writes `.deployment.env` | **First time only**, on a fresh machine |
+| [`install.sh`](#complete-site-pc-setup-zero-to-production) | One-command bootstrap from a blank Ubuntu PC — installs `git` + `curl`, clones the repo, makes scripts executable, optionally hands off to `run_start.sh` | **Very first time** — before the repo even exists on the PC |
+| [`run_start.sh`](#run_startsh-one-time-host-bootstrap) | Host bootstrap — installs Docker + (if GPU) NVIDIA toolkit, builds images, writes `.deployment.env` | **Once per machine**, after the repo is cloned |
 | [`up.sh`](#upsh-daily-starter) | Daily starter — picks the compose profile, brings the stack up, opens Chrome when ready | **Every day**, or after a `docker compose down` |
+| [`net.sh`](#production-network-lock-down-netsh) | Freezes the site's DHCP-issued network config as static so IP/gateway/DNS never drift. Also prints a ready-to-email mini-manual for the automation engineer | **Once per site**, after `up.sh` is stable |
 
-Everything else (`docker-compose.yml`, `Dockerfile`, `src/`, `isitec_app/`, weights) is configuration and payload. The two scripts orchestrate them.
+All four auto-detect CPU vs GPU so the same commands work on both hardware profiles.
 
 ---
 
@@ -43,29 +45,245 @@ graph LR
 
 ---
 
+## Complete Site PC Setup — Zero to Production
+
+This is the checklist to run in order on a fresh customer PC. Each step is self-contained and idempotent (safe to re-run). **Same procedure for CPU and GPU hosts** — the scripts auto-detect and branch internally; the only explicit difference is whether an NVIDIA GPU is present in the machine.
+
+### 0. Before the PC arrives at the site
+
+**Hardware spec per mode:**
+
+=== "CPU-only PC"
+
+    | Component | Minimum | Recommended |
+    |---|---|---|
+    | CPU | Intel i5-8xxx / AMD Ryzen 5 3xxx (4C/8T) | Intel i7-11xxx+ (AVX-512/VNNI unlocks OpenVINO fast path) |
+    | RAM | 8 GB | 16 GB |
+    | Disk | 40 GB free | 100 GB |
+    | GPU | None | — |
+    | Inference model | YOLO OpenVINO (`.xml`) — 25–50 FPS at 320 px | |
+    | Network | 1 Gb Ethernet preferred; Wi-Fi OK | |
+
+=== "GPU PC"
+
+    | Component | Minimum | Recommended |
+    |---|---|---|
+    | CPU | Any x86-64 quad-core | — |
+    | RAM | 16 GB | 32 GB |
+    | Disk | 60 GB free | 100 GB |
+    | GPU | NVIDIA with CUDA 12.8 driver (≥ 550) + 6 GB VRAM | RTX 4060+ (16 GB) |
+    | Inference model | YOLO `.pt`/`.onnx`/`.engine`; RF-DETR `.pth` or `.onnx` | |
+    | Network | 1 Gb Ethernet | |
+
+**OS:** Ubuntu 22.04 LTS or 24.04 LTS (Desktop or Server). Debian derivatives should work but aren't covered by the tested install path.
+
+### 1. Install the OS + enable SSH (once)
+
+Plain Ubuntu install with your IT department's usual steps. Confirm the PC is on the same LAN / VLAN as the automate's PLC. Write down the LAN IP (`ip -br addr show | grep UP`) — you'll need it for step 7.
+
+### 2. Bootstrap — one command
+
+On the site PC, in a terminal:
+
+```bash
+sudo apt update && sudo apt install -y curl
+curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/dev/install.sh | bash
+```
+
+`install.sh` does:
+
+- Verifies sudo, warns if WSL2 (production should be bare-metal Linux)
+- Installs `git` + `curl` if missing
+- Clones the repo into `~/logistic` (dev branch)
+- Makes `run_start.sh`, `up.sh`, `net.sh`, `compress.sh` executable
+- Prompts to run `./run_start.sh` next — answer **y** to continue, or **n** to run manually
+
+### 3. `run_start.sh` — build images
+
+If you said **n** in step 2 (or curl-pipe-bash wasn't available), run the bootstrap manually:
+
+```bash
+cd ~/logistic
+./run_start.sh               # auto-detect CPU vs GPU
+# or force a specific mode for testing:
+./run_start.sh --force-cpu   # build CPU image even on a GPU host
+./run_start.sh --force-gpu   # build CUDA image even with no GPU visible
+```
+
+What happens under the hood:
+
+=== "CPU path"
+
+    - No `nvidia-smi` detected → `HAS_GPU=false`
+    - Installs Docker Engine only (no NVIDIA Container Toolkit)
+    - Builds from **`Dockerfile.cpu`** (python:3.11-slim base + CPU torch wheels + CPU onnxruntime + openvino). Image ~1.2 GB.
+    - Writes `.deployment.env` with `COMPOSE_MODE=cpu`
+    - Build time: 2–4 min on a decent internet connection
+
+=== "GPU path"
+
+    - `nvidia-smi` works → `HAS_GPU=true`
+    - Installs Docker Engine **and** NVIDIA Container Toolkit
+    - Runs `docker run --gpus all nvidia/cuda:... nvidia-smi` to verify GPU-in-Docker
+    - Builds from **`Dockerfile`** (nvidia/cuda:12.8 base + CUDA torch + onnxruntime-gpu). Image ~5 GB.
+    - Writes `.deployment.env` with `COMPOSE_MODE=gpu`
+    - Build time: 5–15 min
+
+After the build, **log out and log back in** (or run `newgrp docker`) so your user's Docker group membership takes effect without `sudo`.
+
+### 4. Drop model weights into `models/`
+
+The repo ships **without** trained weights (they're in `.gitignore`). Copy them from your dev machine via `scp`:
+
+=== "CPU host — ship OpenVINO IR (fastest)"
+
+    ```bash
+    # From dev machine:
+    scp -r ~/logistic/runs/segment/models/yolo/<date>/weights/openvino \
+        user@site-pc:~/logistic/runs/segment/models/yolo/<date>/weights/
+    ```
+
+    ~30–60 MB total. Auto-discovered by `StreamHandler._build_engine()` which prefers `.xml` on CPU hosts.
+
+=== "GPU host — ship ONNX or .pt"
+
+    ```bash
+    scp -r ~/logistic/runs/segment/models/yolo/<date>/weights/*.onnx \
+        user@site-pc:~/logistic/runs/segment/models/yolo/<date>/weights/
+    # Optional — RF-DETR .pth for native inference:
+    scp ~/logistic/models/rfdetr/<date>/checkpoint_best_ema.pth \
+        user@site-pc:~/logistic/models/rfdetr/<date>/
+    ```
+
+**Do not ship** `.engine` (TensorRT) files — they're compiled per specific GPU driver + device and must be regenerated on the target PC.
+
+### 5. Start the stack — `./up.sh`
+
+```bash
+cd ~/logistic
+./up.sh               # auto — reads .deployment.env
+./up.sh --force-cpu   # force CPU compose override (testing)
+./up.sh --force-gpu   # force GPU compose (expect failure if no GPU)
+```
+
+What it does:
+
+- Reads `.deployment.env` for `COMPOSE_MODE`
+- Sanity-check: if marker says `gpu` but `nvidia-smi` is unreachable, auto-falls back to CPU with a warning (saves you from the cryptic `could not select driver "nvidia"` error after a hardware change)
+- Brings up the stack with the right compose overlay:
+  - CPU: `docker-compose.yml + docker-compose.cpu.yml`
+  - GPU: `docker-compose.yml + docker-compose.gpu.yml --profile gpu`
+- Waits for the readiness marker (CUDA kernels warm on GPU; Flask `Running on http://` banner on CPU)
+- Opens Chrome to `http://localhost:9501`
+
+When the dashboard appears, pick your model from Settings and click **Start**. You should see detections within 2 seconds.
+
+### 6. First-time configuration via the dashboard
+
+On Settings:
+
+- **Model weights** dropdowns — pick the YOLO and (optional) RF-DETR weights you just scp'd
+- **Confidence threshold** — tune per scene (0.50 default, raise if polybags flicker)
+- **Belt direction** + **line position** — set per physical belt
+- **UDP target** — leave at `127.0.0.1:9502` for now (step 7 retargets to the automate)
+
+Click **Save**. Settings persist in `isitec_app/settings.json` across restarts.
+
+### 7. Point UDP at the automate + lock the network
+
+Two edits, both persistent:
+
+```bash
+# 7a. Edit docker-compose.yml to send to the automate's IP:
+cd ~/logistic
+sed -i 's|UDP_HOST=127.0.0.1|UDP_HOST=<AUTOMATE_IP>|' docker-compose.yml
+
+# 7b. Apply and commit
+./up.sh                                    # container picks up new env
+git add docker-compose.yml
+git commit -m "Wire UDP to automate at <AUTOMATE_IP> for <site>"
+git push origin dev
+```
+
+Then freeze the network config so the automate's firewall whitelist never breaks:
+
+```bash
+./net.sh show                 # see current DHCP state
+sudo ./net.sh apply           # answer 'y' to freeze IP/gateway/DNS as static
+./net.sh test                 # confirm all 5 reachability rows ✅
+./net.sh manual               # print the French mini-manual to email the automaticien
+```
+
+See the [Production Network Lock-down](#production-network-lock-down-netsh) section below for full details on `net.sh`.
+
+### 8. Handshake with the automation engineer
+
+Send him the output of `./net.sh manual`. It contains:
+
+- Our source IP (now frozen)
+- The automate's IP + port (read live from the container)
+- Payload JSON spec
+- Three listener recipes (Python / nc / PowerShell)
+- Firewall rule templates (iptables + Windows)
+- A validation `test-from-abdul` handshake
+
+Once he confirms receipt of the test string and a few live events, the bring-up is done.
+
+### 9. Auto-start on boot (optional but recommended)
+
+Add to crontab so the stack comes up after power loss:
+
+```bash
+(crontab -l 2>/dev/null; echo "@reboot cd $HOME/logistic && ./up.sh") | crontab -
+```
+
+Or a systemd service — see the [Daily Operations](#daily-operations) section.
+
+### 10. Verify end-to-end
+
+Leave the system running for ~1 hour under realistic belt traffic. Check:
+
+- Performance dashboard (`/api/performance` page) — FPS stable, RAM flat, UDP p99 < 1 ms
+- `./net.sh test` — all checks still ✅
+- Automate's counter — matches your "Datagrams sent" number
+- `docker compose logs web --since 1h | grep -iE 'error|warn'` — no unexpected errors
+
+If all three look healthy, the site is in production.
+
+---
+
 ## What to Pack for a Site Delivery
 
-The minimum folder you deliver to the customer:
+If you're shipping a tarball rather than having the customer `git clone` the public repo, the minimum folder you deliver is:
 
 ```text
 isidetector-delivery/
-├── run_start.sh                    # Host bootstrap
+├── install.sh                      # One-command bootstrap (clones+sets up)
+├── run_start.sh                    # Host bootstrap (Docker + image build)
 ├── up.sh                           # Daily starter
-├── scripts/up.sh                   # Same as root up.sh (shorter paths from scripts/)
-├── docker-compose.yml              # GPU compose manifest
-├── docker-compose.cpu.yml          # CPU override (stripped GPU reservations)
-├── Dockerfile                      # web container
-├── Dockerfile.rfdetr               # rfdetr sidecar container
-├── requirements-deploy.txt         # web container's Python deps
+├── net.sh                          # Network lock-down + automaticien handshake
+├── compress.sh                     # Optional — INT8/FP16 ONNX compression
+├── docker-compose.yml              # Base compose — device-agnostic
+├── docker-compose.gpu.yml          # GPU overlay — adds nvidia device reservation
+├── docker-compose.cpu.yml          # CPU overlay — swaps to Dockerfile.cpu
+├── Dockerfile                      # web container — CUDA base (GPU)
+├── Dockerfile.cpu                  # web container — python:3.11-slim (CPU-only)
+├── Dockerfile.rfdetr               # rfdetr sidecar — CUDA base (gpu-profile-gated)
+├── requirements-deploy.txt         # Shared Python deps for both images
+├── .env.example                    # Template for DEV_PASSWORD + UDP overrides
 ├── src/                            # Shared inference + utility code
 ├── isitec_app/                     # Flask app (templates, static, settings.json)
 ├── configs/
 │   └── train.yaml                  # class_names, imgsz, UDP defaults, hook list
-├── models/
-│   ├── yolo/<run_id>/weights/best.onnx    # YOLO ONNX weight (at minimum)
-│   └── rfdetr/<run_id>/inference_model.onnx  # RF-DETR ONNX weight (optional)
-└── isitec_api/                     # Optional — FastAPI backend
+├── models/                         # Populated at deployment — not in git
+│   ├── yolo/<run_id>/weights/openvino/  # CPU preferred: .xml + .bin
+│   ├── yolo/<run_id>/weights/*.onnx     # GPU / portability
+│   └── rfdetr/<run_id>/*.onnx           # GPU only — OpenVINO RF-DETR is broken
+├── docs/                           # MkDocs source (optional — for on-site reading)
+└── scripts/                        # CLI tools (run_live.py, run_infer.py, …)
 ```
+
+The **public dev branch** on GitHub already contains all of these (except `models/` which is per-deploy). `install.sh` clones the whole thing.
 
 Exclude these (runtime artefacts, caches, training data):
 
@@ -85,14 +303,16 @@ Everything in `.gitignore` is a safe exclude. If you ship a `git archive --forma
 
 ## Host Prerequisites
 
-The host machine needs:
+For hardware specs (CPU/GPU minimums per mode), see the matrices in [Complete Site PC Setup — step 0](#0-before-the-pc-arrives-at-the-site).
 
-1. **Linux** — Ubuntu 22.04 or 24.04 tested. Debian derivatives should work. macOS and Windows via Docker Desktop are unsupported for the GPU path.
-2. **(Optional) NVIDIA GPU** with driver ≥ 550 supporting CUDA 12.8. Without a GPU the stack runs on CPU via OpenVINO (~3–5× slower).
-3. **Internet access on first run** to pull base CUDA images, install Docker, and download Python dependencies. After the first build, the stack runs offline.
-4. **sudo privileges** for the first run — `run_start.sh` installs system packages.
+The host machine also needs:
 
-No Python, no PyTorch, no CUDA libs needed on the host. Everything lives inside containers.
+1. **Linux** — Ubuntu 22.04 or 24.04 tested. Debian derivatives should work. macOS / Windows via Docker Desktop are unsupported for the GPU path; WSL2 works for CPU dev but **not recommended for production** (native Linux is more stable and has lower UDP tail latency).
+2. **Internet access on first run** to install Docker and pull base images. After the first build, the stack runs fully offline (re-uses the layer cache).
+3. **sudo privileges** for the first run — `run_start.sh` installs system packages.
+4. **(GPU mode only)** NVIDIA driver ≥ 550 supporting CUDA 12.8.
+
+No Python, no PyTorch, no CUDA libs needed on the host itself — everything lives inside containers.
 
 ---
 
@@ -117,27 +337,35 @@ Final step: writes `.deployment.env` to record whether this host is GPU or CPU, 
 Invocation:
 
 ```bash
-chmod +x run_start.sh    # first time only
-./run_start.sh
+chmod +x run_start.sh        # first time only (install.sh already did this)
+./run_start.sh               # auto-detect
+./run_start.sh --force-cpu   # build CPU image on a GPU box (testing the customer path)
+./run_start.sh --force-gpu   # build CUDA image even without GPU (CI builds)
+./run_start.sh --help        # full usage
 ```
 
-Expected output on a GPU host:
+Build times:
+
+| Mode | First build | Subsequent (cached) |
+|---|---|---|
+| GPU | 5–15 min | ~30 s |
+| CPU | 2–4 min | ~10 s |
+
+Expected output on a CPU-only host:
 
 ```
 ▶ Stage 1/7 — Hardware & Platform Detection
 [  OK]  Platform: Native Linux
-[  OK]  NVIDIA GPU detected: NVIDIA GeForce RTX 4090
+[WARN]  No NVIDIA GPU detected
+[INFO]  Mode: CPU inference (OpenVINO optimized)
 ...
 ▶ Stage 6/7 — Build & Launch IsiDetector
-[INFO]  Building Docker image (first build takes 5-10 minutes)...
+[INFO]  Using CPU compose profile
+[INFO]    → Image: Dockerfile.cpu (python:3.11-slim + CPU torch + onnxruntime CPU + openvino)
+[INFO]  Building Docker image (first CPU build takes 2-4 minutes, subsequent builds are cached)...
 [  OK]  Docker image ready
 ...
-[  OK]  Deployment profile saved to .deployment.env
-
-  Next step:
-    ./up.sh          — start containers and open the UI
-
-  Bootstrap complete. Run ./up.sh to start the platform.
+[  OK]  Deployment profile saved to .deployment.env (COMPOSE_MODE=cpu)
 ```
 
 If the script aborts, fix the failing stage and re-run — it's idempotent (skips stages that already completed).
@@ -171,14 +399,25 @@ Browser selection order:
 | 3 | `wslview` → `cmd.exe /c start chrome` → `cmd.exe /c start ""` | WSL |
 | 4 | `xdg-open` | Generic Linux |
 
-Override knobs:
+CLI flags (symmetric with `run_start.sh`):
 
 ```bash
-URL=http://192.168.1.50:9501 ./up.sh   # open a remote host instead
-TIMEOUT_SEC=60                ./up.sh   # tighter readiness wait (default 300)
-NO_BROWSER=1                  ./up.sh   # start the stack, skip browser launch (headless)
-FORCE_CPU=1                   ./up.sh   # force CPU compose on a GPU host (testing)
+./up.sh                 # auto — reads .deployment.env
+./up.sh --force-cpu     # use CPU compose regardless of marker/GPU
+./up.sh --force-gpu     # use GPU compose even if nvidia-smi fails (requires toolkit)
+./up.sh --help          # usage
 ```
+
+Environment overrides:
+
+```bash
+URL=http://192.168.1.50:9501 ./up.sh    # open a remote host instead of localhost
+TIMEOUT_SEC=60                ./up.sh    # tighter readiness wait (default 300)
+NO_BROWSER=1                  ./up.sh    # start stack, skip browser (headless / rack deploy)
+FORCE_CPU=1                   ./up.sh    # same as --force-cpu (legacy)
+```
+
+**Stale-marker protection** — if `.deployment.env` says `COMPOSE_MODE=gpu` but `nvidia-smi` is unreachable (e.g. the PC was migrated from a GPU dev box to a CPU site box without rerunning `run_start.sh`), `up.sh` automatically falls back to CPU compose with a warning rather than emitting the cryptic `could not select driver "nvidia" with capabilities: [[gpu]]` daemon error.
 
 ---
 
@@ -216,19 +455,54 @@ Ctrl+C while tailing logs only stops the `logs` command — **containers keep ru
 
 ## Deployment Modes: GPU vs CPU
 
-`docker-compose.cpu.yml` is a merge layer that strips the `deploy.resources.reservations.devices` GPU block from both services, so the same image runs on a CPU-only host.
+The repo ships a **base-plus-overlay** Compose structure so the same source tree covers both modes without editing YAML on each host:
 
-When `run_start.sh` detects no GPU, it writes `COMPOSE_MODE=cpu` into `.deployment.env`, and `up.sh` runs:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+```text
+docker-compose.yml         ← base, device-agnostic, no GPU reservation
+docker-compose.gpu.yml     ← overlay: adds nvidia device reservation to web service
+docker-compose.cpu.yml     ← overlay: builds from Dockerfile.cpu instead of Dockerfile
 ```
 
-On a CPU-only host, plan for:
+`run_start.sh` detects the hardware and writes `COMPOSE_MODE=gpu|cpu` to `.deployment.env`. `up.sh` reads the marker and applies the right overlay:
 
-- Use **OpenVINO (`.xml`)** weights for best throughput on Intel CPUs (~2× faster than ONNX-CPU).
-- RF-DETR (`.pth`) inference is effectively unusable on CPU for real-time work — stick to YOLO.
-- Expect 10–20 FPS at 416 px input with YOLOv26-n, depending on CPU cores.
+=== "GPU host"
+
+    ```bash
+    docker compose \
+      -f docker-compose.yml \
+      -f docker-compose.gpu.yml \
+      --profile gpu \
+      up -d --build
+    ```
+
+    - `--profile gpu` activates the `rfdetr` sidecar (gated in the base file behind `profiles: ["gpu"]`)
+    - Builds from `Dockerfile` (CUDA 12.8 base, ~5 GB image)
+    - `web` service gets `deploy.resources.reservations.devices: nvidia`
+    - Native `.pt` / `.pth`, ONNX-CUDA, TensorRT all available
+
+=== "CPU host"
+
+    ```bash
+    docker compose \
+      -f docker-compose.yml \
+      -f docker-compose.cpu.yml \
+      up -d --build
+    ```
+
+    - No `--profile gpu` → `rfdetr` sidecar is skipped entirely (no build, no nvidia runtime error)
+    - `web.depends_on.rfdetr` is tagged `required: false` so web starts fine without the sidecar
+    - Builds from `Dockerfile.cpu` (python:3.11-slim base + CPU torch wheels + CPU onnxruntime + openvino, ~1.2 GB image)
+    - Recommended inference backend: **OpenVINO (`.xml`)** — fastest on Intel CPUs (1.4–2× vs ONNX-CPU), still works on AMD
+    - **RF-DETR is GPU-only in practice** — the DINOv2 backbone is too slow on CPU for real-time AND the OpenVINO IR produces wrong logits on transformer models. Stick to YOLO on CPU.
+
+Expected CPU throughput at 320 px YOLOv26-n:
+
+| CPU | FPS |
+|---|---|
+| Intel i7-1165G7 (4C/8T) | 30–45 |
+| Intel i7-11850H (8C/16T) | 50–70 |
+| AMD Ryzen 5 5500 (6C/12T) | 25–40 (OpenVINO's Intel-specific paths don't apply) |
+| Intel i5-8250U (4C/8T) | 15–25 |
 
 ---
 
@@ -446,19 +720,66 @@ This opens the browser against the WSL2 VM's internal IP directly.
 
 ## Summary — The One-Liner Cheat Sheet
 
-```bash
-# First time on a fresh machine:
-./run_start.sh && ./up.sh
+### End-to-end bring-up on a fresh site PC
 
-# Every day:
+```bash
+# 0. Fresh Ubuntu PC, nothing installed except curl
+sudo apt update && sudo apt install -y curl
+
+# 1. One-command install — clones the repo + bootstraps Docker + builds the image
+curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/dev/install.sh | bash
+
+# 2. Log out + back in so docker-group membership applies
+exit      # and re-SSH / re-login
+
+# 3. (If not done by install.sh) build the image
+cd ~/logistic
+./run_start.sh               # auto CPU/GPU
+
+# 4. Drop model weights on the PC (from dev machine):
+#    CPU:  scp -r <dev>:~/logistic/.../openvino  site-pc:~/logistic/.../
+#    GPU:  scp <dev>:~/logistic/.../best.onnx    site-pc:~/logistic/.../
+
+# 5. Start the stack
 ./up.sh
 
-# Restart after any change:
-docker compose down && ./up.sh
+# 6. Wire the UDP target to the automate, then lock the network
+sed -i 's|UDP_HOST=127.0.0.1|UDP_HOST=<AUTOMATE_IP>|' docker-compose.yml
+./up.sh
+sudo ./net.sh apply
+./net.sh test        # expect all ✅
+./net.sh manual      # pipe to email — send to the automaticien
 
-# Monitor:
-docker compose logs -f web
+# 7. Optional — auto-start on boot
+(crontab -l 2>/dev/null; echo "@reboot cd \$HOME/logistic && ./up.sh") | crontab -
+```
 
-# Stop everything:
-docker compose down
+### Daily ops
+
+```bash
+./up.sh                       # start / resume (reads .deployment.env)
+docker compose down && ./up.sh   # restart after a code/config change
+docker compose logs -f web    # live logs
+docker compose stop           # stop without removing containers
+docker compose down           # stop + remove containers
+```
+
+### Force a specific mode (rare)
+
+```bash
+./run_start.sh --force-cpu   # build CPU image on a GPU box
+./run_start.sh --force-gpu   # build CUDA image even with no GPU visible
+./up.sh --force-cpu          # run CPU compose overlay
+./up.sh --force-gpu          # run GPU compose overlay
+```
+
+### Network / automate handshake
+
+```bash
+./net.sh show                # current network state + UDP publisher target
+./net.sh test                # reachability + live UDP egress probe
+sudo ./net.sh apply          # freeze IP/gateway/DNS as static
+sudo ./net.sh revert         # restore DHCP
+./net.sh manual              # French mini-manual → email to automaticien
+./net.sh manual --en         # English variant
 ```
