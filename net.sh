@@ -68,8 +68,15 @@ discover_conn() {
 
 discover_iface() {
     # Interface of the discovered connection.
+    #
+    # `nmcli -t -f DEVICE connection show <name>` returns empty on modern
+    # nmcli because `connection show <name>` uses the detail schema (dot-
+    # notation field names like GENERAL.DEVICES) — plain DEVICE is only a
+    # field in the list schema (`connection show --active`). Re-use the
+    # same --active listing discover_conn relies on.
     local conn="${1:?conn required}"
-    nmcli -t -f DEVICE connection show "$conn" 2>/dev/null | head -1
+    nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null \
+        | awk -F: -v c="$conn" '$1==c {print $2; exit}'
 }
 
 discover_ip_cidr() {
