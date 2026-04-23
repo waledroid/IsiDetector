@@ -171,10 +171,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnEn.addEventListener('click', () => setLanguage('en'));
     btnFr.addEventListener('click', () => setLanguage('fr'));
-
-    // French is the default — translate DOM text on load so users don't see
-    // an English flash. Users can switch to English via the header button.
-    setLanguage('fr');
+    // French default translation runs at the end of this handler, after all
+    // `let` declarations below are in scope — see setLanguage('fr') at the
+    // bottom of DOMContentLoaded.
 
     // ── Dev-mode authentication ────────────────────────────────────────────
     const devModal  = document.getElementById('devModal');
@@ -1115,5 +1114,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadSettings();
+
+    // French is the default — translate DOM text on load so users don't see
+    // an English flash. Users can switch to English via the header button.
+    // Placed at the very end: setLanguage() touches `currentSourceType`
+    // (declared inside this handler with `let`), so calling it earlier hits
+    // the temporal dead zone and throws, aborting the entire init block.
+    setLanguage('fr');
 
 });
