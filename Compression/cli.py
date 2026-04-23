@@ -61,6 +61,7 @@ def _main_menu() -> str | None:
     return questionary.select(
         "What would you like to do?",
         choices=[
+            Choice("🧩   Convert a model format",  "convert"),
             Choice("🗜️   Compress a model",        "compress"),
             Choice("📊   Benchmark variants",      "benchmark"),
             Choice("🧪   Validate accuracy",       "validate"),
@@ -68,7 +69,7 @@ def _main_menu() -> str | None:
             Choice("🔄   Refresh model list",      "refresh"),
             Choice("🚪   Exit",                     "exit"),
         ],
-        default="compress",
+        default="convert",
         style=_Q_STYLE,
         qmark="❯",
     ).ask()
@@ -162,6 +163,189 @@ def _pick_stage(props: ONNXProperties) -> str | None:
 
 
 # ── Actions ─────────────────────────────────────────────────────────────────
+
+# File extensions we recognise for each convert source type.
+_CONVERT_SRC_EXTS = {
+    "pt":       (".pt", ".pth"),
+    "onnx":     (".onnx",),
+    "openvino": (".xml",),
+}
+
+# Directory names that `_discover_files` should never walk into. Kept in sync
+# with the skip list used by discovery.discover_onnx so the two walks match.
+_CONVERT_SKIP_DIRS = {
+    ".git", "__pycache__", "node_modules", "venv", ".venv",
+    "site", "uploads",
+}
+
+
+def _discover_files(root: Path, exts: tuple[str, ...]) -> list[Path]:
+    """Walk ``root`` recursively for files whose suffix matches ``exts``.
+
+    The convert flow works on file types the ONNX-only
+    ``discovery.discover_onnx`` doesn't see (``.pt``, ``.pth``, ``.xml``),
+    so we do a tight rglob here with the same skip-dirs guard.
+    """
+    exts_lower = tuple(e.lower() for e in exts)
+    found: list[Path] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in exts_lower:
+            continue
+        try:
+            rel_parts = path.relative_to(root).parts
+        except ValueError:
+            continue
+        if any(part in _CONVERT_SKIP_DIRS for part in rel_parts):
+            continue
+        found.append(path)
+    found.sort(key=lambda p: (len(p.parts), str(p).lower()))
+    return found
+
+
+def _pick_source_type() -> str | None:
+    """Top-level convert picker: what kind of file are we starting from?"""
+    return questionary.select(
+        "What do you want to convert?",
+        choices=[
+            Choice("🐍   .pt / .pth   (PyTorch weights)",        "pt"),
+            Choice("🧾   .onnx        (regular or simplified)",  "onnx"),
+            Choice("🟦   .xml         (OpenVINO IR, FP32 → FP16)", "openvino"),
+            questionary.Separator("─" * 30),
+            Choice("← Back", value=None),
+        ],
+        style=_Q_STYLE,
+        qmark="❯",
+    ).ask()
+
+
+def _pick_convert_file(root: Path, src_type: str) -> Path | None:
+    """Show every discovered file of the chosen type, return the pick."""
+    exts = _CONVERT_SRC_EXTS[src_type]
+    files = _discover_files(root, exts)
+    if not files:
+        console.print(
+            f"\n[yellow]⚠  No {'/'.join(exts)} files found under[/yellow] "
+            f"[cyan]{root}[/cyan].\n"
+        )
+        return None
+
+    choices: list = []
+    for p in files:
+        rel = p.relative_to(root)
+        size_mb = p.stat().st_size / (1024 * 1024)
+        title = f"{rel}  [dim]({size_mb:.1f} MB)[/dim]"
+        choices.append(Choice(title=title, value=p))
+    choices.append(questionary.Separator("─" * 30))
+    choices.append(Choice("← Back", value=None))
+
+    return questionary.select(
+        f"Select a file to convert:",
+        choices=choices,
+        style=_Q_STYLE,
+        qmark="❯",
+    ).ask()
+
+
+def _pick_convert_target(src_type: str) -> str | None:
+    """Given the source type, ask what to convert it to."""
+    if src_type == "pt":
+        choices = [
+            Choice("→   .onnx",                           "pt-onnx"),
+            Choice("→   .onnx → .sim.onnx",               "pt-sim"),
+            Choice("→   .onnx → .sim.onnx → OpenVINO IR   [full pipeline]", "pt-openvino"),
+        ]
+    elif src_type == "onnx":
+        choices = [
+            Choice("→   .sim.onnx          (onnxsim)",    "onnx-sim"),
+            Choice("→   OpenVINO IR        (.xml + .bin)", "onnx-openvino"),
+        ]
+    elif src_type == "openvino":
+        choices = [
+            Choice("→   OpenVINO IR, FP16 weights (compress_to_fp16)", "openvino-fp16"),
+        ]
+    else:
+        return None
+
+    choices.append(questionary.Separator("─" * 30))
+    choices.append(Choice("← Back", value=None))
+
+    return questionary.select(
+        "Convert to:",
+        choices=choices,
+        style=_Q_STYLE,
+        qmark="❯",
+    ).ask()
+
+
+def _run_convert(mode: str, src: Path) -> None:
+    """Dispatch one interactive convert run. Errors are surfaced but
+    never bubble up — the convert menu should keep looping after a
+    failure the same way compress does."""
+    from .convert_ops import (
+        onnx_to_openvino, onnx_to_sim, openvino_fp16,
+        pt_full_pipeline, pt_to_onnx,
+    )
+
+    console.print(f"\n🧩  [bold]{mode}[/bold]  [dim]{src.name}[/dim]")
+    try:
+        if mode == "pt-onnx":
+            result = pt_to_onnx(src)
+        elif mode == "pt-sim":
+            onnx_path = pt_to_onnx(src)
+            result = onnx_to_sim(onnx_path)
+        elif mode == "pt-openvino":
+            results = pt_full_pipeline(src)
+            result = results["openvino"]
+        elif mode == "onnx-sim":
+            result = onnx_to_sim(src)
+        elif mode == "onnx-openvino":
+            result = onnx_to_openvino(src)
+        elif mode == "openvino-fp16":
+            result = openvino_fp16(src)
+        else:
+            console.print(f"[red]❌  Unknown convert mode: {mode}[/red]")
+            return
+    except Exception as e:  # noqa: BLE001 — render and keep the menu alive
+        console.print(f"[red]❌  {mode} failed: {e}[/red]\n")
+        return
+
+    try:
+        rel = result.relative_to(PROJECT_ROOT)
+    except ValueError:
+        rel = result
+    console.print(f"✅  [green]Wrote[/green] [cyan]{rel}[/cyan]\n")
+
+
+def _handle_convert(groups: list[ModelGroup]) -> list[ModelGroup]:
+    """Convert-mode main loop: source-type → file → target → run.
+
+    Mirrors the compress back-nav pattern so any None return at any
+    level pops back to the previous question. On success we stay in the
+    loop so the operator can keep converting — they only leave with
+    ``← Back`` from the top-level source-type picker.
+    """
+    while True:                                            # level 1 — source type
+        src_type = _pick_source_type()
+        if src_type is None:
+            return groups                                   # ← back to main menu
+
+        while True:                                        # level 2 — file
+            src = _pick_convert_file(PROJECT_ROOT, src_type)
+            if src is None:
+                break                                       # ← back to source type
+
+            while True:                                    # level 3 — target
+                mode = _pick_convert_target(src_type)
+                if mode is None:
+                    break                                   # ← back to file
+                _run_convert(mode, src)
+                # Re-discover ONNX groups so newly-produced files show up
+                # in the compress / benchmark menus next time the operator
+                # visits them.
+                groups = discover_onnx(PROJECT_ROOT)
+
 
 def _handle_compress(groups: list[ModelGroup]) -> list[ModelGroup]:
     """Three-level back-navigable state machine.
@@ -611,7 +795,9 @@ def main() -> None:
             continue
         # Handlers may re-discover internally (compress writes new files);
         # they return the updated list so main() picks up the refresh too.
-        if choice == "compress":
+        if choice == "convert":
+            groups = _handle_convert(groups)
+        elif choice == "compress":
             groups = _handle_compress(groups)
         elif choice == "benchmark":
             groups = _handle_benchmark(groups)
