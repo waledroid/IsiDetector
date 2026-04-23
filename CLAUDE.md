@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+!!! You're on the `deploy` branch.
+
+This is the **runtime-only subset** of the project, meant for site PCs
+that only need to run the inference stack. It does NOT contain:
+
+- `compression/` — the office-workstation compression tool
+- `mkdocs/` — documentation source and built site
+- `isidet/src/training/` — the trainers, hooks, and BaseTrainer
+- `isidet/scripts/` — training/eval/debug scripts (run_train, run_val,
+  prep_rfdetr_data, extract_frames, onnx_checker, etc.)
+
+If you need any of the above, switch to the `main` branch, which is
+the full project source. Day-to-day development happens on `main`;
+`deploy` is rebuilt from it whenever the runtime surface changes.
+
+Everything below this note still applies — commands that reference
+`isidet/scripts/` or `compression/` simply won't work on this branch;
+use `main` for those.
+
 ## Project Overview
 
 **IsiDetector** is a modular, config-driven instance segmentation pipeline for industrial parcel detection (cartons and polybags on conveyor belts). It supports two model families — YOLO (CNN) and RF-DETR (Transformer) — switchable via a single config line.

@@ -56,7 +56,6 @@ COPY isidet/src/shared/     isidet/src/shared/
 COPY isidet/src/utils/      isidet/src/utils/
 COPY isidet/src/preprocess/ isidet/src/preprocess/
 COPY isidet/src/__init__.py isidet/src/__init__.py
-COPY isidet/scripts/        isidet/scripts/
 COPY isidet/configs/        isidet/configs/
 COPY webapp/isitec_app/     webapp/isitec_app/
 
