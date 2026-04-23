@@ -320,6 +320,16 @@ def _execute_stage(stage_key: str, onnx_file: ONNXFile, props: ONNXProperties) -
         return None
 
     # 4. Report size delta so operators can see the win at a glance.
+    _print_size_delta(src, result)
+    return result
+
+
+def _print_size_delta(src: Path, result: Path) -> None:
+    """Render the before/after size + percentage for a compression run.
+
+    Module-level so both the interactive menu and the one-shot CLI mode
+    (see Compression/__main__.py) can share the same output format.
+    """
     new_mb = result.stat().st_size / (1024 * 1024)
     old_mb = src.stat().st_size / (1024 * 1024)
     delta_pct = (new_mb / old_mb - 1) * 100 if old_mb else 0.0
@@ -335,7 +345,6 @@ def _execute_stage(stage_key: str, onnx_file: ONNXFile, props: ONNXProperties) -
         f"[dim]({old_mb:.2f} → {new_mb:.2f} MB, "
         f"[{colour}]{verb} {abs(delta_pct):.1f}%[/{colour}])[/dim]\n"
     )
-    return result
 
 
 def _pick_benchmark_iterations() -> int | None:
