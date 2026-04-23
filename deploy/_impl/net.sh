@@ -198,6 +198,35 @@ is_docker_range_ip() {
 resolve_inputs() {
     local strict_nm="${1:-1}"
 
+    # Distinguish "no nmcli at all" from "nmcli present but no active
+    # connection". The first means the user is on a machine outside the
+    # script's scope (WSL2, Ubuntu Server with systemd-networkd, any
+    # non-NetworkManager Linux). Point them at the right machine instead
+    # of the vague "start Wi-Fi" suggestion.
+    if ! command -v nmcli >/dev/null 2>&1; then
+        if [ "$strict_nm" = "1" ]; then
+            fail "NetworkManager (nmcli) is not installed on this machine."
+            fail "net.sh is designed for **site PCs** — Ubuntu Desktop hosts running"
+            fail "NetworkManager, where a DHCP-issued Wi-Fi/Ethernet config needs to be"
+            fail "frozen so the automate's firewall whitelist doesn't drift."
+            fail ""
+            fail "  You're on:  $(hostname) (no NetworkManager detected)"
+            fail "  Likely cause:  WSL2, Ubuntu Server (uses systemd-networkd/netplan),"
+            fail "                 or a dev workstation where network lock-down doesn't apply."
+            fail ""
+            fail "  If this really IS meant to run on this host, install NM first:"
+            fail "    sudo apt install network-manager"
+            fail "    sudo systemctl enable --now NetworkManager"
+            fail ""
+            fail "  Otherwise: copy this script to the actual site PC and run it there."
+            exit 3
+        fi
+        CONN=""; IFACE=""; TYPE=""; METHOD=""; AUTO=""
+        IP_CIDR=""; IP="<SITE_PC_IP>"; GATEWAY=""; DNS=""
+        UDP_HOST=""; UDP_PORT=""; UDP_SRC=""
+        return
+    fi
+
     CONN="${ARG_CONN:-$(discover_conn)}"
     if [ -z "$CONN" ]; then
         if [ "$strict_nm" = "1" ]; then
