@@ -1,0 +1,11 @@
+{
+  "yolo_weights": "isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/model.xml",
+  "rfdetr_weights": "isidet/models/rfdetr/24-03-2026_0120/inference_model.onnx",
+  "yolo_imgsz": 320,
+  "yolo_conf": 0.55,
+  "detr_imgsz": 416,
+  "detr_conf": 0.35,
+  "line_orientation": "vertical",
+  "line_position": 0.6,
+  "belt_direction": "left_to_right"
+}

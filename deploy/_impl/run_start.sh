@@ -1,0 +1,371 @@
+#!/bin/bash
+# ============================================================================
+# IsiDetector — Docker Install & Launch Script
+# Works on any fresh Ubuntu 22.04 / 24.04 machine (with or without GPU)
+#
+# Usage:
+#   ./run_start.sh              # auto-detect GPU and pick image accordingly
+#   ./run_start.sh --force-cpu  # build the CPU image even if a GPU is present
+#   ./run_start.sh --force-gpu  # build the CUDA image even if no GPU is detected
+#   ./run_start.sh -h | --help  # print this usage and exit
+#
+# Overrides are useful for:
+#   - Testing the CPU image on a dev box with a GPU
+#   - Building the CUDA image on a CI runner with drivers but no GPU attached
+#   - Reproducing a customer environment locally
+# ============================================================================
+
+set -e
+
+# ── Parse CLI flags ─────────────────────────────────────────────────────────
+FORCE_MODE=""
+for arg in "$@"; do
+    case "$arg" in
+        --force-cpu|--cpu)  FORCE_MODE="cpu" ;;
+        --force-gpu|--gpu)  FORCE_MODE="gpu" ;;
+        -h|--help)
+            sed -n '2,16p' "$0" | sed 's/^# *//'
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $arg" >&2
+            echo "Try: $0 --help" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# ── Colors & Helpers ────────────────────────────────────────────────────────
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+info()    { echo -e "${CYAN}[INFO]${NC}  $1"; }
+success() { echo -e "${GREEN}[  OK]${NC}  $1"; }
+warn()    { echo -e "${YELLOW}[SKIP]${NC}  $1"; }
+fail()    { echo -e "${RED}[FAIL]${NC}  $1"; }
+header()  {
+    echo ""
+    echo -e "${BOLD}══════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}  $1${NC}"
+    echo -e "${BOLD}══════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
+# After the bucket restructure this script lives at deploy/_impl/run_start.sh.
+# Resolve SCRIPT_DIR to the deploy/ parent so bare names like
+# docker-compose.yml / .deployment.env just work, and so paths like
+# ../isidet/... and ../webapp/... reach the correct buckets.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+# Get Ubuntu codename once (needed for Docker repo)
+CODENAME=$(. /etc/os-release 2>/dev/null && echo "$VERSION_CODENAME" || echo "noble")
+
+# ── Stage 1: Detect Hardware & Platform ─────────────────────────────────────
+header "Stage 1/7 — Hardware & Platform Detection"
+
+# Detect WSL
+IS_WSL=false
+HAS_X11=false
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    IS_WSL=true
+    success "Platform: WSL2 (Windows Subsystem for Linux)"
+    # Check for WSLg (GUI support)
+    if [ -d "/mnt/wslg" ] && [ -n "$DISPLAY" ]; then
+        HAS_X11=true
+        success "WSLg detected (GUI support via X11/Wayland)"
+    else
+        warn "WSLg not available — cv2.imshow() will not work"
+        info "Install Windows 11 22H2+ for WSLg support"
+    fi
+else
+    success "Platform: Native Linux"
+    if [ -n "$DISPLAY" ]; then
+        HAS_X11=true
+        success "X11 display available (DISPLAY=$DISPLAY)"
+    else
+        warn "No DISPLAY set — cv2.imshow() will not work (headless server)"
+    fi
+fi
+
+# Detect GPU
+HAS_GPU=false
+GPU_NAME=""
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+    HAS_GPU=true
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
+    success "NVIDIA GPU detected: ${GPU_NAME}"
+    info "Mode: GPU inference (ONNX CUDA + TensorRT + native PyTorch)"
+else
+    warn "No NVIDIA GPU detected"
+    info "Mode: CPU inference (OpenVINO optimized)"
+fi
+
+# Apply --force-cpu / --force-gpu override, if passed on the CLI. Warn
+# loudly so the operator sees the mismatch in the log — forcing GPU on a
+# machine without drivers will fail at runtime container start (not here
+# at build time), so we don't block it, but we do flag it.
+if [ -n "$FORCE_MODE" ]; then
+    if [ "$FORCE_MODE" = "cpu" ] && [ "$HAS_GPU" = true ]; then
+        warn "--force-cpu: ignoring detected GPU (${GPU_NAME}); building the CPU image instead"
+        HAS_GPU=false
+    elif [ "$FORCE_MODE" = "gpu" ] && [ "$HAS_GPU" = false ]; then
+        warn "--force-gpu: no GPU detected, but building the CUDA image anyway"
+        warn "             the image will build fine, but 'docker compose up' will fail if"
+        warn "             nvidia-container-toolkit is missing or no NVIDIA driver is loaded"
+        HAS_GPU=true
+    else
+        info "Override requested (${FORCE_MODE}) matches auto-detection — no change"
+    fi
+fi
+
+# ── Stage 2: Install Docker Engine ──────────────────────────────────────────
+header "Stage 2/7 — Docker Engine"
+
+# Check if Docker Engine (not Docker Desktop) is actually working
+DOCKER_OK=false
+if dpkg -l docker-ce &>/dev/null 2>&1; then
+    DOCKER_VER=$(dpkg -l docker-ce 2>/dev/null | grep '^ii' | awk '{print $3}' | head -1)
+    if [ -n "$DOCKER_VER" ]; then
+        success "Docker Engine already installed (${DOCKER_VER})"
+        DOCKER_OK=true
+    fi
+fi
+
+if [ "$DOCKER_OK" = false ]; then
+    info "Installing Docker Engine..."
+
+    # Prerequisites
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq ca-certificates curl gnupg >/dev/null 2>&1
+    success "Prerequisites installed"
+
+    # Docker GPG key
+    sudo install -m 0755 -d /etc/apt/keyrings
+    if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+        success "Docker GPG key added"
+    else
+        warn "Docker GPG key already exists"
+    fi
+
+    # Docker repository
+    sudo bash -c "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${CODENAME} stable' > /etc/apt/sources.list.d/docker.list"
+    success "Docker repository configured (Ubuntu ${CODENAME})"
+
+    # Install Docker packages
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-buildx-plugin >/dev/null 2>&1
+    success "Docker Engine installed"
+fi
+
+# ── Stage 3: Docker Service & Permissions ───────────────────────────────────
+header "Stage 3/7 — Docker Service & Permissions"
+
+# Start Docker daemon
+if sudo service docker status &>/dev/null 2>&1; then
+    success "Docker daemon is running"
+else
+    info "Starting Docker daemon..."
+    sudo service docker start
+    sleep 2
+    if sudo service docker status &>/dev/null 2>&1; then
+        success "Docker daemon started"
+    else
+        fail "Could not start Docker daemon"
+        info "Try: sudo dockerd &"
+        exit 1
+    fi
+fi
+
+# Add user to docker group
+if getent group docker &>/dev/null; then
+    if groups "$USER" | grep -qw docker; then
+        success "User '${USER}' is in docker group"
+    else
+        info "Adding '${USER}' to docker group..."
+        sudo usermod -aG docker "$USER"
+        success "Added to docker group"
+        warn "You may need to run: newgrp docker (or log out and back in)"
+    fi
+else
+    fail "Docker group does not exist — Docker may not have installed correctly"
+    exit 1
+fi
+
+# Verify Docker works and determine if sudo is needed
+SUDO_DOCKER=""
+if docker info &>/dev/null 2>&1; then
+    DOCKER_VER=$(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)
+    success "Docker Engine v${DOCKER_VER} — working"
+elif sudo docker info &>/dev/null 2>&1; then
+    SUDO_DOCKER="sudo"
+    DOCKER_VER=$(sudo docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)
+    success "Docker Engine v${DOCKER_VER} — working (via sudo)"
+    info "Tip: run 'newgrp docker' in a new terminal to avoid sudo next time"
+else
+    fail "Docker is not responding"
+    exit 1
+fi
+
+# ── Stage 4: NVIDIA Container Toolkit (GPU only) ───────────────────────────
+header "Stage 4/7 — Runtime Setup"
+
+if [ "$HAS_GPU" = true ]; then
+    if dpkg -l nvidia-container-toolkit &>/dev/null 2>&1; then
+        success "NVIDIA Container Toolkit already installed"
+    else
+        info "Installing NVIDIA Container Toolkit..."
+
+        # Add NVIDIA GPG key
+        if [ ! -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]; then
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+                | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        fi
+
+        # Add NVIDIA repository
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+            | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq nvidia-container-toolkit >/dev/null 2>&1
+        sudo nvidia-ctk runtime configure --runtime=docker >/dev/null 2>&1
+        sudo service docker restart
+        sleep 2
+
+        success "NVIDIA Container Toolkit installed and configured"
+    fi
+else
+    warn "No GPU — skipping NVIDIA Container Toolkit"
+    info "OpenVINO (.xml) models recommended for best CPU performance"
+fi
+
+# ── Stage 5: Verify Runtime ─────────────────────────────────────────────────
+header "Stage 5/7 — Runtime Verification"
+
+if [ "$HAS_GPU" = true ]; then
+    info "Testing GPU access inside Docker..."
+    if $SUDO_DOCKER docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi &>/dev/null 2>&1; then
+        success "GPU accessible inside Docker containers"
+    else
+        warn "GPU not accessible inside Docker — falling back to CPU mode"
+        info "Check NVIDIA driver version and container toolkit installation"
+        HAS_GPU=false
+    fi
+else
+    info "Testing Docker engine (CPU mode)..."
+    if $SUDO_DOCKER docker run --rm hello-world &>/dev/null 2>&1; then
+        success "Docker engine working (CPU mode)"
+    else
+        fail "Docker engine test failed"
+        exit 1
+    fi
+fi
+
+# ── Stage 6: Build & Launch IsiDetector ─────────────────────────────────────
+header "Stage 6/7 — Build & Launch IsiDetector"
+
+info "Project directory: ${REPO_ROOT}"
+
+# Create runtime directories (isidet/* are gitignored volumes for model
+# weights and run artefacts; webapp/isitec_app/{logs,uploads} are
+# per-backend stateful dirs mounted into the container).
+mkdir -p "$REPO_ROOT/isidet/models" "$REPO_ROOT/isidet/configs" "$REPO_ROOT/isidet/runs" "$REPO_ROOT/isidet/logs"
+mkdir -p "$REPO_ROOT/webapp/isitec_app/logs" "$REPO_ROOT/webapp/isitec_app/uploads"
+success "Runtime directories ready"
+
+# Determine compose command (GPU vs CPU, with sudo if needed).
+# On GPU we pass --profile gpu so the rfdetr sidecar (which needs CUDA)
+# is built and started. On CPU we skip the profile → rfdetr is inert.
+if [ "$HAS_GPU" = true ]; then
+    COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu"
+    info "Using GPU compose profile"
+    info "  → Image: Dockerfile (nvidia/cuda:12.8 + CUDA torch + onnxruntime-gpu + tensorrt)"
+    info "  → rfdetr sidecar: enabled (--profile gpu)"
+else
+    COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
+    info "Using CPU compose profile"
+    info "  → Image: Dockerfile.cpu (python:3.11-slim + CPU torch + onnxruntime CPU + openvino)"
+    info "  → rfdetr sidecar: skipped (needs CUDA)"
+fi
+
+# Stop existing container if running (preserves it, just stops)
+if $COMPOSE_CMD ps -q 2>/dev/null | grep -q .; then
+    info "Stopping existing container..."
+    $COMPOSE_CMD stop 2>/dev/null
+    success "Previous container stopped"
+else
+    warn "No existing container running"
+fi
+
+# Build the image (cached layers are reused automatically)
+if [ "$HAS_GPU" = true ]; then
+    info "Building Docker image (first GPU build takes 5-10 minutes, subsequent builds are cached)..."
+else
+    info "Building Docker image (first CPU build takes 2-4 minutes, subsequent builds are cached)..."
+fi
+$COMPOSE_CMD build
+success "Docker image ready"
+
+# ── Stage 7: X11 / GUI Check ────────────────────────────────────────────────
+header "Stage 7/7 — GUI Display Check"
+
+if [ "$HAS_X11" = true ]; then
+    success "X11 forwarding enabled — cv2.imshow() will work inside container"
+    info "Run: docker compose exec web python isidet/scripts/run_live.py --weights <model> --source <stream>"
+else
+    warn "No GUI display — run_live.py (OpenCV window) will not work"
+    info "Use the Flask web app at http://localhost:9501 instead"
+fi
+
+# ── Summary ─────────────────────────────────────────────────────────────────
+header "IsiDetector Ready"
+
+echo -e "  ${BOLD}Platform:${NC}     $([ "$IS_WSL" = true ] && echo "WSL2" || echo "Native Linux") $([ "$HAS_X11" = true ] && echo "(GUI ready)" || echo "(headless)")"
+echo -e "  ${BOLD}Hardware:${NC}     $([ "$HAS_GPU" = true ] && echo "GPU (${GPU_NAME})" || echo "CPU-only (OpenVINO)")"
+echo -e "  ${BOLD}Dashboard:${NC}    http://localhost:9501"
+echo -e "  ${BOLD}Docs:${NC}         http://localhost:9501/docs"
+echo -e "  ${BOLD}UDP Target:${NC}   127.0.0.1:9502"
+echo -e ""
+echo -e "  ${BOLD}Model weights:${NC} Place .pt / .onnx / .xml files in ${REPO_ROOT}/isidet/models/"
+echo -e "  ${BOLD}Dev access:${NC}   Double-click logo, password: set via \$DEV_PASSWORD env var (default: change-me)"
+echo -e ""
+
+if [ "$HAS_GPU" = false ]; then
+    echo -e "  ${YELLOW}Tip:${NC} Use OpenVINO (.xml) models for best CPU performance."
+    echo -e "  ${YELLOW}Generate:${NC} python -m src.inference.export_engine --model-dir <dir> --format openvino"
+    echo -e ""
+fi
+
+# Persist the detected profile so up.sh picks the right compose file
+cat > .deployment.env <<EOF
+# Auto-generated by run_start.sh — do not edit.
+COMPOSE_MODE=$([ "$HAS_GPU" = true ] && echo "gpu" || echo "cpu")
+SUDO_DOCKER=${SUDO_DOCKER}
+EOF
+success "Deployment profile saved to .deployment.env"
+
+echo -e ""
+echo -e "  ${BOLD}Next step:${NC}"
+echo -e "    ${GREEN}./up.sh${NC}          — start containers and open the UI"
+echo -e ""
+echo -e "  ${BOLD}Other commands:${NC}"
+echo -e "    ${CYAN}docker compose stop${NC}         — stop the stack"
+echo -e "    ${CYAN}docker compose logs -f${NC}      — tail live logs"
+echo -e "    ${CYAN}docker compose exec web bash${NC} — shell into web container"
+echo -e ""
+echo -e "  Bootstrap complete. Run ${GREEN}./up.sh${NC} to start the platform."
+echo -e ""
+
+# Return to the repo root so any code appended to this script later runs
+# from a predictable CWD, and any `source ./run_start.sh` call leaves
+# the interactive shell exactly where it started.
+cd "$REPO_ROOT"

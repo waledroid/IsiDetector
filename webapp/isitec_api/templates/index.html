@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>visionAI Platform</title>
+    <!-- Modern Fonts and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.05">
+
+    <!-- Chart.js for Advanced Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="header-logo">
+            <!-- Using the static local logo, fallback to placeholder -->
+            <img src="/static/img/isitec-logo.png" alt="ISITEC Logo" height="80"
+                onerror="this.src='https://via.placeholder.com/240x80?text=ISITEC+Logo'">
+            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">visionAI Platform</h1>
+        </div>
+
+        <div style="display: flex; align-items: center; height: 100%;">
+            <div class="lang-switcher">
+                <button id="btn-lang-en" class="lang-btn" title="English">🇬🇧</button>
+                <button id="btn-lang-fr" class="lang-btn active" title="Français">🇫🇷</button>
+            </div>
+            <nav class="app-nav">
+                <button class="nav-btn active" data-target="section-live"><i class="material-icons">videocam</i> <span
+                        data-i18n="nav_live">Live Inference</span></button>
+                <button class="nav-btn" data-target="section-analytics"><i class="material-icons">analytics</i> <span
+                        data-i18n="nav_analytics">Analytics</span></button>
+                <button class="nav-btn dev-only" data-target="section-performance" style="display:none"><i class="material-icons">speed</i> <span
+                        data-i18n="nav_performance">Performance</span></button>
+                <button class="nav-btn dev-only" data-target="section-settings" style="display:none"><i class="material-icons">settings</i> <span
+                        data-i18n="nav_settings">Settings</span></button>
+                <button class="nav-btn" data-target="section-about"><i class="material-icons">info</i> <span
+                        data-i18n="nav_about">About</span></button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Auto-hiding Message Strip -->
+    <div id="message" class="message-strip hidden"></div>
+
+    <!-- Main Container for Cards -->
+    <main class="main-container">
+
+        <!-- SECTION 1: LIVE INFERENCE -->
+        <section id="section-live" class="panel active">
+            <div class="card layout-row">
+                <!-- Controls Side (Left) -->
+                <div class="controls-panel">
+
+                    <!-- Real-Time Stats Grid -->
+                    <div id="statsGrid" class="stats-grid">
+                        <div class="stat-card" style="background-color: #E8E0F8; border-color: #D1C4E9;">
+                            <span class="stat-value" id="statCartons" style="color: #4A148C;">0</span>
+                            <span class="stat-label" data-i18n="stat_cartons">Cartons</span>
+                        </div>
+                        <div class="stat-card" style="background-color: #FCE4EC; border-color: #F8BBD0;">
+                            <span class="stat-value" id="statPolybags" style="color: #880E4F;">0</span>
+                            <span class="stat-label" data-i18n="stat_polybags">Polybags</span>
+                        </div>
+                        <div class="stat-card full-width">
+                            <span class="stat-label" data-i18n="stat_last">Last Detected</span>
+                            <span class="stat-value text-small" id="statLast" data-i18n="stat_none">None</span>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Chart embedded directly beside/under stats -->
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h3 data-i18n="chart_title">Detection Analytics</h3>
+                            <div class="chart-filters">
+                                <button class="filter-btn active" data-period="live"
+                                    data-i18n="filter_live">Live</button>
+                                <button class="filter-btn" data-period="24h" data-i18n="filter_24h">24h</button>
+                                <button class="filter-btn" data-period="7d" data-i18n="filter_7d">7 Days</button>
+                                <button class="filter-btn" data-period="30d" data-i18n="filter_30d">30 Days</button>
+                            </div>
+                        </div>
+                        <div
+                            style="background: #fff; border: 1px solid #dadce0; border-radius: 6px; padding: 12px; margin-bottom: 48px;">
+                            <canvas id="analyticsChart" height="160"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="padding-top: 10px;">
+                        <label data-i18n="modes">Modes</label>
+                        <select id="modelSelect">
+                            <option value="yolo">Mode 1</option>
+                            <option value="rfdetr">Mode 2</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label data-i18n="input_source">Input Source</label>
+                        <div class="source-buttons">
+                            <button class="source-btn active" data-type="image"><i class="material-icons">image</i>
+                                <span data-i18n="src_image">Image</span></button>
+                            <button class="source-btn" data-type="video"><i class="material-icons">movie</i> <span
+                                    data-i18n="src_video">Video</span></button>
+                            <button class="source-btn" data-type="rtsp"><i class="material-icons">router</i> <span
+                                    data-i18n="src_rtsp">RTSP URL</span></button>
+                            <button class="source-btn" data-type="camera"><i class="material-icons">photo_camera</i>
+                                <span data-i18n="src_camera">Camera</span></button>
+                        </div>
+                    </div>
+
+                    <div class="input-group" id="dynamicInputContainer">
+                        <!-- File Upload Drop Area -->
+                        <div class="file-drop-area" id="fileDropArea">
+                            <span class="fake-file-btn" data-i18n="choose_file">Choose File</span>
+                            <span class="file-msg" data-i18n="drag_drop">or drag and drop here</span>
+                            <input class="file-input" type="file" id="sourceFile" accept="image/*">
+                        </div>
+                        <!-- Text Input Area (for Camera ID or RTSP URL) -->
+                        <input type="text" id="sourceText" placeholder="" style="display:none; font-family: inherit;">
+                    </div>
+                </div>
+
+                <!-- Video Side (Right) -->
+                <div class="video-panel" style="display: flex; flex-direction: column;">
+                    <div class="video-wrapper">
+                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; width: 100%; height: 100%; object-fit: contain;"></canvas>
+                    </div>
+
+                    <div class="button-group"
+                        style="margin-top: 16px; justify-content: center; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #dadce0;">
+                        <button id="btnStart" class="btn btn-primary"
+                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="material-icons" style="font-size: 24px;">play_arrow</i> <span
+                                data-i18n="start_tracking">Start</span>
+                        </button>
+                        <button id="btnStop" class="btn btn-danger"
+                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="material-icons" style="font-size: 24px;">stop</i> <span
+                                data-i18n="stop">Stop</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: ANALYTICS -->
+        <section id="section-analytics" class="panel">
+            <div class="card">
+                <h2 data-i18n="analytics_overview">Analytics & Logging Overview</h2>
+                <p style="color: var(--text-light); margin: -16px 0 24px;" data-i18n="analytics_soon">Historical logs are stored in the /logs directory and parsed in the live dashboard natively.</p>
+
+                <!-- Session Comparison Table (moved from Performance) -->
+                <h3 style="margin: 0 0 16px; font-size: 15px; font-weight: 600; color: var(--text-main);" data-i18n="pg_sessions">Session Comparison (Last 5)</h3>
+                <div class="table-wrap">
+                    <table class="sessions-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="sess_date">Date</th>
+                                <th data-i18n="sess_model">Model</th>
+                                <th data-i18n="sess_duration">Duration</th>
+                                <th data-i18n="sess_fps">FPS</th>
+                                <th data-i18n="sess_conf">Avg Conf</th>
+                                <th data-i18n="sess_idratio">ID Ratio</th>
+                                <th data-i18n="sess_counts">Counts</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessionsBody">
+                            <tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;">No sessions recorded yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: PERFORMANCE -->
+        <section id="section-performance" class="panel">
+            <div class="card perf-header-card">
+                <h2 data-i18n="perf_title">Performance Monitoring</h2>
+                <p class="perf-subtitle" data-i18n="perf_subtitle">Real-time system and model metrics</p>
+            </div>
+
+            <!-- Empty-state banner — hidden once a stream runs -->
+            <div class="perf-empty-banner" id="perfEmptyBanner">
+                <i class="material-icons">play_circle_outline</i>
+                <span data-i18n="perf_empty">Start a stream to see live metrics</span>
+            </div>
+
+            <!-- Performance Metric Grid — 3 columns for Desktop -->
+            <div class="perf-grid">
+                <div class="perf-group" id="pg-session">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-session" title="Green: 0 errors, heartbeat < 10s"></span>
+                        <h3 data-i18n="pg_session">Session Health</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-session"></div>
+                </div>
+
+                <div class="perf-group" id="pg-hardware">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-hardware" title="Green: VRAM < 70%, GPU < 80%, Temp < 75°C"></span>
+                        <h3 data-i18n="pg_hardware">Hardware</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-hardware"></div>
+                </div>
+
+                <div class="perf-group" id="pg-throughput">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-throughput" title="Green: FPS ≥ 20, Latency ≤ 50ms"></span>
+                        <h3 data-i18n="pg_throughput">Throughput</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-throughput"></div>
+                </div>
+
+                <div class="perf-group" id="pg-detection">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-detection" title="Green: Confidence ≥ 0.75, Low-conf < 10%"></span>
+                        <h3 data-i18n="pg_detection">Detection Quality</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-detection"></div>
+                </div>
+
+                <div class="perf-group" id="pg-tracking">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-tracking" title="Green: ID ratio < 2.0"></span>
+                        <h3 data-i18n="pg_tracking">Tracking</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-tracking"></div>
+                </div>
+
+                <div class="perf-group" id="pg-counting">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-counting" title="Green: Counts active while running"></span>
+                        <h3 data-i18n="pg_counting">Counting Rate</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-counting"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: SETTINGS -->
+        <section id="section-settings" class="panel">
+            <div class="card settings-card">
+                <h2 data-i18n="system_settings">System Settings</h2>
+                <p style="color: var(--text-light); font-size: 14px; margin: -10px 0 20px;">Configure AI models and inference parameters. Changes take effect on the next stream startup.</p>
+                
+                <div class="settings-grid">
+                    <!-- MODE 1 CONFIG -->
+                    <div class="settings-group">
+                        <div class="sg-header">
+                            <span class="sg-badge mode-1">MODE 1</span>
+                            <h3>YOLO Configuration</h3>
+                        </div>
+                        <div class="sg-body">
+                            <label>Model Weights</label>
+                            <select id="set_yolo_weights" class="set-select">
+                                <option value="">Loading models...</option>
+                            </select>
+
+                            <label title="Higher resolution reduces speed but improves small object detection.">Image Size (imgsz)</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_yolo_imgsz" min="320" max="1024" step="32" value="640">
+                                <span class="slider-val" id="val_yolo_imgsz">640px</span>
+                            </div>
+
+                            <label title="Lower confidence = more detections, higher false positive rate.">Confidence Threshold</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_yolo_conf" min="0.1" max="0.95" step="0.05" value="0.5">
+                                <span class="slider-val" id="val_yolo_conf">0.50</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MODE 2 CONFIG -->
+                    <div class="settings-group">
+                        <div class="sg-header">
+                            <span class="sg-badge mode-2">MODE 2</span>
+                            <h3>RF-DETR Configuration</h3>
+                        </div>
+                        <div class="sg-body">
+                            <label>Model Weights</label>
+                            <select id="set_detr_weights" class="set-select">
+                                <option value="">Loading models...</option>
+                            </select>
+
+                            <label title="Native resolution for RF-DETR is usually 640.">Image Size (imgsz)</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_detr_imgsz" min="320" max="1024" step="32" value="640">
+                                <span class="slider-val" id="val_detr_imgsz">640px</span>
+                            </div>
+
+                            <label>Confidence Threshold</label>
+                            <div class="slider-wrap">
+                                <input type="range" id="set_detr_conf" min="0.1" max="0.95" step="0.05" value="0.35">
+                                <span class="slider-val" id="val_detr_conf">0.35</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TRACKING LINE CONFIG -->
+                <div class="settings-group" style="grid-column: 1 / -1;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#607d8b;">LINE</span>
+                        <h3>Tracking Line</h3>
+                    </div>
+                    <div class="sg-body">
+                        <label>Orientation</label>
+                        <div class="line-btn-group">
+                            <button class="line-btn active" id="btnLineVertical" title="Vertical line (left-right counting)">
+                                <i class="material-icons">swap_horiz</i> Vertical
+                            </button>
+                            <button class="line-btn" id="btnLineHorizontal" title="Horizontal line (top-bottom counting)">
+                                <i class="material-icons">swap_vert</i> Horizontal
+                            </button>
+                        </div>
+
+                        <label>Position (<span id="linePositionVal">50</span>%)</label>
+                        <div class="line-btn-group">
+                            <button class="line-btn" id="btnLineBack" title="Move line back (-5%)">
+                                <i class="material-icons">arrow_back</i> Back
+                            </button>
+                            <input type="range" id="linePositionSlider" min="10" max="90" step="5" value="50" style="flex:1;">
+                            <button class="line-btn" id="btnLineForward" title="Move line forward (+5%)">
+                                <i class="material-icons">arrow_forward</i> Forward
+                            </button>
+                        </div>
+
+                        <label title="Direction of belt motion determines which side of the bounding box (the 'leading edge') fires the trigger">Belt Direction</label>
+                        <div class="line-btn-group" id="beltDirectionGroup">
+                            <!-- Populated by main.js based on current orientation -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button class="btn btn-primary" id="btnSaveSettings" style="width: 100%; justify-content: center;">
+                        <i class="material-icons">save</i> Save Configuration
+                    </button>
+                    <div id="saveConfirm" class="save-confirm hidden"><i class="material-icons">check_circle</i> Settings Saved</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: ABOUT -->
+        <section id="section-about" class="panel">
+            <div class="card">
+                <h2 data-i18n="about_title">About ISITEC visionAI</h2>
+                <p data-i18n="about_desc">Industrial Object Detection and Tracking Platform</p>
+                <p style="color: #666; margin-top: 8px;" data-i18n="version">Version 1.0.0-beta</p>
+            </div>
+        </section>
+
+    </main>
+
+    <footer style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; font-size:12px; color:var(--text-light); border-top:1px solid #dadce0; margin-top:auto;">
+        <span id="udpStatus" style="font-family:monospace; color:#9aa0a6;">UDP: idle</span>
+        <span>&copy; Copyright Isitec International 2026</span>
+    </footer>
+
+    <!-- Dev-mode password modal (hidden) -->
+    <div class="dev-modal-overlay" id="devModal" style="display:none">
+        <div class="dev-modal">
+            <h3>Access</h3>
+            <input type="password" id="devPassword" placeholder="Enter password" autocomplete="off">
+            <p class="dev-error" id="devError" style="display:none">Invalid password</p>
+        </div>
+    </div>
+
+    <!-- Fullscreen onboarding prompt (non-blocking) -->
+    <div id="fs-prompt" class="fs-prompt hidden" role="region" aria-label="Fullscreen prompt">
+        <span class="fs-prompt-text" data-i18n="fs_prompt_text">Fullscreen view?</span>
+        <button type="button" class="fs-prompt-accept" data-i18n="fs_prompt_accept">Enter</button>
+        <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
+    </div>
+
+    <script src="/static/js/main.js?v=2.05"></script>
+</body>
+
+</html>

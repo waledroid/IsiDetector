@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Thin wrapper around `python -m Compression` — symmetric with up.sh.
+# Thin wrapper: the real script lives at deploy/_impl/compress.sh.
+# Kept at repo root so muscle-memory `./compress.sh` still works.
 set -euo pipefail
-cd "$(dirname "$0")"
-exec python -m Compression "$@"
+exec "$(dirname "$0")/deploy/_impl/compress.sh" "$@"

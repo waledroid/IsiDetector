@@ -1,0 +1,3587 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modular Instance Segmentation Pipeline for Industrial Parcel Detection">
+      
+      
+        <meta name="author" content="waledroid">
+      
+      
+      
+        <link rel="prev" href="../getting-started/">
+      
+      
+        <link rel="next" href="../network-setup/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Deployment (Docker) - IsiDetector</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#deployment-docker-scripts-and-site-bring-up" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="IsiDetector" class="md-header__button md-logo" aria-label="IsiDetector" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            IsiDetector
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Deployment (Docker)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/waledroid/IsiDetector" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    waledroid/IsiDetector
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../getting-started/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Getting Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Deployment (Docker)
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../network-setup/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Network Setup
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../tutorials/MODULAR/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../web-app/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Web Platform
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../trainers/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Trainers
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../modules/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Modules
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../config/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Configuration
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="IsiDetector" class="md-nav__button md-logo" aria-label="IsiDetector" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    IsiDetector
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/waledroid/IsiDetector" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    waledroid/IsiDetector
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment (Docker)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment (Docker)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#deployment-scripts-what-each-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Scripts — What Each Does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture at a Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-site-pc-setup-zero-to-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Site PC Setup — Zero to Production
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Complete Site PC Setup — Zero to Production">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#0-before-the-pc-arrives-at-the-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0. Before the PC arrives at the site
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1-install-the-os-enable-ssh-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install the OS + enable SSH (once)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-bootstrap-one-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Bootstrap — one command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-run_startsh-build-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. run_start.sh — build images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-drop-model-weights-into-isidetmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Drop model weights into isidet/models/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-start-the-stack-upsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Start the stack — ./up.sh
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-first-time-configuration-via-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. First-time configuration via the dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-point-udp-at-the-automate-lock-the-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Point UDP at the automate + lock the network
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-handshake-with-the-automation-engineer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Handshake with the automation engineer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-auto-start-on-boot-optional-but-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Auto-start on boot (optional but recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-verify-end-to-end" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Verify end-to-end
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-pack-for-a-site-delivery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to Pack for a Site Delivery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#host-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run_startsh-one-time-host-bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        run_start.sh — One-Time Host Bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upsh-daily-starter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        up.sh — Daily Starter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#daily-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily Operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deployment-modes-gpu-vs-cpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Modes: GPU vs CPU
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timezone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timezone
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#onnx-preload-why-the-boot-takes-30-seconds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ONNX Preload — Why the Boot Takes 30 Seconds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#volume-mounts-what-persists-across-container-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume Mounts — What Persists Across Container Restarts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#production-network-lock-down-netsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production Network Lock-down (net.sh)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Production Network Lock-down (net.sh)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-apply-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What apply writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#override-flags-if-discovery-is-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Override flags (if discovery is wrong)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-site-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-site deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automaticien-handshake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automaticien handshake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-operator-workflow-on-a-new-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example operator workflow on a new site
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-revert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to revert
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-compose-up-hangs-for-30-seconds-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        docker compose up hangs for 30+ seconds at startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ui-opens-but-the-video-feed-is-blank" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI opens but the video feed is blank
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gpu-not-visible-inside-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU not visible inside Docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stale-image-after-a-code-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stale image after a code change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vram-creeping-up-over-many-hot-swaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VRAM creeping up over many hot-swaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wsl2-browser-opens-on-windows-but-cant-reach-the-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WSL2: browser opens on Windows but can't reach the service
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-the-one-liner-cheat-sheet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary — The One-Liner Cheat Sheet
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Summary — The One-Liner Cheat Sheet">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#end-to-end-bring-up-on-a-fresh-site-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end bring-up on a fresh site PC
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daily-ops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily ops
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#force-a-specific-mode-rare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force a specific mode (rare)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-automate-handshake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network / automate handshake
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Network Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/MODULAR/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modular Plug-In Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/ONNX_TUTORIAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ONNX Deep-Dive
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/OPENVINO_TUTORIAL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenVINO Deep-Dive
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registry Pattern
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/base-trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BaseTrainer Contract
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../web-app/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web Platform
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Web Platform
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../web-app/functionalities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functionalities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../trainers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Trainers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainers/yolo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    YOLOv26-seg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainers/rfdetr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RF-DETR-Seg
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../modules/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modules
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Modules
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/vision-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shared Vision Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Industry Analytics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hook System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../inference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inference Engines
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_5" id="__nav_9_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Inference Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference/export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Export Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference/onnx/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ONNX Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference/openvino/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenVINO Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inference/tensorrt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TensorRT Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance Monitor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../preprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Preprocessing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#deployment-scripts-what-each-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Scripts — What Each Does
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture at a Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-site-pc-setup-zero-to-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete Site PC Setup — Zero to Production
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Complete Site PC Setup — Zero to Production">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#0-before-the-pc-arrives-at-the-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0. Before the PC arrives at the site
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1-install-the-os-enable-ssh-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install the OS + enable SSH (once)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-bootstrap-one-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Bootstrap — one command
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-run_startsh-build-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. run_start.sh — build images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-drop-model-weights-into-isidetmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Drop model weights into isidet/models/
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-start-the-stack-upsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Start the stack — ./up.sh
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-first-time-configuration-via-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. First-time configuration via the dashboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-point-udp-at-the-automate-lock-the-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Point UDP at the automate + lock the network
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-handshake-with-the-automation-engineer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Handshake with the automation engineer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-auto-start-on-boot-optional-but-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Auto-start on boot (optional but recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#10-verify-end-to-end" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Verify end-to-end
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-pack-for-a-site-delivery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to Pack for a Site Delivery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#host-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run_startsh-one-time-host-bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        run_start.sh — One-Time Host Bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upsh-daily-starter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        up.sh — Daily Starter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#daily-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily Operations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#deployment-modes-gpu-vs-cpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deployment Modes: GPU vs CPU
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timezone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timezone
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#onnx-preload-why-the-boot-takes-30-seconds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ONNX Preload — Why the Boot Takes 30 Seconds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#volume-mounts-what-persists-across-container-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume Mounts — What Persists Across Container Restarts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#production-network-lock-down-netsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production Network Lock-down (net.sh)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Production Network Lock-down (net.sh)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-apply-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What apply writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#override-flags-if-discovery-is-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Override flags (if discovery is wrong)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-site-deployment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-site deployment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automaticien-handshake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automaticien handshake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-operator-workflow-on-a-new-site" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example operator workflow on a new site
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-revert" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to revert
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-compose-up-hangs-for-30-seconds-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        docker compose up hangs for 30+ seconds at startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ui-opens-but-the-video-feed-is-blank" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI opens but the video feed is blank
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gpu-not-visible-inside-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU not visible inside Docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stale-image-after-a-code-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stale image after a code change
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vram-creeping-up-over-many-hot-swaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VRAM creeping up over many hot-swaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wsl2-browser-opens-on-windows-but-cant-reach-the-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WSL2: browser opens on Windows but can't reach the service
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-the-one-liner-cheat-sheet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary — The One-Liner Cheat Sheet
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Summary — The One-Liner Cheat Sheet">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#end-to-end-bring-up-on-a-fresh-site-pc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end bring-up on a fresh site PC
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daily-ops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily ops
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#force-a-specific-mode-rare" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force a specific mode (rare)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network-automate-handshake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network / automate handshake
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="deployment-docker-scripts-and-site-bring-up">Deployment — Docker, Scripts, and Site Bring-Up<a class="headerlink" href="#deployment-docker-scripts-and-site-bring-up" title="Permanent link">&para;</a></h1>
+<p>IsiDetector ships as a Docker stack that runs identically on <strong>CPU-only</strong> industrial PCs (Intel i5/i7 typical) and <strong>NVIDIA-GPU</strong> machines (for faster real-time inference). This page walks through everything from an empty Ubuntu install to a running production line with UDP handshake to the automation engineer.</p>
+<hr />
+<h2 id="deployment-scripts-what-each-does">Deployment Scripts — What Each Does<a class="headerlink" href="#deployment-scripts-what-each-does" title="Permanent link">&para;</a></h2>
+<p>Four shell scripts at the repo root cover the full lifecycle:</p>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Role</th>
+<th>When to run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#complete-site-pc-setup-zero-to-production"><code>install.sh</code></a></td>
+<td>One-command bootstrap from a blank Ubuntu PC — installs <code>git</code> + <code>curl</code>, clones the repo, makes scripts executable, optionally hands off to <code>run_start.sh</code></td>
+<td><strong>Very first time</strong> — before the repo even exists on the PC</td>
+</tr>
+<tr>
+<td><a href="#run_startsh-one-time-host-bootstrap"><code>run_start.sh</code></a></td>
+<td>Host bootstrap — installs Docker + (if GPU) NVIDIA toolkit, builds images, writes <code>.deployment.env</code></td>
+<td><strong>Once per machine</strong>, after the repo is cloned</td>
+</tr>
+<tr>
+<td><a href="#upsh-daily-starter"><code>up.sh</code></a></td>
+<td>Daily starter — picks the compose profile, brings the stack up, opens Chrome when ready</td>
+<td><strong>Every day</strong>, or after a <code>docker compose down</code></td>
+</tr>
+<tr>
+<td><a href="#production-network-lock-down-netsh"><code>net.sh</code></a></td>
+<td>Freezes the site's DHCP-issued network config as static so IP/gateway/DNS never drift. Also prints a ready-to-email mini-manual for the automation engineer</td>
+<td><strong>Once per site</strong>, after <code>up.sh</code> is stable</td>
+</tr>
+</tbody>
+</table>
+<p>All four auto-detect CPU vs GPU so the same commands work on both hardware profiles.</p>
+<hr />
+<h2 id="architecture-at-a-glance">Architecture at a Glance<a class="headerlink" href="#architecture-at-a-glance" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph LR
+    Host[Host Machine]
+    subgraph compose_stack[Compose Stack]
+        Web[web container&lt;br/&gt;Flask + ONNX + YOLO&lt;br/&gt;port 9501 + 9502/udp]
+        Rfdetr[rfdetr container&lt;br/&gt;PyTorch + rfdetr lib&lt;br/&gt;port 9510 internal]
+    end
+    GPU[NVIDIA GPU&lt;br/&gt;shared across both]
+
+    Host --&gt;|nvidia-container-toolkit| GPU
+    Host --&gt;|docker compose| Web
+    Host --&gt;|docker compose| Rfdetr
+    Web --&gt;|.pth path only| Rfdetr
+    Web --&gt;|ONNX, .pt| GPU
+    Rfdetr --&gt;|native .pth| GPU
+    Web --&gt;|UDP port 9502| Sorter[(Sorter Controller)]</code></pre>
+<ul>
+<li><strong><code>web</code> container</strong> — Flask app, ONNX Runtime for <code>.onnx</code> weights, Ultralytics for <code>.pt</code> weights, sends UDP triggers to the sorter.</li>
+<li><strong><code>rfdetr</code> sidecar</strong> — Isolated Python environment for RF-DETR's <code>.pth</code> path (its <code>transformers</code> pin conflicts with Ultralytics, so we split). Only used when operators load a <code>.pth</code> file.</li>
+<li><strong>Shared GPU</strong> — both containers pass through the host's NVIDIA GPU via <code>nvidia-container-toolkit</code>.</li>
+</ul>
+<hr />
+<h2 id="complete-site-pc-setup-zero-to-production">Complete Site PC Setup — Zero to Production<a class="headerlink" href="#complete-site-pc-setup-zero-to-production" title="Permanent link">&para;</a></h2>
+<p>This is the checklist to run in order on a fresh customer PC. Each step is self-contained and idempotent (safe to re-run). <strong>Same procedure for CPU and GPU hosts</strong> — the scripts auto-detect and branch internally; the only explicit difference is whether an NVIDIA GPU is present in the machine.</p>
+<h3 id="0-before-the-pc-arrives-at-the-site">0. Before the PC arrives at the site<a class="headerlink" href="#0-before-the-pc-arrives-at-the-site" title="Permanent link">&para;</a></h3>
+<p><strong>Hardware spec per mode:</strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">CPU-only PC</label><label for="__tabbed_1_2">GPU PC</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Minimum</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>Intel i5-8xxx / AMD Ryzen 5 3xxx (4C/8T)</td>
+<td>Intel i7-11xxx+ (AVX-512/VNNI unlocks OpenVINO fast path)</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>8 GB</td>
+<td>16 GB</td>
+</tr>
+<tr>
+<td>Disk</td>
+<td>40 GB free</td>
+<td>100 GB</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>None</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Inference model</td>
+<td>YOLO OpenVINO (<code>.xml</code>) — 25–50 FPS at 320 px</td>
+<td></td>
+</tr>
+<tr>
+<td>Network</td>
+<td>1 Gb Ethernet preferred; Wi-Fi OK</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Minimum</th>
+<th>Recommended</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>Any x86-64 quad-core</td>
+<td>—</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>16 GB</td>
+<td>32 GB</td>
+</tr>
+<tr>
+<td>Disk</td>
+<td>60 GB free</td>
+<td>100 GB</td>
+</tr>
+<tr>
+<td>GPU</td>
+<td>NVIDIA with CUDA 12.8 driver (≥ 550) + 6 GB VRAM</td>
+<td>RTX 4060+ (16 GB)</td>
+</tr>
+<tr>
+<td>Inference model</td>
+<td>YOLO <code>.pt</code>/<code>.onnx</code>/<code>.engine</code>; RF-DETR <code>.pth</code> or <code>.onnx</code></td>
+<td></td>
+</tr>
+<tr>
+<td>Network</td>
+<td>1 Gb Ethernet</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<p><strong>OS:</strong> Ubuntu 22.04 LTS or 24.04 LTS (Desktop or Server). Debian derivatives should work but aren't covered by the tested install path.</p>
+<h3 id="1-install-the-os-enable-ssh-once">1. Install the OS + enable SSH (once)<a class="headerlink" href="#1-install-the-os-enable-ssh-once" title="Permanent link">&para;</a></h3>
+<p>Plain Ubuntu install with your IT department's usual steps. Confirm the PC is on the same LAN / VLAN as the automate's PLC. Write down the LAN IP (<code>ip -br addr show | grep UP</code>) — you'll need it for step 7.</p>
+<h3 id="2-bootstrap-one-command">2. Bootstrap — one command<a class="headerlink" href="#2-bootstrap-one-command" title="Permanent link">&para;</a></h3>
+<p>On the site PC, in a terminal:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>curl
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/waledroid/IsiDetector/dev/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
+</span></code></pre></div>
+<p><code>install.sh</code> does:</p>
+<ul>
+<li>Verifies sudo, warns if WSL2 (production should be bare-metal Linux)</li>
+<li>Installs <code>git</code> + <code>curl</code> if missing</li>
+<li>Clones the repo into <code>~/logistic</code> (dev branch)</li>
+<li>Makes <code>run_start.sh</code>, <code>up.sh</code>, <code>net.sh</code>, <code>compress.sh</code> executable</li>
+<li>Prompts to run <code>./run_start.sh</code> next — answer <strong>y</strong> to continue, or <strong>n</strong> to run manually</li>
+</ul>
+<h3 id="3-run_startsh-build-images">3. <code>run_start.sh</code> — build images<a class="headerlink" href="#3-run_startsh-build-images" title="Permanent link">&para;</a></h3>
+<p>If you said <strong>n</strong> in step 2 (or curl-pipe-bash wasn't available), run the bootstrap manually:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>~/logistic
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./run_start.sh<span class="w">               </span><span class="c1"># auto-detect CPU vs GPU</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># or force a specific mode for testing:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>./run_start.sh<span class="w"> </span>--force-cpu<span class="w">   </span><span class="c1"># build CPU image even on a GPU host</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>./run_start.sh<span class="w"> </span>--force-gpu<span class="w">   </span><span class="c1"># build CUDA image even with no GPU visible</span>
+</span></code></pre></div>
+<p>What happens under the hood:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:2"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">CPU path</label><label for="__tabbed_2_2">GPU path</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<ul>
+<li>No <code>nvidia-smi</code> detected → <code>HAS_GPU=false</code></li>
+<li>Installs Docker Engine only (no NVIDIA Container Toolkit)</li>
+<li>Builds from <strong><code>Dockerfile.cpu</code></strong> (python:3.11-slim base + CPU torch wheels + CPU onnxruntime + openvino). Image ~1.2 GB.</li>
+<li>Writes <code>.deployment.env</code> with <code>COMPOSE_MODE=cpu</code></li>
+<li>Build time: 2–4 min on a decent internet connection</li>
+</ul>
+</div>
+<div class="tabbed-block">
+<ul>
+<li><code>nvidia-smi</code> works → <code>HAS_GPU=true</code></li>
+<li>Installs Docker Engine <strong>and</strong> NVIDIA Container Toolkit</li>
+<li>Runs <code>docker run --gpus all nvidia/cuda:... nvidia-smi</code> to verify GPU-in-Docker</li>
+<li>Builds from <strong><code>Dockerfile</code></strong> (nvidia/cuda:12.8 base + CUDA torch + onnxruntime-gpu). Image ~5 GB.</li>
+<li>Writes <code>.deployment.env</code> with <code>COMPOSE_MODE=gpu</code></li>
+<li>Build time: 5–15 min</li>
+</ul>
+</div>
+</div>
+</div>
+<p>After the build, <strong>log out and log back in</strong> (or run <code>newgrp docker</code>) so your user's Docker group membership takes effect without <code>sudo</code>.</p>
+<h3 id="4-drop-model-weights-into-isidetmodels">4. Drop model weights into <code>isidet/models/</code><a class="headerlink" href="#4-drop-model-weights-into-isidetmodels" title="Permanent link">&para;</a></h3>
+<p>The repo ships <strong>without</strong> trained weights (they're in <code>.gitignore</code>). Copy them from your dev machine via <code>scp</code>:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">CPU host — ship OpenVINO IR (fastest)</label><label for="__tabbed_3_2">GPU host — ship ONNX or .pt</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># From dev machine:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>scp<span class="w"> </span>-r<span class="w"> </span>~/logistic/isidet/runs/segment/models/yolo/&lt;date&gt;/weights/openvino<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>user@site-pc:~/logistic/isidet/runs/segment/models/yolo/&lt;date&gt;/weights/
+</span></code></pre></div>
+<p>~30–60 MB total. Auto-discovered by <code>StreamHandler._build_engine()</code> which prefers <code>.xml</code> on CPU hosts.</p>
+</div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>scp<span class="w"> </span>-r<span class="w"> </span>~/logistic/isidet/runs/segment/models/yolo/&lt;date&gt;/weights/*.onnx<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>user@site-pc:~/logistic/isidet/runs/segment/models/yolo/&lt;date&gt;/weights/
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Optional — RF-DETR .pth for native inference:</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>scp<span class="w"> </span>~/logistic/isidet/models/rfdetr/&lt;date&gt;/checkpoint_best_ema.pth<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span>user@site-pc:~/logistic/isidet/models/rfdetr/&lt;date&gt;/
+</span></code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Do not ship</strong> <code>.engine</code> (TensorRT) files — they're compiled per specific GPU driver + device and must be regenerated on the target PC.</p>
+<h3 id="5-start-the-stack-upsh">5. Start the stack — <code>./up.sh</code><a class="headerlink" href="#5-start-the-stack-upsh" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">cd</span><span class="w"> </span>~/logistic
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>./up.sh<span class="w">               </span><span class="c1"># auto — reads .deployment.env</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>./up.sh<span class="w"> </span>--force-cpu<span class="w">   </span><span class="c1"># force CPU compose override (testing)</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>./up.sh<span class="w"> </span>--force-gpu<span class="w">   </span><span class="c1"># force GPU compose (expect failure if no GPU)</span>
+</span></code></pre></div>
+<p>What it does:</p>
+<ul>
+<li>Reads <code>.deployment.env</code> for <code>COMPOSE_MODE</code></li>
+<li>Sanity-check: if marker says <code>gpu</code> but <code>nvidia-smi</code> is unreachable, auto-falls back to CPU with a warning (saves you from the cryptic <code>could not select driver "nvidia"</code> error after a hardware change)</li>
+<li>Brings up the stack with the right compose overlay:</li>
+<li>CPU: <code>docker-compose.yml + docker-compose.cpu.yml</code></li>
+<li>GPU: <code>docker-compose.yml + docker-compose.gpu.yml --profile gpu</code></li>
+<li>Waits for the readiness marker (CUDA kernels warm on GPU; Flask <code>Running on http://</code> banner on CPU)</li>
+<li>Opens Chrome to <code>http://localhost:9501</code></li>
+</ul>
+<p>When the dashboard appears, pick your model from Settings and click <strong>Start</strong>. You should see detections within 2 seconds.</p>
+<h3 id="6-first-time-configuration-via-the-dashboard">6. First-time configuration via the dashboard<a class="headerlink" href="#6-first-time-configuration-via-the-dashboard" title="Permanent link">&para;</a></h3>
+<p>On Settings:</p>
+<ul>
+<li><strong>Model weights</strong> dropdowns — pick the YOLO and (optional) RF-DETR weights you just scp'd</li>
+<li><strong>Confidence threshold</strong> — tune per scene (0.50 default, raise if polybags flicker)</li>
+<li><strong>Belt direction</strong> + <strong>line position</strong> — set per physical belt</li>
+<li><strong>UDP target</strong> — leave at <code>127.0.0.1:9502</code> for now (step 7 retargets to the automate)</li>
+</ul>
+<p>Click <strong>Save</strong>. Settings persist in <code>webapp/isitec_app/settings.json</code> across restarts.</p>
+<h3 id="7-point-udp-at-the-automate-lock-the-network">7. Point UDP at the automate + lock the network<a class="headerlink" href="#7-point-udp-at-the-automate-lock-the-network" title="Permanent link">&para;</a></h3>
+<p>Two edits, both persistent:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 7a. Edit docker-compose.yml to send to the automate&#39;s IP:</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>~/logistic
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;s|UDP_HOST=127.0.0.1|UDP_HOST=&lt;AUTOMATE_IP&gt;|&#39;</span><span class="w"> </span>docker-compose.yml
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># 7b. Apply and commit</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>./up.sh<span class="w">                                    </span><span class="c1"># container picks up new env</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>git<span class="w"> </span>add<span class="w"> </span>docker-compose.yml
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Wire UDP to automate at &lt;AUTOMATE_IP&gt; for &lt;site&gt;&quot;</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>dev
+</span></code></pre></div>
+<p>Then freeze the network config so the automate's firewall whitelist never breaks:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./net.sh<span class="w"> </span>show<span class="w">                 </span><span class="c1"># see current DHCP state</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>apply<span class="w">           </span><span class="c1"># answer &#39;y&#39; to freeze IP/gateway/DNS as static</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>./net.sh<span class="w"> </span><span class="nb">test</span><span class="w">                 </span><span class="c1"># confirm all 5 reachability rows ✅</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>./net.sh<span class="w"> </span>manual<span class="w">               </span><span class="c1"># print the French mini-manual to email the automaticien</span>
+</span></code></pre></div>
+<p>See the <a href="#production-network-lock-down-netsh">Production Network Lock-down</a> section below for full details on <code>net.sh</code>.</p>
+<h3 id="8-handshake-with-the-automation-engineer">8. Handshake with the automation engineer<a class="headerlink" href="#8-handshake-with-the-automation-engineer" title="Permanent link">&para;</a></h3>
+<p>Send him the output of <code>./net.sh manual</code>. It contains:</p>
+<ul>
+<li>Our source IP (now frozen)</li>
+<li>The automate's IP + port (read live from the container)</li>
+<li>Payload JSON spec</li>
+<li>Three listener recipes (Python / nc / PowerShell)</li>
+<li>Firewall rule templates (iptables + Windows)</li>
+<li>A validation <code>test-from-abdul</code> handshake</li>
+</ul>
+<p>Once he confirms receipt of the test string and a few live events, the bring-up is done.</p>
+<h3 id="9-auto-start-on-boot-optional-but-recommended">9. Auto-start on boot (optional but recommended)<a class="headerlink" href="#9-auto-start-on-boot-optional-but-recommended" title="Permanent link">&para;</a></h3>
+<p>Add to crontab so the stack comes up after power loss:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="o">(</span>crontab<span class="w"> </span>-l<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;@reboot cd </span><span class="nv">$HOME</span><span class="s2">/logistic &amp;&amp; ./up.sh&quot;</span><span class="o">)</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>crontab<span class="w"> </span>-
+</span></code></pre></div>
+<p>Or a systemd service — see the <a href="#daily-operations">Daily Operations</a> section.</p>
+<h3 id="10-verify-end-to-end">10. Verify end-to-end<a class="headerlink" href="#10-verify-end-to-end" title="Permanent link">&para;</a></h3>
+<p>Leave the system running for ~1 hour under realistic belt traffic. Check:</p>
+<ul>
+<li>Performance dashboard (<code>/api/performance</code> page) — FPS stable, RAM flat, UDP p99 &lt; 1 ms</li>
+<li><code>./net.sh test</code> — all checks still ✅</li>
+<li>Automate's counter — matches your "Datagrams sent" number</li>
+<li><code>docker compose logs web --since 1h | grep -iE 'error|warn'</code> — no unexpected errors</li>
+</ul>
+<p>If all three look healthy, the site is in production.</p>
+<hr />
+<h2 id="what-to-pack-for-a-site-delivery">What to Pack for a Site Delivery<a class="headerlink" href="#what-to-pack-for-a-site-delivery" title="Permanent link">&para;</a></h2>
+<p>If you're shipping a tarball rather than having the customer <code>git clone</code> the public repo, the minimum folder you deliver is:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>isidetector-delivery/
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>├── install.sh                      # One-command bootstrap (clones+sets up)
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>├── run_start.sh                    # Host bootstrap (Docker + image build)
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>├── up.sh                           # Daily starter
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>├── net.sh                          # Network lock-down + automaticien handshake
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>├── compress.sh                     # Optional — INT8/FP16 ONNX compression
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>├── docker-compose.yml              # Base compose — device-agnostic
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>├── docker-compose.gpu.yml          # GPU overlay — adds nvidia device reservation
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>├── docker-compose.cpu.yml          # CPU overlay — swaps to Dockerfile.cpu
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>├── Dockerfile                      # web container — CUDA base (GPU)
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>├── Dockerfile.cpu                  # web container — python:3.11-slim (CPU-only)
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>├── Dockerfile.rfdetr               # rfdetr sidecar — CUDA base (gpu-profile-gated)
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>├── requirements-deploy.txt         # Shared Python deps for both images
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>├── .env.example                    # Template for DEV_PASSWORD + UDP overrides
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>├── src/                            # Shared inference + utility code
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>├── isitec_app/                     # Flask app (templates, static, settings.json)
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>├── configs/
+</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>│   └── train.yaml                  # class_names, imgsz, UDP defaults, hook list
+</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>├── models/                         # Populated at deployment — not in git
+</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>│   ├── yolo/&lt;run_id&gt;/weights/openvino/  # CPU preferred: .xml + .bin
+</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>│   ├── yolo/&lt;run_id&gt;/weights/*.onnx     # GPU / portability
+</span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>│   └── rfdetr/&lt;run_id&gt;/*.onnx           # GPU only — OpenVINO RF-DETR is broken
+</span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>├── docs/                           # MkDocs source (optional — for on-site reading)
+</span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>└── scripts/                        # CLI tools (run_live.py, run_infer.py, …)
+</span></code></pre></div>
+<p>The <strong>public dev branch</strong> on GitHub already contains all of these (except <code>isidet/models/</code> which is per-deploy). <code>install.sh</code> clones the whole thing.</p>
+<p>Exclude these (runtime artefacts, caches, training data):</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>data/                    # Training datasets (huge)
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>runs/                    # Training run outputs
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>isitec_app/logs/         # Hourly CSV analytics (fills at runtime)
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>isitec_app/uploads/      # Operator-uploaded videos (fills at runtime)
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>.deployment.env          # Per-host flag (regenerated by run_start.sh)
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>**/__pycache__/
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>*.pyc
+</span></code></pre></div>
+<p>Everything in <code>.gitignore</code> is a safe exclude. If you ship a <code>git archive --format=tar.gz HEAD</code>, that list is honoured automatically.</p>
+<hr />
+<h2 id="host-prerequisites">Host Prerequisites<a class="headerlink" href="#host-prerequisites" title="Permanent link">&para;</a></h2>
+<p>For hardware specs (CPU/GPU minimums per mode), see the matrices in <a href="#0-before-the-pc-arrives-at-the-site">Complete Site PC Setup — step 0</a>.</p>
+<p>The host machine also needs:</p>
+<ol>
+<li><strong>Linux</strong> — Ubuntu 22.04 or 24.04 tested. Debian derivatives should work. macOS / Windows via Docker Desktop are unsupported for the GPU path; WSL2 works for CPU dev but <strong>not recommended for production</strong> (native Linux is more stable and has lower UDP tail latency).</li>
+<li><strong>Internet access on first run</strong> to install Docker and pull base images. After the first build, the stack runs fully offline (re-uses the layer cache).</li>
+<li><strong>sudo privileges</strong> for the first run — <code>run_start.sh</code> installs system packages.</li>
+<li><strong>(GPU mode only)</strong> NVIDIA driver ≥ 550 supporting CUDA 12.8.</li>
+</ol>
+<p>No Python, no PyTorch, no CUDA libs needed on the host itself — everything lives inside containers.</p>
+<hr />
+<h2 id="run_startsh-one-time-host-bootstrap"><code>run_start.sh</code> — One-Time Host Bootstrap<a class="headerlink" href="#run_startsh-one-time-host-bootstrap" title="Permanent link">&para;</a></h2>
+<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg></span> <strong>Source</strong>: <code>run_start.sh</code></p>
+<p>Run once per machine. The script walks seven stages:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. Platform detection</strong></td>
+<td>WSL2 vs native Linux, X11 availability, GPU presence</td>
+</tr>
+<tr>
+<td><strong>2. Docker Engine</strong></td>
+<td>Installs via official apt repo if not present</td>
+</tr>
+<tr>
+<td><strong>3. Docker service + permissions</strong></td>
+<td>Starts the daemon, adds <code>$USER</code> to <code>docker</code> group</td>
+</tr>
+<tr>
+<td><strong>4. NVIDIA Container Toolkit</strong></td>
+<td>Installs and configures if GPU detected; skipped on CPU-only hosts</td>
+</tr>
+<tr>
+<td><strong>5. Runtime verification</strong></td>
+<td>Runs <code>docker run --gpus all nvidia/cuda:...</code> to confirm GPU-in-Docker works</td>
+</tr>
+<tr>
+<td><strong>6. Build images</strong></td>
+<td><code>docker compose build</code> — pulls base images, installs Python deps, copies code. <strong>First build: 5–15 min.</strong></td>
+</tr>
+<tr>
+<td><strong>7. GUI check</strong></td>
+<td>Reports whether <code>cv2.imshow()</code> will work (for <code>run_live.py</code> CLI usage)</td>
+</tr>
+</tbody>
+</table>
+<p>Final step: writes <code>.deployment.env</code> to record whether this host is GPU or CPU, and whether <code>sudo</code> is needed for Docker commands. <code>up.sh</code> reads this file.</p>
+<p>Invocation:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>chmod<span class="w"> </span>+x<span class="w"> </span>run_start.sh<span class="w">        </span><span class="c1"># first time only (install.sh already did this)</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>./run_start.sh<span class="w">               </span><span class="c1"># auto-detect</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>./run_start.sh<span class="w"> </span>--force-cpu<span class="w">   </span><span class="c1"># build CPU image on a GPU box (testing the customer path)</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>./run_start.sh<span class="w"> </span>--force-gpu<span class="w">   </span><span class="c1"># build CUDA image even without GPU (CI builds)</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>./run_start.sh<span class="w"> </span>--help<span class="w">        </span><span class="c1"># full usage</span>
+</span></code></pre></div>
+<p>Build times:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>First build</th>
+<th>Subsequent (cached)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td>5–15 min</td>
+<td>~30 s</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>2–4 min</td>
+<td>~10 s</td>
+</tr>
+</tbody>
+</table>
+<p>Expected output on a CPU-only host:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>▶ Stage 1/7 — Hardware &amp; Platform Detection
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>[  OK]  Platform: Native Linux
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>[WARN]  No NVIDIA GPU detected
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>[INFO]  Mode: CPU inference (OpenVINO optimized)
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>...
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>▶ Stage 6/7 — Build &amp; Launch IsiDetector
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>[INFO]  Using CPU compose profile
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>[INFO]    → Image: Dockerfile.cpu (python:3.11-slim + CPU torch + onnxruntime CPU + openvino)
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>[INFO]  Building Docker image (first CPU build takes 2-4 minutes, subsequent builds are cached)...
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>[  OK]  Docker image ready
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>...
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>[  OK]  Deployment profile saved to .deployment.env (COMPOSE_MODE=cpu)
+</span></code></pre></div>
+<p>If the script aborts, fix the failing stage and re-run — it's idempotent (skips stages that already completed).</p>
+<div class="admonition tip">
+<p class="admonition-title">Idempotency</p>
+<p>You can re-run <code>run_start.sh</code> any time. Already-installed packages are skipped, images are rebuilt with Docker's layer cache so only changed layers run again (usually ~30s instead of 10min).</p>
+</div>
+<hr />
+<h2 id="upsh-daily-starter"><code>up.sh</code> — Daily Starter<a class="headerlink" href="#upsh-daily-starter" title="Permanent link">&para;</a></h2>
+<p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 9h5.5L13 3.5zM6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4c0-1.11.89-2 2-2m.12 13.5 3.74 3.74 1.42-1.41-2.33-2.33 2.33-2.33-1.42-1.41zm11.16 0-3.74-3.74-1.42 1.41 2.33 2.33-2.33 2.33 1.42 1.41z"/></svg></span> <strong>Source</strong>: <code>up.sh</code> at the repo root is a thin wrapper that execs <code>deploy/_impl/up.sh</code> (the real logic)</p>
+<p>Runs every time you want to start the stack. The flow:</p>
+<ol>
+<li><strong>Pick the compose profile</strong> — reads <code>.deployment.env</code> for <code>COMPOSE_MODE=gpu|cpu</code>. Fallback: autodetect via <code>nvidia-smi</code>.</li>
+<li><strong>Build and start containers</strong> — <code>docker compose up -d --build</code>. Subsequent runs hit the layer cache and finish in ~5 s.</li>
+<li><strong>Wait for readiness</strong> — tails the <code>web</code> container log for the line:
+   <div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>🔥 ONNX preload (CUDA kernels warm, session discarded): /opt/isitec/...
+</span></code></pre></div>
+   This fires after the rfdetr sidecar reports healthy AND the web container warms the default RF-DETR ONNX CUDA kernels. At that point the system is ready for a first operator click.</li>
+<li><strong>Open Chrome to <code>http://localhost:9501</code></strong> — preferring Chrome, falling back to system default.</li>
+</ol>
+<p>Browser selection order:</p>
+<table>
+<thead>
+<tr>
+<th>Position</th>
+<th>Launcher</th>
+<th>Platforms</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>google-chrome</code>, <code>google-chrome-stable</code>, <code>chromium</code>, <code>chromium-browser</code></td>
+<td>Linux</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>open -a "Google Chrome"</code> → <code>open</code></td>
+<td>macOS</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>wslview</code> → <code>cmd.exe /c start chrome</code> → <code>cmd.exe /c start ""</code></td>
+<td>WSL</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>xdg-open</code></td>
+<td>Generic Linux</td>
+</tr>
+</tbody>
+</table>
+<p>CLI flags (symmetric with <code>run_start.sh</code>):</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>./up.sh<span class="w">                 </span><span class="c1"># auto — reads .deployment.env</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>./up.sh<span class="w"> </span>--force-cpu<span class="w">     </span><span class="c1"># use CPU compose regardless of marker/GPU</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>./up.sh<span class="w"> </span>--force-gpu<span class="w">     </span><span class="c1"># use GPU compose even if nvidia-smi fails (requires toolkit)</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>./up.sh<span class="w"> </span>--help<span class="w">          </span><span class="c1"># usage</span>
+</span></code></pre></div>
+<p>Environment overrides:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nv">URL</span><span class="o">=</span>http://192.168.1.50:9501<span class="w"> </span>./up.sh<span class="w">    </span><span class="c1"># open a remote host instead of localhost</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nv">TIMEOUT_SEC</span><span class="o">=</span><span class="m">60</span><span class="w">                </span>./up.sh<span class="w">    </span><span class="c1"># tighter readiness wait (default 300)</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="nv">NO_BROWSER</span><span class="o">=</span><span class="m">1</span><span class="w">                  </span>./up.sh<span class="w">    </span><span class="c1"># start stack, skip browser (headless / rack deploy)</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="nv">FORCE_CPU</span><span class="o">=</span><span class="m">1</span><span class="w">                   </span>./up.sh<span class="w">    </span><span class="c1"># same as --force-cpu (legacy)</span>
+</span></code></pre></div>
+<p><strong>Stale-marker protection</strong> — if <code>.deployment.env</code> says <code>COMPOSE_MODE=gpu</code> but <code>nvidia-smi</code> is unreachable (e.g. the PC was migrated from a GPU dev box to a CPU site box without rerunning <code>run_start.sh</code>), <code>up.sh</code> automatically falls back to CPU compose with a warning rather than emitting the cryptic <code>could not select driver "nvidia" with capabilities: [[gpu]]</code> daemon error.</p>
+<hr />
+<h2 id="daily-operations">Daily Operations<a class="headerlink" href="#daily-operations" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Start (after a reboot, or first time)</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>./up.sh
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Restart after a code or config change</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./up.sh
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># Stop without removing containers (faster restart later)</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>docker<span class="w"> </span>compose<span class="w"> </span>stop
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="c1"># ...later, same day:</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>docker<span class="w"> </span>compose<span class="w"> </span>start
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="c1"># Tail logs (live)</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w">                 </span><span class="c1"># both containers</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>web<span class="w">             </span><span class="c1"># web only</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>rfdetr<span class="w">          </span><span class="c1"># rfdetr sidecar only</span>
+</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="o">=</span><span class="m">200</span><span class="w"> </span>web<span class="w">     </span><span class="c1"># last 200 lines, no follow</span>
+</span><span id="__span-15-17"><a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>
+</span><span id="__span-15-18"><a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a><span class="c1"># Shell into a running container for debugging</span>
+</span><span id="__span-15-19"><a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>web<span class="w"> </span>bash
+</span><span id="__span-15-20"><a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>rfdetr<span class="w"> </span>bash
+</span><span id="__span-15-21"><a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>
+</span><span id="__span-15-22"><a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a><span class="c1"># Inspect GPU usage</span>
+</span><span id="__span-15-23"><a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>web<span class="w"> </span>nvidia-smi
+</span></code></pre></div>
+<p>Ctrl+C while tailing logs only stops the <code>logs</code> command — <strong>containers keep running in the background</strong>.</p>
+<hr />
+<h2 id="deployment-modes-gpu-vs-cpu">Deployment Modes: GPU vs CPU<a class="headerlink" href="#deployment-modes-gpu-vs-cpu" title="Permanent link">&para;</a></h2>
+<p>The repo ships a <strong>base-plus-overlay</strong> Compose structure so the same source tree covers both modes without editing YAML on each host:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker-compose.yml         ← base, device-agnostic, no GPU reservation
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>docker-compose.gpu.yml     ← overlay: adds nvidia device reservation to web service
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>docker-compose.cpu.yml     ← overlay: builds from Dockerfile.cpu instead of Dockerfile
+</span></code></pre></div>
+<p><code>run_start.sh</code> detects the hardware and writes <code>COMPOSE_MODE=gpu|cpu</code> to <code>.deployment.env</code>. <code>up.sh</code> reads the marker and applies the right overlay:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="4:2"><input checked="checked" id="__tabbed_4_1" name="__tabbed_4" type="radio" /><input id="__tabbed_4_2" name="__tabbed_4" type="radio" /><div class="tabbed-labels"><label for="__tabbed_4_1">GPU host</label><label for="__tabbed_4_2">CPU host</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span>-f<span class="w"> </span>docker-compose.gpu.yml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span>--profile<span class="w"> </span>gpu<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span>up<span class="w"> </span>-d<span class="w"> </span>--build
+</span></code></pre></div>
+<ul>
+<li><code>--profile gpu</code> activates the <code>rfdetr</code> sidecar (gated in the base file behind <code>profiles: ["gpu"]</code>)</li>
+<li>Builds from <code>Dockerfile</code> (CUDA 12.8 base, ~5 GB image)</li>
+<li><code>web</code> service gets <code>deploy.resources.reservations.devices: nvidia</code></li>
+<li>Native <code>.pt</code> / <code>.pth</code>, ONNX-CUDA, TensorRT all available</li>
+</ul>
+</div>
+<div class="tabbed-block">
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>compose<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span>-f<span class="w"> </span>docker-compose.yml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span>-f<span class="w"> </span>docker-compose.cpu.yml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span>up<span class="w"> </span>-d<span class="w"> </span>--build
+</span></code></pre></div>
+<ul>
+<li>No <code>--profile gpu</code> → <code>rfdetr</code> sidecar is skipped entirely (no build, no nvidia runtime error)</li>
+<li><code>web.depends_on.rfdetr</code> is tagged <code>required: false</code> so web starts fine without the sidecar</li>
+<li>Builds from <code>Dockerfile.cpu</code> (python:3.11-slim base + CPU torch wheels + CPU onnxruntime + openvino, ~1.2 GB image)</li>
+<li>Recommended inference backend: <strong>OpenVINO (<code>.xml</code>)</strong> — fastest on Intel CPUs (1.4–2× vs ONNX-CPU), still works on AMD</li>
+<li><strong>RF-DETR is GPU-only in practice</strong> — the DINOv2 backbone is too slow on CPU for real-time AND the OpenVINO IR produces wrong logits on transformer models. Stick to YOLO on CPU.</li>
+</ul>
+</div>
+</div>
+</div>
+<p>Expected CPU throughput at 320 px YOLOv26-n:</p>
+<table>
+<thead>
+<tr>
+<th>CPU</th>
+<th>FPS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Intel i7-1165G7 (4C/8T)</td>
+<td>30–45</td>
+</tr>
+<tr>
+<td>Intel i7-11850H (8C/16T)</td>
+<td>50–70</td>
+</tr>
+<tr>
+<td>AMD Ryzen 5 5500 (6C/12T)</td>
+<td>25–40 (OpenVINO's Intel-specific paths don't apply)</td>
+</tr>
+<tr>
+<td>Intel i5-8250U (4C/8T)</td>
+<td>15–25</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="timezone">Timezone<a class="headerlink" href="#timezone" title="Permanent link">&para;</a></h2>
+<p>Both images set <code>TZ=Europe/Paris</code> and bundle <code>tzdata</code>. Timestamps in CSV logs, UDP payloads (<code>"ts"</code> field), and the UI footer all match the host's wall clock for a rig operating in France.</p>
+<p>For deployments outside France, change <code>Europe/Paris</code> in three places:</p>
+<ul>
+<li><code>Dockerfile</code> (around <code>ENV TZ=...</code>)</li>
+<li><code>Dockerfile.rfdetr</code> (same pattern)</li>
+<li><code>docker-compose.yml</code> → <code>services.web.environment</code> and <code>services.rfdetr.environment</code></li>
+</ul>
+<p>Or externalise with <code>TZ=${TZ:-Europe/Paris}</code> in <code>docker-compose.yml</code> and set the variable per-host in a <code>.env</code> file.</p>
+<hr />
+<h2 id="onnx-preload-why-the-boot-takes-30-seconds">ONNX Preload — Why the Boot Takes 30 Seconds<a class="headerlink" href="#onnx-preload-why-the-boot-takes-30-seconds" title="Permanent link">&para;</a></h2>
+<p>When <code>up.sh</code> starts the stack, these happen in sequence:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>t=0s     docker compose up -d
+</span><span id="__span-19-2"><a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>         rfdetr container starts, begins importing rfdetr+transformers (~25s)
+</span><span id="__span-19-3"><a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>t=25s    rfdetr healthcheck returns 200 → &quot;healthy&quot;
+</span><span id="__span-19-4"><a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>t=26s    web container starts (depends_on: condition: service_healthy)
+</span><span id="__span-19-5"><a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>t=28s    Flask app boots on port 9501
+</span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>t=28s    Background thread kicks off preload_onnx() on the default RF-DETR ONNX
+</span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>t=33s    cuDNN kernel autotuning completes — `🔥 ONNX preload (CUDA kernels warm...)` logs
+</span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>t=33s    ✓ Web container ready — up.sh opens Chrome
+</span></code></pre></div>
+<p>The preload discards the session but keeps cuDNN's compiled kernels in the driver cache for the process lifetime — so the first <strong>actual</strong> hot-swap to that RF-DETR ONNX weight (when an operator clicks Start) takes ~2 s instead of 5–8 s. See <a href="../inference/onnx/#5-cuda-kernel-preload-at-app-startup">ONNX Engine — CUDA Kernel Preload</a> for the deeper story on why this workaround exists (cross-thread session sharing in ONNX Runtime's CUDA EP stalls for many seconds).</p>
+<hr />
+<h2 id="volume-mounts-what-persists-across-container-restarts">Volume Mounts — What Persists Across Container Restarts<a class="headerlink" href="#volume-mounts-what-persists-across-container-restarts" title="Permanent link">&para;</a></h2>
+<p><code>docker-compose.yml</code> bind-mounts these host directories into the <code>web</code> container:</p>
+<table>
+<thead>
+<tr>
+<th>Host path</th>
+<th>Container path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>./isidet/models</code></td>
+<td><code>/opt/isitec/isidet/models</code></td>
+<td>Weight files</td>
+</tr>
+<tr>
+<td><code>./isidet/runs</code></td>
+<td><code>/opt/isitec/isidet/runs</code></td>
+<td>Training run artefacts (read-only in deployment)</td>
+</tr>
+<tr>
+<td><code>./isidet/configs</code></td>
+<td><code>/opt/isitec/isidet/configs</code></td>
+<td><code>train.yaml</code> + optimizer YAMLs</td>
+</tr>
+<tr>
+<td><code>./webapp/isitec_app/logs</code></td>
+<td><code>/opt/isitec/webapp/isitec_app/logs</code></td>
+<td>Hourly analytics CSVs</td>
+</tr>
+<tr>
+<td><code>./webapp/isitec_app/uploads</code></td>
+<td><code>/opt/isitec/webapp/isitec_app/uploads</code></td>
+<td>Operator-uploaded videos</td>
+</tr>
+<tr>
+<td><code>./webapp/isitec_app/settings.json</code></td>
+<td>same</td>
+<td>Default weight paths, thresholds, line config, belt direction</td>
+</tr>
+<tr>
+<td><code>./mkdocs/site</code></td>
+<td><code>/opt/isitec/webapp/isitec_app/static/docs</code> (read-only)</td>
+<td>Built MkDocs documentation served at <code>/docs</code></td>
+</tr>
+</tbody>
+</table>
+<p>So adding a new <code>.onnx</code> weight is as simple as dropping it into <code>isidet/models/yolo/&lt;run&gt;/weights/</code> on the host — no container rebuild, no restart.</p>
+<p><code>webapp/isitec_app/settings.json</code> holds <strong>per-site</strong> configuration. Set it once after first boot:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="p">{</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="w">  </span><span class="nt">&quot;yolo_weights&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;isidet/models/yolo/&lt;your-run&gt;/weights/best.onnx&quot;</span><span class="p">,</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">  </span><span class="nt">&quot;rfdetr_weights&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;isidet/models/rfdetr/&lt;your-run&gt;/inference_model.onnx&quot;</span><span class="p">,</span>
+</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="w">  </span><span class="nt">&quot;yolo_imgsz&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">416</span><span class="p">,</span>
+</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="w">  </span><span class="nt">&quot;yolo_conf&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span>
+</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">  </span><span class="nt">&quot;detr_imgsz&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">416</span><span class="p">,</span>
+</span><span id="__span-20-7"><a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">  </span><span class="nt">&quot;detr_conf&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
+</span><span id="__span-20-8"><a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="w">  </span><span class="nt">&quot;line_orientation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vertical&quot;</span><span class="p">,</span>
+</span><span id="__span-20-9"><a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="w">  </span><span class="nt">&quot;line_position&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.5</span><span class="p">,</span>
+</span><span id="__span-20-10"><a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="w">  </span><span class="nt">&quot;belt_direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;left_to_right&quot;</span>
+</span><span id="__span-20-11"><a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="p">}</span>
+</span></code></pre></div>
+<hr />
+<h2 id="production-network-lock-down-netsh">Production Network Lock-down (<code>net.sh</code>)<a class="headerlink" href="#production-network-lock-down-netsh" title="Permanent link">&para;</a></h2>
+<p>Once inference runs on a site PC and the UDP handshake with the automation engineer's PLC is working, <strong>the PC's IP, gateway, and DNS must not drift</strong>. A DHCP lease expiry, router reboot, or Wi-Fi reconnect can silently rotate the IP — and the automaticien's firewall whitelist breaks on the spot.</p>
+<p><code>net.sh</code> (repo root) freezes the current DHCP-issued config into a static NetworkManager profile and provides a ready-to-email manual for the automaticien. <strong>No site-specific value is hardcoded</strong> — the script discovers everything at runtime, so the same one command works on every customer PC.</p>
+<h3 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>./net.sh<span class="w">                    </span><span class="c1"># same as &#39;show&#39; — current network + UDP publisher state</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>./net.sh<span class="w"> </span>show
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>./net.sh<span class="w"> </span>apply<span class="w">              </span><span class="c1"># freeze discovered values as a static config (needs sudo)</span>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>./net.sh<span class="w"> </span>apply<span class="w"> </span>--force<span class="w">      </span><span class="c1"># skip confirm prompt (for scripts / cron)</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>./net.sh<span class="w"> </span>revert<span class="w">             </span><span class="c1"># restore DHCP (needs sudo)</span>
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>./net.sh<span class="w"> </span><span class="nb">test</span><span class="w">               </span><span class="c1"># reachability checks + live UDP egress probe</span>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>./net.sh<span class="w"> </span>manual<span class="w">             </span><span class="c1"># French mini-manual for the automaticien</span>
+</span><span id="__span-21-8"><a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>./net.sh<span class="w"> </span>manual<span class="w"> </span>--en<span class="w">        </span><span class="c1"># English variant</span>
+</span><span id="__span-21-9"><a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>./net.sh<span class="w"> </span>--help
+</span></code></pre></div>
+<h3 id="what-apply-writes">What <code>apply</code> writes<a class="headerlink" href="#what-apply-writes" title="Permanent link">&para;</a></h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>ipv4.method                     manual
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>ipv4.addresses                  &lt;current IP/CIDR, discovered&gt;
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>ipv4.gateway                    &lt;default gateway, discovered&gt;
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>ipv4.dns                        &lt;active DNS, discovered&gt;
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>ipv4.ignore-auto-dns            yes
+</span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>ipv6.method                     link-local
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>connection.autoconnect          yes
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>connection.autoconnect-priority 100
+</span></code></pre></div>
+<p>No change to what the PC is doing — it's the exact config DHCP just handed out, converted to static. That's why it always works: we're freezing a known-good state, not imposing a theoretical one.</p>
+<h3 id="override-flags-if-discovery-is-wrong">Override flags (if discovery is wrong)<a class="headerlink" href="#override-flags-if-discovery-is-wrong" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>./net.sh<span class="w"> </span>apply<span class="w"> </span>--ip<span class="w"> </span><span class="m">192</span>.168.2.225/24<span class="w">          </span><span class="c1"># pin a specific address</span>
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>./net.sh<span class="w"> </span>apply<span class="w"> </span>--gateway<span class="w"> </span><span class="m">192</span>.168.2.1<span class="w">          </span><span class="c1"># override discovered gateway</span>
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>./net.sh<span class="w"> </span>apply<span class="w"> </span>--dns<span class="w"> </span><span class="s2">&quot;8.8.8.8 1.1.1.1&quot;</span><span class="w">        </span><span class="c1"># override DNS servers</span>
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>./net.sh<span class="w"> </span>apply<span class="w"> </span>--conn<span class="w"> </span><span class="s2">&quot;my-connection-name&quot;</span><span class="w">    </span><span class="c1"># operate on a non-active profile</span>
+</span></code></pre></div>
+<h3 id="cross-site-deployment">Cross-site deployment<a class="headerlink" href="#cross-site-deployment" title="Permanent link">&para;</a></h3>
+<p>Bringing the repo to a new customer PC with a different Wi-Fi / subnet / automate IP needs <strong>zero file edits</strong>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>git<span class="w"> </span>pull<span class="w"> </span>origin<span class="w"> </span>dev
+</span><span id="__span-24-2"><a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>./net.sh<span class="w"> </span>show<span class="w">         </span><span class="c1"># confirm discovery found sensible values</span>
+</span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>apply<span class="w">   </span><span class="c1"># freeze them in place</span>
+</span><span id="__span-24-4"><a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>./net.sh<span class="w"> </span>manual<span class="w">       </span><span class="c1"># print the French handshake doc with this site&#39;s IPs</span>
+</span></code></pre></div>
+<p>If discovery can't find a sensible value on some machine (no NetworkManager connection, IP in the Docker bridge range, no default gateway), the script errors cleanly with a "pass <code>--X</code> explicitly" hint instead of writing a bad config.</p>
+<h3 id="automaticien-handshake">Automaticien handshake<a class="headerlink" href="#automaticien-handshake" title="Permanent link">&para;</a></h3>
+<p>The mini-manual from <code>./net.sh manual</code> contains:</p>
+<ul>
+<li>Our source IP (frozen by <code>apply</code>)</li>
+<li>The automate's IP + port (read live from the running container's <code>UDP_HOST</code>/<code>UDP_PORT</code>)</li>
+<li>Payload format spec (same JSON the <code>UDPPublisher</code> emits)</li>
+<li>Three listener recipes: Python / netcat / PowerShell</li>
+<li>iptables and Windows-Firewall allowlist templates</li>
+<li>A one-packet validation handshake (<code>test-from-abdul</code>) — proves path end-to-end</li>
+</ul>
+<p>Run it, paste the output into email or a ticket, and you have a self-contained doc that the other side can action without needing access to this repo.</p>
+<h3 id="example-operator-workflow-on-a-new-site">Example operator workflow on a new site<a class="headerlink" href="#example-operator-workflow-on-a-new-site" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># Fresh PC with Ubuntu Desktop + NM, just reached the stage where ./up.sh</span>
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="c1"># is running and inference streams properly:</span>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>
+</span><span id="__span-25-4"><a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>./net.sh<span class="w"> </span>show<span class="w">                   </span><span class="c1"># see &#39;IPv4 method: auto&#39; (DHCP)</span>
+</span><span id="__span-25-5"><a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>apply<span class="w">             </span><span class="c1"># answer &#39;y&#39; to the diff — config now locked</span>
+</span><span id="__span-25-6"><a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>./net.sh<span class="w"> </span><span class="nb">test</span><span class="w">                   </span><span class="c1"># all 5 rows ✅</span>
+</span><span id="__span-25-7"><a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>./net.sh<span class="w"> </span>manual<span class="w"> </span><span class="p">|</span><span class="w"> </span>xclip<span class="w"> </span>-selection<span class="w"> </span>clipboard
+</span><span id="__span-25-8"><a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a><span class="w">                                </span><span class="c1"># paste into email to the automation engineer</span>
+</span></code></pre></div>
+<p>After <code>apply</code>, a <code>reboot</code> or <code>sudo nmcli connection down &lt;CONN&gt; &amp;&amp; up &lt;CONN&gt;</code> leaves the IP / gateway / DNS identical — the whole point of the lock-down.</p>
+<h3 id="when-to-revert">When to <code>revert</code><a class="headerlink" href="#when-to-revert" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Moving the PC to a different network where DHCP is mandatory</li>
+<li>Troubleshooting a gateway/DNS change where you want DHCP to auto-pick new values</li>
+<li>Decommissioning the PC</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>revert
+</span></code></pre></div>
+<p>The script re-enables DHCP and clears the static fields atomically.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<h3 id="docker-compose-up-hangs-for-30-seconds-at-startup"><code>docker compose up</code> hangs for 30+ seconds at startup<a class="headerlink" href="#docker-compose-up-hangs-for-30-seconds-at-startup" title="Permanent link">&para;</a></h3>
+<p>Normal on first boot — the <code>web</code> service waits for the <code>rfdetr</code> sidecar's healthcheck (<code>depends_on: condition: service_healthy</code>). The rfdetr Python deps take ~25 s to import the first time. Subsequent boots on the same host are faster because layers are cached.</p>
+<h3 id="ui-opens-but-the-video-feed-is-blank">UI opens but the video feed is blank<a class="headerlink" href="#ui-opens-but-the-video-feed-is-blank" title="Permanent link">&para;</a></h3>
+<p>Check <code>/api/stats</code> — if <code>is_running: false</code>, no stream has been started. Go to Live Inference, pick a source (file or RTSP), click Start.</p>
+<p>If <code>is_running: true</code> but video is still black, tail the web log:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>web<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-iE<span class="w"> </span><span class="s2">&quot;error|fail|onnx&quot;</span>
+</span></code></pre></div>
+Most common cause: the selected weight file doesn't exist. <code>settings.json</code> may point to a run that was never copied over.</p>
+<h3 id="gpu-not-visible-inside-docker">GPU not visible inside Docker<a class="headerlink" href="#gpu-not-visible-inside-docker" title="Permanent link">&para;</a></h3>
+<p><div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>nvidia/cuda:12.8.0-base-ubuntu22.04<span class="w"> </span>nvidia-smi
+</span></code></pre></div>
+If this fails, <code>nvidia-container-toolkit</code> isn't properly configured. Re-run <code>./run_start.sh</code> or manually:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>nvidia-container-toolkit
+</span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>sudo<span class="w"> </span>nvidia-ctk<span class="w"> </span>runtime<span class="w"> </span>configure<span class="w"> </span>--runtime<span class="o">=</span>docker
+</span><span id="__span-29-3"><a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>docker
+</span></code></pre></div></p>
+<h3 id="stale-image-after-a-code-change">Stale image after a code change<a class="headerlink" href="#stale-image-after-a-code-change" title="Permanent link">&para;</a></h3>
+<p><div class="language-bash highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./up.sh
+</span></code></pre></div>
+The <code>--build</code> flag in <code>up.sh</code> rebuilds only changed layers. If you want to force a full rebuild:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>build<span class="w"> </span>--no-cache<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./up.sh
+</span></code></pre></div></p>
+<h3 id="vram-creeping-up-over-many-hot-swaps">VRAM creeping up over many hot-swaps<a class="headerlink" href="#vram-creeping-up-over-many-hot-swaps" title="Permanent link">&para;</a></h3>
+<p>The web container holds cuDNN kernel caches and the current model's GPU allocation. A few swaps of a ~500 MB model can accumulate up to 2–3 GB. If you hit VRAM limits, <code>docker compose restart web</code> drops everything and rebuilds from the preloaded defaults in ~30 s.</p>
+<h3 id="wsl2-browser-opens-on-windows-but-cant-reach-the-service">WSL2: browser opens on Windows but can't reach the service<a class="headerlink" href="#wsl2-browser-opens-on-windows-but-cant-reach-the-service" title="Permanent link">&para;</a></h3>
+<p>On WSL2, <code>localhost:9501</code> is auto-forwarded by Windows most of the time. If not:
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="nv">URL</span><span class="o">=</span>http://<span class="k">$(</span>hostname<span class="w"> </span>-I<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $1}&#39;</span><span class="k">)</span>:9501<span class="w"> </span>./up.sh
+</span></code></pre></div>
+This opens the browser against the WSL2 VM's internal IP directly.</p>
+<hr />
+<h2 id="summary-the-one-liner-cheat-sheet">Summary — The One-Liner Cheat Sheet<a class="headerlink" href="#summary-the-one-liner-cheat-sheet" title="Permanent link">&para;</a></h2>
+<h3 id="end-to-end-bring-up-on-a-fresh-site-pc">End-to-end bring-up on a fresh site PC<a class="headerlink" href="#end-to-end-bring-up-on-a-fresh-site-pc" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-33-1"><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="c1"># 0. Fresh Ubuntu PC, nothing installed except curl</span>
+</span><span id="__span-33-2"><a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>sudo<span class="w"> </span>apt<span class="w"> </span>update<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>-y<span class="w"> </span>curl
+</span><span id="__span-33-3"><a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>
+</span><span id="__span-33-4"><a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a><span class="c1"># 1. One-command install — clones the repo + bootstraps Docker + builds the image</span>
+</span><span id="__span-33-5"><a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/waledroid/IsiDetector/dev/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
+</span><span id="__span-33-6"><a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a>
+</span><span id="__span-33-7"><a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a><span class="c1"># 2. Log out + back in so docker-group membership applies</span>
+</span><span id="__span-33-8"><a id="__codelineno-33-8" name="__codelineno-33-8" href="#__codelineno-33-8"></a><span class="nb">exit</span><span class="w">      </span><span class="c1"># and re-SSH / re-login</span>
+</span><span id="__span-33-9"><a id="__codelineno-33-9" name="__codelineno-33-9" href="#__codelineno-33-9"></a>
+</span><span id="__span-33-10"><a id="__codelineno-33-10" name="__codelineno-33-10" href="#__codelineno-33-10"></a><span class="c1"># 3. (If not done by install.sh) build the image</span>
+</span><span id="__span-33-11"><a id="__codelineno-33-11" name="__codelineno-33-11" href="#__codelineno-33-11"></a><span class="nb">cd</span><span class="w"> </span>~/logistic
+</span><span id="__span-33-12"><a id="__codelineno-33-12" name="__codelineno-33-12" href="#__codelineno-33-12"></a>./run_start.sh<span class="w">               </span><span class="c1"># auto CPU/GPU</span>
+</span><span id="__span-33-13"><a id="__codelineno-33-13" name="__codelineno-33-13" href="#__codelineno-33-13"></a>
+</span><span id="__span-33-14"><a id="__codelineno-33-14" name="__codelineno-33-14" href="#__codelineno-33-14"></a><span class="c1"># 4. Drop model weights on the PC (from dev machine):</span>
+</span><span id="__span-33-15"><a id="__codelineno-33-15" name="__codelineno-33-15" href="#__codelineno-33-15"></a><span class="c1">#    CPU:  scp -r &lt;dev&gt;:~/logistic/.../openvino  site-pc:~/logistic/.../</span>
+</span><span id="__span-33-16"><a id="__codelineno-33-16" name="__codelineno-33-16" href="#__codelineno-33-16"></a><span class="c1">#    GPU:  scp &lt;dev&gt;:~/logistic/.../best.onnx    site-pc:~/logistic/.../</span>
+</span><span id="__span-33-17"><a id="__codelineno-33-17" name="__codelineno-33-17" href="#__codelineno-33-17"></a>
+</span><span id="__span-33-18"><a id="__codelineno-33-18" name="__codelineno-33-18" href="#__codelineno-33-18"></a><span class="c1"># 5. Start the stack</span>
+</span><span id="__span-33-19"><a id="__codelineno-33-19" name="__codelineno-33-19" href="#__codelineno-33-19"></a>./up.sh
+</span><span id="__span-33-20"><a id="__codelineno-33-20" name="__codelineno-33-20" href="#__codelineno-33-20"></a>
+</span><span id="__span-33-21"><a id="__codelineno-33-21" name="__codelineno-33-21" href="#__codelineno-33-21"></a><span class="c1"># 6. Wire the UDP target to the automate, then lock the network</span>
+</span><span id="__span-33-22"><a id="__codelineno-33-22" name="__codelineno-33-22" href="#__codelineno-33-22"></a>sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;s|UDP_HOST=127.0.0.1|UDP_HOST=&lt;AUTOMATE_IP&gt;|&#39;</span><span class="w"> </span>docker-compose.yml
+</span><span id="__span-33-23"><a id="__codelineno-33-23" name="__codelineno-33-23" href="#__codelineno-33-23"></a>./up.sh
+</span><span id="__span-33-24"><a id="__codelineno-33-24" name="__codelineno-33-24" href="#__codelineno-33-24"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>apply
+</span><span id="__span-33-25"><a id="__codelineno-33-25" name="__codelineno-33-25" href="#__codelineno-33-25"></a>./net.sh<span class="w"> </span><span class="nb">test</span><span class="w">        </span><span class="c1"># expect all ✅</span>
+</span><span id="__span-33-26"><a id="__codelineno-33-26" name="__codelineno-33-26" href="#__codelineno-33-26"></a>./net.sh<span class="w"> </span>manual<span class="w">      </span><span class="c1"># pipe to email — send to the automaticien</span>
+</span><span id="__span-33-27"><a id="__codelineno-33-27" name="__codelineno-33-27" href="#__codelineno-33-27"></a>
+</span><span id="__span-33-28"><a id="__codelineno-33-28" name="__codelineno-33-28" href="#__codelineno-33-28"></a><span class="c1"># 7. Optional — auto-start on boot</span>
+</span><span id="__span-33-29"><a id="__codelineno-33-29" name="__codelineno-33-29" href="#__codelineno-33-29"></a><span class="o">(</span>crontab<span class="w"> </span>-l<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;@reboot cd \$HOME/logistic &amp;&amp; ./up.sh&quot;</span><span class="o">)</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>crontab<span class="w"> </span>-
+</span></code></pre></div>
+<h3 id="daily-ops">Daily ops<a class="headerlink" href="#daily-ops" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-34-1"><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>./up.sh<span class="w">                       </span><span class="c1"># start / resume (reads .deployment.env)</span>
+</span><span id="__span-34-2"><a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./up.sh<span class="w">   </span><span class="c1"># restart after a code/config change</span>
+</span><span id="__span-34-3"><a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>web<span class="w">    </span><span class="c1"># live logs</span>
+</span><span id="__span-34-4"><a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>docker<span class="w"> </span>compose<span class="w"> </span>stop<span class="w">           </span><span class="c1"># stop without removing containers</span>
+</span><span id="__span-34-5"><a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>down<span class="w">           </span><span class="c1"># stop + remove containers</span>
+</span></code></pre></div>
+<h3 id="force-a-specific-mode-rare">Force a specific mode (rare)<a class="headerlink" href="#force-a-specific-mode-rare" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-35-1"><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>./run_start.sh<span class="w"> </span>--force-cpu<span class="w">   </span><span class="c1"># build CPU image on a GPU box</span>
+</span><span id="__span-35-2"><a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>./run_start.sh<span class="w"> </span>--force-gpu<span class="w">   </span><span class="c1"># build CUDA image even with no GPU visible</span>
+</span><span id="__span-35-3"><a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>./up.sh<span class="w"> </span>--force-cpu<span class="w">          </span><span class="c1"># run CPU compose overlay</span>
+</span><span id="__span-35-4"><a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a>./up.sh<span class="w"> </span>--force-gpu<span class="w">          </span><span class="c1"># run GPU compose overlay</span>
+</span></code></pre></div>
+<h3 id="network-automate-handshake">Network / automate handshake<a class="headerlink" href="#network-automate-handshake" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-36-1"><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>./net.sh<span class="w"> </span>show<span class="w">                </span><span class="c1"># current network state + UDP publisher target</span>
+</span><span id="__span-36-2"><a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>./net.sh<span class="w"> </span><span class="nb">test</span><span class="w">                </span><span class="c1"># reachability + live UDP egress probe</span>
+</span><span id="__span-36-3"><a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>apply<span class="w">          </span><span class="c1"># freeze IP/gateway/DNS as static</span>
+</span><span id="__span-36-4"><a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a>sudo<span class="w"> </span>./net.sh<span class="w"> </span>revert<span class="w">         </span><span class="c1"># restore DHCP</span>
+</span><span id="__span-36-5"><a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a>./net.sh<span class="w"> </span>manual<span class="w">              </span><span class="c1"># French mini-manual → email to automaticien</span>
+</span><span id="__span-36-6"><a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a>./net.sh<span class="w"> </span>manual<span class="w"> </span>--en<span class="w">         </span><span class="c1"># English variant</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      for ISITEC International 2026
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/waledroid/IsiDetector" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+      <div class="md-progress" data-md-component="progress" role="progressbar"></div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.expand", "navigation.top", "navigation.instant", "navigation.instant.progress", "search.suggest", "search.highlight", "content.code.copy", "content.code.annotate", "content.tabs.link", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

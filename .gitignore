@@ -1,29 +1,59 @@
-data/
-runs/
-models/
-**/__pycache__/
+# Gitignore patterns updated for the 5-bucket restructure.
+# The leading-slash patterns here (/isidet/...) anchor to the repo root so
+# they match only the intended bucket path, not any nested directory that
+# happens to share the name.
+
+# ── isidet/ bucket — ML core, mostly large artefacts ────────────────────────
+/isidet/data/
+/isidet/runs/
+/isidet/logs/
+#
+# models/ is special: we ignore EVERYTHING under it (trained run outputs,
+# exported ONNX/XML/engine files, etc.) but keep the pretrained/ sub-dir
+# tracked. Two rules are needed because git does NOT walk into an
+# excluded directory, so using `/isidet/models/` as the exclude pattern
+# would make the !pretrained/ exception have no effect. Instead, we
+# exclude models/'s CONTENTS with `models/*` and then re-include
+# pretrained/ so git keeps walking.
+/isidet/models/*
+!/isidet/models/pretrained/
+
+# ── webapp/ bucket — per-backend runtime state ──────────────────────────────
+/webapp/isitec_app/uploads/
+/webapp/isitec_api/uploads/
+/webapp/isitec_api/logs/
+
+# ── deploy/ bucket ──────────────────────────────────────────────────────────
+# Per-host deployment marker written by run_start.sh
+/deploy/.deployment.env
+
+# ── compression/ bucket ─────────────────────────────────────────────────────
+# Compression tool scratch outputs (if stages ever write to a central dir)
+/compression/outputs/
+
+# ── Model / weight artefacts anywhere in the tree ───────────────────────────
 *.pth
 *.onnx
 *.pt
-!yolo26n.pt
-!yolov8m-seg.pt
-logs/
-.DS_Store
+
+# ── Exceptions for the two baseline pretrained weights that ship with
+#    the repo. These must come AFTER *.pt above since gitignore is
+#    last-match-wins.
+!/isidet/models/pretrained/yolo26n.pt
+!/isidet/models/pretrained/yolov8m-seg.pt
+
+# ── Python hygiene ──────────────────────────────────────────────────────────
+**/__pycache__/
 *.pyc
 *.pyo
 venv/
 .venv/
-isitec_app/uploads/
-isitec_api/uploads/
-isitec_api/logs/
 
-# Session-local tutorials and diagnostics (not for shared repo)
-MODULAR.md
-ONNX_TUTORIAL.md
-a.py
+# ── OS / editor noise ───────────────────────────────────────────────────────
+.DS_Store
 
-# Per-host deployment marker written by run_start.sh
-.deployment.env
-
-# Compression tool scratch outputs (if stages ever write to a central dir)
-Compression/outputs/
+# ── Session-local diagnostics (not for shared repo) ─────────────────────────
+/MODULAR.md
+/ONNX_TUTORIAL.md
+/OPENVINO_TUTORIAL.md
+/isidet/a.py

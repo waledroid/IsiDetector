@@ -1,0 +1,172 @@
+[
+  {
+    "date": "23-04-2026 16:16",
+    "model": "yolo",
+    "duration_h": 0.03,
+    "fps": 52.6,
+    "avg_confidence": 0.96,
+    "id_ratio": 1.19,
+    "counts": {
+      "carton": 3,
+      "polybag": 34
+    },
+    "baseline": {
+      "vram_mb": null,
+      "ram_mb": 4048.1,
+      "gpu_temp": null
+    }
+  },
+  {
+    "date": "23-04-2026 16:07",
+    "model": "yolo",
+    "duration_h": 0.25,
+    "fps": 53.3,
+    "avg_confidence": 0.959,
+    "id_ratio": 1.14,
+    "counts": {
+      "carton": 24,
+      "polybag": 250
+    },
+    "baseline": {
+      "vram_mb": 1516,
+      "ram_mb": 4078.6,
+      "gpu_temp": 33
+    }
+  },
+  {
+    "date": "23-04-2026 15:49",
+    "model": "yolo",
+    "duration_h": 0.23,
+    "fps": 52.3,
+    "avg_confidence": 0.945,
+    "id_ratio": 1.16,
+    "counts": {
+      "carton": 23,
+      "polybag": 230
+    },
+    "baseline": {
+      "vram_mb": 1515,
+      "ram_mb": 4035.7,
+      "gpu_temp": 34
+    }
+  },
+  {
+    "date": "21-04-2026 14:24",
+    "model": "yolo",
+    "duration_h": 0.0,
+    "fps": 52.7,
+    "avg_confidence": 0.967,
+    "id_ratio": 1.17,
+    "counts": {
+      "carton": 1,
+      "polybag": 5
+    },
+    "baseline": {
+      "vram_mb": 3427,
+      "ram_mb": 7956.2,
+      "gpu_temp": 45
+    }
+  },
+  {
+    "date": "21-04-2026 14:24",
+    "model": "yolo",
+    "duration_h": 0.01,
+    "fps": 19.4,
+    "avg_confidence": 0.854,
+    "id_ratio": null,
+    "counts": {
+      "carton": 0,
+      "polybag": 0
+    },
+    "baseline": {
+      "vram_mb": 3473,
+      "ram_mb": 7945.7,
+      "gpu_temp": 46
+    }
+  },
+  {
+    "date": "21-04-2026 14:23",
+    "model": "yolo",
+    "duration_h": 0.0,
+    "fps": 52.7,
+    "avg_confidence": 0.952,
+    "id_ratio": 1.67,
+    "counts": {
+      "carton": 1,
+      "polybag": 2
+    },
+    "baseline": {
+      "vram_mb": 3405,
+      "ram_mb": 7911.1,
+      "gpu_temp": 46
+    }
+  },
+  {
+    "date": "21-04-2026 14:23",
+    "model": "yolo",
+    "duration_h": 0.0,
+    "fps": 17.4,
+    "avg_confidence": 0.939,
+    "id_ratio": null,
+    "counts": {
+      "carton": 0,
+      "polybag": 0
+    },
+    "baseline": {
+      "vram_mb": 3438,
+      "ram_mb": 7946.5,
+      "gpu_temp": 47
+    }
+  },
+  {
+    "date": "21-04-2026 14:23",
+    "model": "yolo",
+    "duration_h": 0.01,
+    "fps": 23.4,
+    "avg_confidence": 0.846,
+    "id_ratio": null,
+    "counts": {
+      "carton": 0,
+      "polybag": 0
+    },
+    "baseline": {
+      "vram_mb": 3356,
+      "ram_mb": 7994.4,
+      "gpu_temp": 47
+    }
+  },
+  {
+    "date": "21-04-2026 14:21",
+    "model": "yolo",
+    "duration_h": 0.01,
+    "fps": 52.0,
+    "avg_confidence": 0.95,
+    "id_ratio": 1.36,
+    "counts": {
+      "carton": 10,
+      "polybag": 77
+    },
+    "baseline": {
+      "vram_mb": 3525,
+      "ram_mb": 8081.4,
+      "gpu_temp": 50
+    }
+  },
+  {
+    "date": "21-04-2026 14:15",
+    "model": "rfdetr",
+    "duration_h": 0.0,
+    "fps": 28.3,
+    "avg_confidence": 0.959,
+    "id_ratio": 1.75,
+    "counts": {
+      "carton": 1,
+      "polybag": 3
+    },
+    "baseline": {
+      "vram_mb": 3745,
+      "ram_mb": 7815.0,
+      "gpu_temp": 48
+    }
+  }
+]

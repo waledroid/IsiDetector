@@ -2,31 +2,37 @@
 .git/
 .gitignore
 
-# Training data & outputs (volume-mounted at runtime)
-data/
-runs/
-models/
+# Training data & outputs (volume-mounted at runtime — isidet/ bucket)
+isidet/data/
+isidet/runs/
+isidet/models/
+isidet/logs/
 
-# Build artifacts
-site/
-__pycache__/
+# MkDocs build artifacts
+mkdocs/site/
+**/__pycache__/
 *.pyc
 *.pyo
 
-# Large binary files
+# Large binary files (anywhere in tree)
 *.pt
 *.pth
 *.onnx
 *.engine
 *.bin
 
-# Development files
+# Claude Code metadata and loose notes
 .claude/
 *.txt
-!requirements*.txt
-isitec_app/uploads/
-isitec_app/logs/
-isitec_app/settings.json
+!**/requirements*.txt
+
+# Webapp runtime state (volume-mounted, not part of the image)
+webapp/isitec_app/uploads/
+webapp/isitec_app/logs/
+webapp/isitec_app/settings.json
+webapp/isitec_api/uploads/
+webapp/isitec_api/logs/
+webapp/isitec_api/settings.json
 
 # IDE
 .vscode/

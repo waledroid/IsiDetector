@@ -1,0 +1,27 @@
+# Root-level re-export so `docker compose <cmd>` works from the repo root.
+#
+# The real stack definitions live under deploy/ (docker-compose.yml plus
+# the .cpu / .gpu overlays). `./up.sh` already passes the full -f chain to
+# docker compose, so it ignores this file. But bare commands like
+# `docker compose down`, `docker compose logs -f web`,
+# `docker compose ps`, `docker compose exec web bash` — which run from
+# the repo root as muscle-memory — need a compose file right here.
+#
+# `include:` (Compose 2.20+) pulls in deploy/docker-compose.yml without
+# duplicating any of its content. Changes to the real file propagate
+# automatically — this file never needs to be kept in sync manually.
+#
+# The `name:` field pins the Compose project name to `deploy`. This
+# matches the project name `./up.sh` ends up with (it cd's into deploy/
+# before running compose, so directory-based naming lands on `deploy`),
+# which is in turn the prefix of the running containers
+# (deploy-web-1, deploy-rfdetr-1). Without this line, bare
+# `docker compose down` from the repo root would default to project
+# `logistic` and silently fail to match anything.
+#
+# Requires Docker Compose 2.20+. Check with: `docker compose version`.
+
+name: deploy
+
+include:
+  - path: deploy/docker-compose.yml
