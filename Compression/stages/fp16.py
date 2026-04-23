@@ -12,7 +12,9 @@ because the FP16 arithmetic is an internal detail of the graph.
 
 from __future__ import annotations
 
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import onnx
@@ -22,6 +24,34 @@ from ..inspect import ONNXProperties
 from ..ui import console
 from . import register
 from .base import Stage
+
+
+@contextmanager
+def _heartbeat(label: str, interval_s: float = 10.0):
+    """Print a 'still alive' line every `interval_s` seconds inside a slow call.
+
+    Some graphs push ``convert_float_to_float16`` into the 30–120s range;
+    without feedback the operator can't tell a slow convert apart from a
+    hang. A daemon thread emits one line per interval with the elapsed
+    time. The thread exits cleanly on __exit__.
+    """
+    t0 = time.perf_counter()
+    stop = threading.Event()
+
+    def _tick() -> None:
+        while not stop.wait(interval_s):
+            console.print(
+                f"   [dim]… still {label} "
+                f"({time.perf_counter() - t0:.0f}s elapsed)…[/dim]"
+            )
+
+    thread = threading.Thread(target=_tick, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
 
 
 @register
@@ -84,18 +114,24 @@ class FP16Stage(Stage):
         #                       Callers never need to know about the conversion.
         # op_block_list       → ops that misbehave at FP16 stay at FP32; the
         #                       converter inserts Cast pairs around them.
-        # disable_shape_infer → off, so FP16 propagation is shape-aware.
+        # disable_shape_infer → TRUE. The converter's internal ONNX shape
+        #                       inference pass is expensive and on some YOLO
+        #                       graphs gets stuck for tens of seconds even on
+        #                       a 10 MB model. We strip value_info and re-run
+        #                       shape inference ourselves in phase 3 anyway,
+        #                       so doing it twice is pure duplicate work.
         console.print(
             f"   [dim]⏳ converting to FP16 "
             f"(blocklist: {len(self.fp16_op_block_list)} op types)…[/dim]"
         )
         t0 = time.perf_counter()
-        converted = convert_float_to_float16(
-            model,
-            keep_io_types=True,
-            disable_shape_infer=False,
-            op_block_list=list(self.fp16_op_block_list),
-        )
+        with _heartbeat("converting to FP16"):
+            converted = convert_float_to_float16(
+                model,
+                keep_io_types=True,
+                disable_shape_infer=True,
+                op_block_list=list(self.fp16_op_block_list),
+            )
         console.print(f"   [dim]✓ converted in {time.perf_counter() - t0:.1f}s[/dim]")
 
         # The converter appends new FP16 value_info entries without
@@ -111,7 +147,8 @@ class FP16Stage(Stage):
         t0 = time.perf_counter()
         del converted.graph.value_info[:]
         try:
-            converted = onnx.shape_inference.infer_shapes(converted)
+            with _heartbeat("re-inferring shapes"):
+                converted = onnx.shape_inference.infer_shapes(converted)
         except Exception:
             # Shape inference can fail on graphs with custom ops; the
             # original model may still load without value_info, so don't
