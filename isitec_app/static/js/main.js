@@ -48,7 +48,9 @@ const translations = {
         "sess_date": "Date", "sess_model": "Model", "sess_duration": "Duration",
         "sess_fps": "FPS", "sess_conf": "Avg Conf", "sess_idratio": "ID Ratio",
         "sess_counts": "Counts",
-        "perf_empty": "Start a stream to see live metrics"
+        "perf_empty": "Start a stream to see live metrics",
+        "fs_prompt_text": "Fullscreen view?",
+        "fs_prompt_accept": "Enter"
     },
     fr: {
         "title": "Plateforme ISITEC visionAI",
@@ -98,7 +100,9 @@ const translations = {
         "sess_date": "Date", "sess_model": "Modèle", "sess_duration": "Durée",
         "sess_fps": "IPS", "sess_conf": "Conf. moy.", "sess_idratio": "Ratio ID",
         "sess_counts": "Comptages",
-        "perf_empty": "Démarrez un flux pour voir les métriques en direct"
+        "perf_empty": "Démarrez un flux pour voir les métriques en direct",
+        "fs_prompt_text": "Affichage plein écran ?",
+        "fs_prompt_accept": "Activer"
     }
 };
 
@@ -446,6 +450,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     restoreSession();
+
+    // --- Fullscreen onboarding prompt (non-blocking) ---
+    // Browser requires a user gesture for requestFullscreen(), so we can't
+    // auto-enter on load — we surface a small corner card and the operator
+    // clicks "Enter" or the dismiss "×".
+    (function initFullscreenPrompt() {
+        const prompt = document.getElementById('fs-prompt');
+        if (!prompt) return;
+        if (document.fullscreenElement) return;
+        if (!document.documentElement.requestFullscreen) return;
+        prompt.classList.remove('hidden');
+        prompt.querySelector('.fs-prompt-accept').addEventListener('click', () => {
+            document.documentElement.requestFullscreen().catch(() => {});
+            prompt.classList.add('hidden');
+        });
+        prompt.querySelector('.fs-prompt-dismiss').addEventListener('click', () => {
+            prompt.classList.add('hidden');
+        });
+    })();
 
     // --- Source Selection Logic ---
     const sourceBtns = document.querySelectorAll('.source-btn');

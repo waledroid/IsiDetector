@@ -803,3 +803,46 @@ body {
     font-size: 13px;
     margin: 12px 0 0;
 }
+
+/* Fullscreen onboarding prompt — small non-blocking corner card */
+.fs-prompt {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(30, 30, 30, 0.92);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    transition: opacity 0.2s;
+}
+.fs-prompt.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+.fs-prompt-accept {
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 4px;
+    background: #2a7de1;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+}
+.fs-prompt-accept:hover {
+    background: #1c5fb3;
+}
+.fs-prompt-dismiss {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}

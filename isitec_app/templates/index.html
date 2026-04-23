@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.01">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.02">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -379,6 +379,13 @@
             <input type="password" id="devPassword" placeholder="Enter password" autocomplete="off">
             <p class="dev-error" id="devError" style="display:none">Invalid password</p>
         </div>
+    </div>
+
+    <!-- Fullscreen onboarding prompt (non-blocking) -->
+    <div id="fs-prompt" class="fs-prompt hidden" role="region" aria-label="Fullscreen prompt">
+        <span class="fs-prompt-text" data-i18n="fs_prompt_text">Fullscreen view?</span>
+        <button type="button" class="fs-prompt-accept" data-i18n="fs_prompt_accept">Enter</button>
+        <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
     <script src="/static/js/main.js"></script>
