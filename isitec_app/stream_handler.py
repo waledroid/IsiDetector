@@ -235,7 +235,7 @@ class StreamHandler:
         self.class_totals = {}
         self.last_detected = None
         self.mode_text = ""
-        self.language = 'en'
+        self.language = 'fr'
         self.latest_annotated = None
         self.inf_thread = None
         self.source_is_image = False

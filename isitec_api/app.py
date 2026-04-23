@@ -146,7 +146,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/api/language")
 async def set_language(request_body: dict):
-    lang = request_body.get('language', 'en')
+    lang = request_body.get('language', 'fr')
     if lang not in ('en', 'fr', 'de'):
         return JSONResponse(
             {"status": "error", "message": f"Unsupported language '{lang}'."},

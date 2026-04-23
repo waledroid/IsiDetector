@@ -130,7 +130,7 @@ const msgTrans = {
 document.addEventListener('DOMContentLoaded', () => {
     
     // --- I18N Translation Logic ---
-    let currentLang = 'en';
+    let currentLang = 'fr';
     const btnEn = document.getElementById('btn-lang-en');
     const btnFr = document.getElementById('btn-lang-fr');
     
@@ -171,6 +171,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnEn.addEventListener('click', () => setLanguage('en'));
     btnFr.addEventListener('click', () => setLanguage('fr'));
+
+    // French is the default — translate DOM text on load so users don't see
+    // an English flash. Users can switch to English via the header button.
+    setLanguage('fr');
 
     // ── Dev-mode authentication ────────────────────────────────────────────
     const devModal  = document.getElementById('devModal');

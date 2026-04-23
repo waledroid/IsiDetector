@@ -110,7 +110,7 @@ def upload_file():
 
 @app.route('/api/language', methods=['POST'])
 def set_language():
-    lang = (request.json or {}).get('language', 'en')
+    lang = (request.json or {}).get('language', 'fr')
     if lang not in ('en', 'fr', 'de'):
         return jsonify({"status": "error", "message": f"Unsupported language '{lang}'."}), 400
     stream_handler.set_language(lang)
