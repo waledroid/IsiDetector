@@ -505,11 +505,24 @@ document.addEventListener('DOMContentLoaded', () => {
     (function initFullscreenPrompt() {
         const prompt = document.getElementById('fs-prompt');
         if (!prompt) return;
-        if (document.fullscreenElement) return;
-        if (!document.documentElement.requestFullscreen) return;
+        if (document.fullscreenElement || document.webkitFullscreenElement) return;
+        const el = document.documentElement;
+        const requestFS = el.requestFullscreen
+                       || el.webkitRequestFullscreen
+                       || el.mozRequestFullScreen
+                       || el.msRequestFullscreen;
+        if (!requestFS) { console.warn('[fs] Fullscreen API unavailable in this browser'); return; }
         prompt.classList.remove('hidden');
         prompt.querySelector('.fs-prompt-accept').addEventListener('click', () => {
-            document.documentElement.requestFullscreen().catch(() => {});
+            try {
+                const result = requestFS.call(el);
+                // Modern browsers return a Promise; older WebKit returns undefined.
+                if (result && typeof result.catch === 'function') {
+                    result.catch(err => console.warn('[fs] requestFullscreen rejected:', err));
+                }
+            } catch (err) {
+                console.warn('[fs] requestFullscreen threw:', err);
+            }
             prompt.classList.add('hidden');
         });
         prompt.querySelector('.fs-prompt-dismiss').addEventListener('click', () => {
