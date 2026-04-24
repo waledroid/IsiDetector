@@ -24,7 +24,6 @@ class PerformanceMonitor:
     - :meth:`track_frame_drop` — called when the reader queue is empty
     - :meth:`track_error` — called in the inference except block
     - :meth:`track_udp_publish` — called after each UDP datagram
-    - :meth:`track_csv_write` — called after each DailyLogger save
     - :meth:`track_crossing` — called when a line-crossing event fires
     - :meth:`heartbeat` — called at the existing 9000-frame heartbeat point
 
@@ -75,8 +74,6 @@ class PerformanceMonitor:
         self.error_count       = 0
         self.cuda_oom_count    = 0
         self.udp_published     = 0
-        self.csv_writes_ok     = 0
-        self.csv_writes_failed = 0
         self._track_ids        = set()  # all unique ByteTrack IDs seen
         self.total_crossings   = 0
         self._last_heartbeat   = None
@@ -131,8 +128,6 @@ class PerformanceMonitor:
             self.error_count      = 0
             self.cuda_oom_count   = 0
             self.udp_published    = 0
-            self.csv_writes_ok    = 0
-            self.csv_writes_failed = 0
             self._track_ids       = set()
             self.total_crossings  = 0
             self._last_heartbeat  = time.time()
@@ -216,13 +211,6 @@ class PerformanceMonitor:
             self.udp_published += 1
             if latency_ns > 0:
                 self._udp_latency_us.append(latency_ns / 1000.0)
-
-    def track_csv_write(self, success: bool):
-        with self.lock:
-            if success:
-                self.csv_writes_ok += 1
-            else:
-                self.csv_writes_failed += 1
 
     def track_crossing(self):
         with self.lock:

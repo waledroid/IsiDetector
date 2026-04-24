@@ -6,7 +6,6 @@ import secrets
 import json
 import werkzeug.utils
 from flask import Flask, render_template, Response, request, jsonify, send_from_directory
-import csv
 import datetime
 
 # After the bucket restructure this file lives at webapp/isitec_app/app.py.
@@ -19,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..', '..', 'isidet')))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..')))
 
 from isitec_app.stream_handler import StreamHandler
+from src.utils.event_logger import EventLogger
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB upload cap
@@ -186,132 +186,40 @@ def get_performance():
     return jsonify(stream_handler.get_performance())
 
 # ── /api/chart helpers ──────────────────────────────────────────────────────
-# DailyLogger writes cumulative counts since midnight as hourly snapshots to
-# isidet/logs/report_DD-MM-YYYY.csv. Each row is "HH:MM:SS,<count_class1>,...".
-# For the historical chart we need per-bucket deltas (hourly for 24h, daily
-# for 7d/30d), which means:
-#   1) resolve the real log dir (isidet/logs/, NOT webapp/isitec_app/logs/),
-#   2) parse rows as (date_from_filename + HH:MM:SS, counts_per_class),
-#   3) diff consecutive cumulative rows within the same day to get per-snapshot
-#      deltas (midnight resets, so first-of-day = full cumulative),
-#   4) bucket the deltas.
+# EventLogger writes one CSV row per line-crossing to
+# isidet/logs/events/events_YYYY-MM-DD.csv (columns: ts, class, id).
+# For the historical chart we just count events per bucket — no cumulative
+# accounting, no midnight resets to reason about. The logger also prunes
+# itself to the last 30 days so this dir never grows unbounded.
 
-def _logs_dir():
-    """isidet/logs/ resolved from this file's location (webapp/isitec_app/app.py
-    → parents[2] = repo root)."""
+def _events_dir():
+    """isidet/logs/events/ resolved from this file's location
+    (webapp/isitec_app/app.py → parents[2] = repo root)."""
     here = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(os.path.dirname(here))
-    return os.path.join(repo_root, 'isidet', 'logs')
-
-
-def _parse_snapshots(logs_dir, from_date, to_date):
-    """Read every report_*.csv whose filename date falls in [from_date, to_date].
-    Returns (class_names, snapshots) where snapshots is a list of
-    (datetime, {class: cumulative_count}) sorted ascending by time."""
-    snapshots = []
-    class_names = None
-    if not os.path.isdir(logs_dir):
-        return [], []
-    for filename in sorted(os.listdir(logs_dir)):
-        if not (filename.startswith('report_') and filename.endswith('.csv')):
-            continue
-        try:
-            file_date = datetime.datetime.strptime(
-                filename[len('report_'):-len('.csv')], '%d-%m-%Y'
-            ).date()
-        except ValueError:
-            continue
-        if file_date < from_date or file_date > to_date:
-            continue
-        try:
-            with open(os.path.join(logs_dir, filename), encoding='utf-8') as f:
-                reader = csv.reader(f)
-                header = next(reader, None)
-                if not header or len(header) < 2:
-                    continue
-                local_classes = header[1:]
-                if class_names is None:
-                    class_names = list(local_classes)
-                for row in reader:
-                    if len(row) < 1 + len(local_classes):
-                        continue
-                    try:
-                        h, m, s = row[0].split(':')
-                        ts = datetime.datetime.combine(
-                            file_date, datetime.time(int(h), int(m), int(s))
-                        )
-                    except (ValueError, AttributeError):
-                        continue
-                    counts = {}
-                    for i, cname in enumerate(local_classes):
-                        try:
-                            counts[cname] = int(row[1 + i])
-                        except (ValueError, IndexError):
-                            counts[cname] = 0
-                    snapshots.append((ts, counts))
-        except Exception:
-            continue  # corrupted/partial CSV — skip silently
-    snapshots.sort(key=lambda x: x[0])
-    return (class_names or []), snapshots
-
-
-def _within_day_deltas(snapshots):
-    """Convert cumulative snapshots to per-snapshot deltas. The logger resets
-    at midnight, so the first snapshot of each day IS the day's cumulative
-    up to that point (treat previous day's final cumulative as unrelated)."""
-    out = []
-    prev_ts = None
-    prev_counts = None
-    for ts, counts in snapshots:
-        if prev_ts is None or ts.date() != prev_ts.date():
-            out.append((ts, dict(counts)))
-        else:
-            delta = {k: max(0, v - prev_counts.get(k, 0)) for k, v in counts.items()}
-            out.append((ts, delta))
-        prev_ts, prev_counts = ts, counts
-    return out
-
-
-def _bucketize(deltas, window_start, n_buckets, bucket_size, class_names):
-    """Aggregate (ts, delta) pairs into n_buckets of size bucket_size starting
-    at window_start. Returns {class: [n_buckets]}."""
-    bucket_secs = bucket_size.total_seconds()
-    series = {c: [0] * n_buckets for c in class_names}
-    for ts, delta in deltas:
-        offset = (ts - window_start).total_seconds()
-        if offset < 0:
-            continue
-        idx = int(offset // bucket_secs)
-        if idx >= n_buckets:
-            continue
-        for c, v in delta.items():
-            if c not in series:
-                series[c] = [0] * n_buckets
-            series[c][idx] += v
-    return series
+    return os.path.join(repo_root, 'isidet', 'logs', 'events')
 
 
 @app.route('/api/chart', methods=['GET'])
 def get_chart_data():
     period = request.args.get('period', 'live')
 
-    # Live mode is identical to the running session's counts — shape kept
-    # backward-compatible so any legacy consumer still works.
+    # Live mode is the running session's counts — shape kept backward-
+    # compatible so any legacy consumer still works.
     if period == 'live':
         stats = stream_handler.get_stats()
         return jsonify({"status": "success", "data": stats['counts']})
 
     now = datetime.datetime.now()
     if period == '24h':
-        # Rolling 24h ending at the most recent hour boundary (so each bucket
-        # is a complete hour). Buckets labelled by hour-of-day only.
+        # Rolling 24h ending at the most recent hour boundary so each
+        # bucket is a complete hour. Labels are hour-of-day only.
         window_end = now.replace(minute=0, second=0, microsecond=0)
         window_start = window_end - datetime.timedelta(hours=24)
         bucket_size = datetime.timedelta(hours=1)
         n_buckets = 24
         label_fmt = "%H:00"
     elif period == '7d':
-        # 7 daily buckets ending today. window_start = midnight 6 days ago.
         today = now.date()
         start_date = today - datetime.timedelta(days=6)
         window_start = datetime.datetime.combine(start_date, datetime.time.min)
@@ -333,16 +241,19 @@ def get_chart_data():
         return jsonify({"status": "success", "view": "timeseries",
                         "buckets": [], "series": {}})
 
-    class_names, snapshots = _parse_snapshots(
-        _logs_dir(),
-        window_start.date(),
-        (window_end - datetime.timedelta(microseconds=1)).date(),
-    )
-    if not class_names:
-        class_names = ['carton', 'polybag']
+    bucket_secs = bucket_size.total_seconds()
+    series: dict[str, list[int]] = {}
+    for ts, cls, _eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        idx = int((ts - window_start).total_seconds() // bucket_secs)
+        if 0 <= idx < n_buckets:
+            if cls not in series:
+                series[cls] = [0] * n_buckets
+            series[cls][idx] += 1
 
-    deltas = _within_day_deltas(snapshots)
-    series = _bucketize(deltas, window_start, n_buckets, bucket_size, class_names)
+    # Always surface the stock classes so the chart legend stays stable even
+    # when a bucket window has zero events for one of them.
+    for c in ('carton', 'polybag'):
+        series.setdefault(c, [0] * n_buckets)
 
     buckets = [
         (window_start + i * bucket_size).strftime(label_fmt)

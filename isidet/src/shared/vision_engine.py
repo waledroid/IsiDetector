@@ -5,7 +5,7 @@ import logging
 import supervision as sv
 import numpy as np
 from datetime import datetime
-from src.utils.analytics_logger import DailyLogger
+from src.utils.event_logger import EventLogger
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,8 @@ class VisionEngine:
     - **ByteTrack** persistent object tracking (IDs survive occlusion).
     - **LineZone** crossing detection — counts each object exactly once
       per session.
-    - **DailyLogger** hourly CSV snapshots (auto-rotates at midnight).
+    - **EventLogger** per-crossing CSV rows (auto-rotates at midnight,
+      keeps 30 days of history by default).
     - Supervision annotators for masks, traces, bounding boxes, and labels.
 
     The engine is model-agnostic: pass any inferencer that implements
@@ -65,13 +66,16 @@ class VisionEngine:
         self.line_zone = None 
         self.counted_ids = set()
         
-        # 4. Logging & Telemetry
+        # 4. Logging & Telemetry — one CSV row per line crossing.
+        # The events subdir keeps them separate from legacy snapshot logs
+        # and is the dir the /api/chart endpoint reads from.
         log_cfg = inf_cfg.get('logging', {})
         self.class_names_list = list(self.inferencer.class_names.values())
-        self.logger = DailyLogger(
-            class_names=self.class_names_list,
-            log_dir=log_cfg.get('log_dir', 'logs'),
-            save_interval=log_cfg.get('save_interval', 3600)
+        base_log_dir = log_cfg.get('log_dir', 'logs')
+        retention_days = int(log_cfg.get('retention_days', 30))
+        self.event_logger = EventLogger(
+            log_dir=f"{base_log_dir.rstrip('/')}/events",
+            retention_days=retention_days,
         )
 
         # 5. Visual Annotators
@@ -113,7 +117,8 @@ class VisionEngine:
         Rebuilds palette-dependent annotators against the new inferencer's
         class_names so per-class colours reflect the new model's convention
         (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, counted_ids,
-        line_zone, and logger are preserved so hot-swap keeps counts running.
+        line_zone, and event_logger are preserved so hot-swap keeps
+        counts and per-event history intact.
         """
         self.inferencer = new_inferencer
         self.class_names_list = list(new_inferencer.class_names.values())
@@ -232,6 +237,7 @@ class VisionEngine:
                     class_totals[name] = class_totals.get(name, 0) + 1
                     self.counted_ids.add(t_id)
                     new_events.append({"class": name, "id": t_id})
+                    self.event_logger.log(name, t_id)
 
         # Prune counted_ids to prevent unbounded growth over long shifts.
         # ByteTrack IDs are monotonically increasing — old IDs are never reassigned,
@@ -241,10 +247,7 @@ class VisionEngine:
             self.counted_ids = set(sorted_ids[len(sorted_ids) // 2:])
             logger.info(f"♻️ counted_ids pruned to {len(self.counted_ids)} entries")
 
-        # 3. Update Hourly CSV Log
-        self.logger.update(class_totals)
-
-        # 4. Visual Composition
+        # 3. Visual Composition
         annotated = frame.copy()
         if detections.mask is not None:
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
@@ -262,5 +265,6 @@ class VisionEngine:
         return annotated, detections, new_events
 
     def cleanup(self, class_totals):
-        """Safe shutdown."""
-        self.logger.save(class_totals, auto=False)
+        """Safe shutdown. EventLogger writes on every event, so there is
+        nothing to flush here; method kept for API stability."""
+        return
