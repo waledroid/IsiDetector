@@ -17,8 +17,23 @@ const translations = {
         "drag_drop": "or drag and drop here",
         "start_tracking": "Start",
         "stop": "Stop",
-        "analytics_overview": "Analytics & Logging Overview",
-        "analytics_soon": "Historical logs are stored in the /logs directory and parsed in the live dashboard natively.",
+        "analytics_overview": "Production Summary",
+        "analytics_export": "Export & Audit",
+        "period_today": "Today",
+        "period_yesterday": "Yesterday",
+        "rep_total": "Total",
+        "rep_avg_fps": "Avg FPS",
+        "rep_runtime": "Runtime",
+        "rep_peak": "Peak hour",
+        "rep_mix": "Mix",
+        "rep_throughput": "Throughput",
+        "rep_sessions": "Sessions",
+        "rep_from": "From",
+        "rep_to": "To",
+        "rep_download_csv": "Download CSV",
+        "rep_find_id": "Find event by tracker ID",
+        "rep_search": "Search",
+        "sess_empty": "No sessions recorded yet.",
         "model_management": "Model Management",
         "model_soon": "Model Directory Viewer Coming Soon.",
         "system_settings": "System Settings",
@@ -70,8 +85,23 @@ const translations = {
         "drag_drop": "ou glissez et déposez ici",
         "start_tracking": "Démarrer",
         "stop": "Arrêter",
-        "analytics_overview": "Aperçu de l'analytique et des journaux",
-        "analytics_soon": "Les journaux historiques sont stockés dans /logs et analysés dans le tableau de bord.",
+        "analytics_overview": "Résumé de production",
+        "analytics_export": "Exportation et audit",
+        "period_today": "Aujourd'hui",
+        "period_yesterday": "Hier",
+        "rep_total": "Total",
+        "rep_avg_fps": "IPS moy.",
+        "rep_runtime": "Durée",
+        "rep_peak": "Heure de pointe",
+        "rep_mix": "Mélange",
+        "rep_throughput": "Débit",
+        "rep_sessions": "Sessions",
+        "rep_from": "Du",
+        "rep_to": "Au",
+        "rep_download_csv": "Télécharger CSV",
+        "rep_find_id": "Rechercher par ID de suivi",
+        "rep_search": "Rechercher",
+        "sess_empty": "Aucune session enregistrée.",
         "model_management": "Gestion des modèles",
         "model_soon": "Visionneur de répertoire de modèles à venir.",
         "system_settings": "Paramètres du système",
@@ -254,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Immediately fetch perf data when Performance tab is opened
             if (targetId === 'section-performance') fetchPerformance();
             // Fetch session history when Analytics tab is opened
-            if (targetId === 'section-analytics') fetchSessionsForAnalytics();
+            if (targetId === 'section-analytics') fetchReport(currentReportPeriod);
         });
     });
 
@@ -912,8 +942,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateSessionsTable(sessions) {
         const tbody = document.getElementById('sessionsBody');
         if (!tbody) return;
+        const emptyMsg = (translations[currentLang] && translations[currentLang].sess_empty)
+            || 'No sessions recorded yet.';
         if (!sessions || sessions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;">No sessions recorded yet.</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;">${emptyMsg}</td></tr>`;
             return;
         }
         tbody.innerHTML = sessions.map(s => {
@@ -931,15 +963,91 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    async function fetchSessionsForAnalytics() {
+    // \u2500\u2500 Production Summary / Report \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    let currentReportPeriod = 'today';
+
+    async function fetchReport(period) {
         try {
-            const res = await fetch('/api/performance', { headers: devHeaders() });
-            if (res.status === 403) return;
+            const res = await fetch(`/api/report?period=${encodeURIComponent(period)}`);
             const d = await res.json();
-            updateSessionsTable(d.sessions);
+            if (d.status !== 'success') return;
+
+            document.getElementById('repCarton').textContent    = (d.counts.carton || 0).toLocaleString();
+            document.getElementById('repPolybag').textContent   = (d.counts.polybag || 0).toLocaleString();
+            document.getElementById('repTotal').textContent     = (d.counts.total  || 0).toLocaleString();
+            document.getElementById('repFps').textContent       = d.avg_fps != null ? d.avg_fps.toFixed(1) : '\u2014';
+            document.getElementById('repRuntime').textContent   = (d.total_runtime_h || 0).toFixed(1) + 'h';
+
+            const peakTxt = d.peak && d.peak.hour ? `${d.peak.hour} (${d.peak.events})` : '\u2014';
+            document.getElementById('repPeak').textContent       = peakTxt;
+            const carton = d.mix_pct?.carton ?? 0;
+            const polybag = d.mix_pct?.polybag ?? 0;
+            document.getElementById('repMix').textContent        = `${carton}% / ${polybag}%`;
+            document.getElementById('repThroughput').textContent = `${d.throughput_per_hour || 0}/h`;
+            document.getElementById('repSessionsCount').textContent = d.sessions_count || 0;
+
+            updateSessionsTable(d.recent_sessions || []);
+
+            const fromEl = document.getElementById('exportFrom');
+            const toEl   = document.getElementById('exportTo');
+            if (fromEl && !fromEl.value) fromEl.value = d.window.from.slice(0, 10);
+            if (toEl && !toEl.value) {
+                const toDate = new Date(d.window.to);
+                toDate.setDate(toDate.getDate() - 1);
+                toEl.value = toDate.toISOString().slice(0, 10);
+            }
         } catch (e) {
-            console.error('Sessions fetch failed', e);
+            console.error('Report fetch failed', e);
         }
+    }
+
+    document.querySelectorAll('#reportPeriodBtns .filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('#reportPeriodBtns .filter-btn')
+                .forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentReportPeriod = btn.getAttribute('data-period');
+            document.getElementById('exportFrom').value = '';
+            document.getElementById('exportTo').value = '';
+            fetchReport(currentReportPeriod);
+        });
+    });
+
+    const btnExportCsv = document.getElementById('btnExportCsv');
+    if (btnExportCsv) {
+        btnExportCsv.addEventListener('click', () => {
+            const f = document.getElementById('exportFrom').value;
+            const t = document.getElementById('exportTo').value;
+            if (!f || !t) { showMessage('Please pick a From and To date.', 'warning'); return; }
+            window.location.href = `/api/events/export?from=${encodeURIComponent(f)}&to=${encodeURIComponent(t)}`;
+        });
+    }
+
+    const btnSearchEvent = document.getElementById('btnSearchEvent');
+    if (btnSearchEvent) {
+        btnSearchEvent.addEventListener('click', async () => {
+            const id = document.getElementById('searchEventId').value;
+            const out = document.getElementById('searchResult');
+            if (!id) { out.innerHTML = ''; return; }
+            try {
+                const res = await fetch(`/api/events/search?id=${encodeURIComponent(id)}`);
+                const d = await res.json();
+                if (d.status !== 'success') {
+                    out.innerHTML = `<div class="hit empty">${d.message || 'Error'}</div>`;
+                    return;
+                }
+                if (!d.events.length) {
+                    out.innerHTML = `<div class="hit empty">No event found for id #${d.id}.</div>`;
+                    return;
+                }
+                out.innerHTML = d.events.map(e => {
+                    const t = e.ts.replace('T', ' ').split('.')[0];
+                    return `<div class="hit">${t} \u2014 <strong>${e.class}</strong> #${e.id}</div>`;
+                }).join('');
+            } catch (e) {
+                out.innerHTML = `<div class="hit empty">Search failed.</div>`;
+            }
+        });
     }
 
     // Always start perf polling on load
