@@ -157,6 +157,11 @@ print_help() {
     sed -n '2,24p' "$0" | sed 's/^# *//'
 }
 
+# Preserve the original args so the auto-sudo re-exec below can hand
+# the same flags to the elevated invocation — the while-loop below
+# shifts them away during parsing.
+ORIG_ARGS=("$@")
+
 while [ $# -gt 0 ]; do
     case "$1" in
         show|apply|revert|test|manual|help) CMD="$1" ;;
@@ -181,6 +186,20 @@ while [ $# -gt 0 ]; do
 done
 CMD="${CMD:-show}"
 if [ "$CMD" = "help" ]; then print_help; exit 0; fi
+
+# ── Auto-escalate for root-only subcommands ─────────────────────────────────
+# `test` needs root to run tcpdump -w in the background (sudo -n inside
+# the script can't prompt, and without cached credentials the capture
+# silently fails). `apply` / `revert` need root to modify NetworkManager
+# state. `show` and `manual` are read-only / pure text — don't need root.
+case "$CMD" in
+    test|apply|revert)
+        if [ "$(id -u)" -ne 0 ]; then
+            info "'$CMD' needs root (tcpdump / nmcli). Re-executing with sudo…"
+            exec sudo -E "$0" "${ORIG_ARGS[@]}"
+        fi
+        ;;
+esac
 
 # ── Sanity: Docker IP range check ───────────────────────────────────────────
 is_docker_range_ip() {
