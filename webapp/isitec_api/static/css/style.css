@@ -1,6 +1,6 @@
 :root {
-    --primary-color: #3f51b5;
-    --primary-dark: #303f9f;
+    --primary-color: #1b9bd8;
+    --primary-dark: #1582b8;
     --secondary-color: #ff4081;
     --bg-color: #f5f5f6;
     --surface-color: #ffffff;
@@ -436,7 +436,7 @@ body {
     gap: 12px;
     padding: 20px;
     margin-bottom: 24px;
-    background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%);
+    background: linear-gradient(135deg, #e3f2fd 0%, #cfe8f7 100%);
     border: 1px dashed #b39ddb;
     border-radius: 8px;
     color: var(--primary-dark);
@@ -626,8 +626,8 @@ body {
 }
 .sessions-table tr:last-child td { border-bottom: none; }
 .sessions-table tr:hover td { background: #f8f9fa; }
-.sess-model-yolo   { color: #3f51b5; font-weight: 600; }
-.sess-model-rfdetr { color: #7b1fa2; font-weight: 600; }
+.sess-model-yolo   { color: #1b9bd8; font-weight: 600; }
+.sess-model-rfdetr { color: #1b9bd8; font-weight: 600; }
 
 /* ── Settings Panel ─────────────────────────────────────────────────────── */
 .settings-grid {
@@ -662,8 +662,8 @@ body {
     border-radius: 4px;
     color: white;
 }
-.sg-badge.mode-1 { background: #3f51b5; }
-.sg-badge.mode-2 { background: #7b1fa2; }
+.sg-badge.mode-1 { background: #1b9bd8; }
+.sg-badge.mode-2 { background: #1b9bd8; }
 
 .sg-body label {
     display: block;
@@ -747,7 +747,7 @@ body {
     transition: all 0.2s;
 }
 .line-btn:hover { background: #f1f3f4; }
-.line-btn.active { background: #e8eaf6; border-color: #3f51b5; color: #3f51b5; }
+.line-btn.active { background: #e3f2fd; border-color: #1b9bd8; color: #1b9bd8; }
 .line-btn .material-icons { font-size: 18px; }
 
 /* Responsive grid adjustments */
@@ -829,13 +829,13 @@ body {
     padding: 6px 12px;
     border: 0;
     border-radius: 4px;
-    background: #2a7de1;
+    background: #1b9bd8;
     color: #fff;
     cursor: pointer;
     font-weight: 600;
 }
 .fs-prompt-accept:hover {
-    background: #1c5fb3;
+    background: #1582b8;
 }
 .fs-prompt-dismiss {
     background: transparent;
