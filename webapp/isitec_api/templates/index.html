@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.10">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.11">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -150,11 +150,76 @@
 
         <!-- SECTION 2: ANALYTICS -->
         <section id="section-analytics" class="panel">
+            <!-- Production Summary -->
             <div class="card">
-                <h2 data-i18n="analytics_overview">Analytics & Logging Overview</h2>
-                <p style="color: var(--text-light); margin: -16px 0 24px;" data-i18n="analytics_soon">Historical logs are stored in the /logs directory and parsed in the live dashboard natively.</p>
+                <div class="analytics-head">
+                    <h2 data-i18n="analytics_overview">Production Summary</h2>
+                    <div class="analytics-period" id="reportPeriodBtns">
+                        <button class="filter-btn active" data-period="today" data-i18n="period_today">Today</button>
+                        <button class="filter-btn" data-period="yesterday" data-i18n="period_yesterday">Yesterday</button>
+                        <button class="filter-btn" data-period="7d" data-i18n="filter_7d">7 Days</button>
+                        <button class="filter-btn" data-period="30d" data-i18n="filter_30d">30 Days</button>
+                    </div>
+                </div>
 
-                <!-- Session Comparison Table (moved from Performance) -->
+                <div class="report-grid" id="reportGrid">
+                    <div class="report-card carton">
+                        <span class="report-value" id="repCarton">0</span>
+                        <span class="report-label" data-i18n="stat_cartons">Cartons</span>
+                    </div>
+                    <div class="report-card polybag">
+                        <span class="report-value" id="repPolybag">0</span>
+                        <span class="report-label" data-i18n="stat_polybags">Polybags</span>
+                    </div>
+                    <div class="report-card total">
+                        <span class="report-value" id="repTotal">0</span>
+                        <span class="report-label" data-i18n="rep_total">Total</span>
+                    </div>
+                    <div class="report-card fps">
+                        <span class="report-value" id="repFps">—</span>
+                        <span class="report-label" data-i18n="rep_avg_fps">Avg FPS</span>
+                    </div>
+                    <div class="report-card runtime">
+                        <span class="report-value" id="repRuntime">0h</span>
+                        <span class="report-label" data-i18n="rep_runtime">Runtime</span>
+                    </div>
+                </div>
+
+                <div class="report-details" id="reportDetails">
+                    <div><span data-i18n="rep_peak">Peak hour</span>: <strong id="repPeak">—</strong></div>
+                    <div><span data-i18n="rep_mix">Mix</span>: <strong id="repMix">—</strong></div>
+                    <div><span data-i18n="rep_throughput">Throughput</span>: <strong id="repThroughput">0/h</strong></div>
+                    <div><span data-i18n="rep_sessions">Sessions</span>: <strong id="repSessionsCount">0</strong></div>
+                </div>
+            </div>
+
+            <!-- Export & Audit -->
+            <div class="card">
+                <h2 data-i18n="analytics_export">Export & Audit</h2>
+                <div class="export-row">
+                    <label data-i18n="rep_from">From</label>
+                    <input type="date" id="exportFrom" class="date-input">
+                    <label data-i18n="rep_to">To</label>
+                    <input type="date" id="exportTo" class="date-input">
+                    <button id="btnExportCsv" class="btn-primary">
+                        <i class="material-icons">file_download</i>
+                        <span data-i18n="rep_download_csv">Download CSV</span>
+                    </button>
+                </div>
+
+                <div class="export-row" style="margin-top: 16px;">
+                    <label data-i18n="rep_find_id">Find event by tracker ID</label>
+                    <input type="number" id="searchEventId" class="date-input" min="1" placeholder="e.g. 42">
+                    <button id="btnSearchEvent" class="btn-primary">
+                        <i class="material-icons">search</i>
+                        <span data-i18n="rep_search">Search</span>
+                    </button>
+                </div>
+                <div id="searchResult" class="search-result"></div>
+            </div>
+
+            <!-- Recent Sessions -->
+            <div class="card">
                 <h3 style="margin: 0 0 16px; font-size: 15px; font-weight: 600; color: var(--text-main);" data-i18n="pg_sessions">Session Comparison (Last 5)</h3>
                 <div class="table-wrap">
                     <table class="sessions-table">
@@ -170,7 +235,7 @@
                             </tr>
                         </thead>
                         <tbody id="sessionsBody">
-                            <tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;">No sessions recorded yet.</td></tr>
+                            <tr><td colspan="7" style="text-align:center; color: var(--text-light); padding: 24px;" data-i18n="sess_empty">No sessions recorded yet.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -378,7 +443,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.10"></script>
+    <script src="/static/js/main.js?v=2.11"></script>
 </body>
 
 </html>

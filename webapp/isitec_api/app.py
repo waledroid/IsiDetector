@@ -342,6 +342,176 @@ def get_chart_data(period: str = Query("live")):
     }
 
 
+# ── /api/report helpers (mirrored from isitec_app/app.py — keep in sync) ────
+
+_SESSIONS_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'sessions.json')
+
+
+def _resolve_report_window(period: str, from_s: str | None, to_s: str | None):
+    now = datetime.datetime.now()
+    today = now.date()
+    if period == 'today':
+        start = datetime.datetime.combine(today, datetime.time.min)
+        end = start + datetime.timedelta(days=1)
+    elif period == 'yesterday':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=1), datetime.time.min)
+        end = start + datetime.timedelta(days=1)
+    elif period == '7d':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=6), datetime.time.min)
+        end = datetime.datetime.combine(today + datetime.timedelta(days=1), datetime.time.min)
+    elif period == '30d':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=29), datetime.time.min)
+        end = datetime.datetime.combine(today + datetime.timedelta(days=1), datetime.time.min)
+    elif period == 'custom' and from_s and to_s:
+        start = datetime.datetime.strptime(from_s, '%Y-%m-%d')
+        end = datetime.datetime.strptime(to_s, '%Y-%m-%d') + datetime.timedelta(days=1)
+    else:
+        raise ValueError(f"invalid period/range: {period!r}")
+    return start, end
+
+
+def _aggregate_events(window_start, window_end):
+    counts: dict[str, int] = {}
+    by_hour: dict[str, int] = {}
+    for ts, cls, _eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        counts[cls] = counts.get(cls, 0) + 1
+        hour_key = ts.strftime('%Y-%m-%d %H:00')
+        by_hour[hour_key] = by_hour.get(hour_key, 0) + 1
+    for c in ('carton', 'polybag'):
+        counts.setdefault(c, 0)
+    total = sum(counts.values())
+    mix_pct = {
+        c: (round(100.0 * n / total, 1) if total > 0 else 0.0)
+        for c, n in counts.items()
+    }
+    if by_hour:
+        peak_bucket, peak_events = max(by_hour.items(), key=lambda kv: kv[1])
+        peak = {"hour": peak_bucket, "events": peak_events}
+    else:
+        peak = {"hour": None, "events": 0}
+    return counts, total, mix_pct, peak
+
+
+def _aggregate_sessions(window_start, window_end, sessions_path: str):
+    try:
+        if not os.path.exists(sessions_path):
+            return {"avg_fps": None, "total_runtime_h": 0.0, "sessions_count": 0,
+                    "recent": []}
+        with open(sessions_path) as f:
+            sessions = json.load(f)
+    except Exception:
+        return {"avg_fps": None, "total_runtime_h": 0.0, "sessions_count": 0,
+                "recent": []}
+
+    weighted_fps = 0.0
+    total_duration = 0.0
+    count = 0
+    for s in sessions:
+        try:
+            ts = datetime.datetime.strptime(s.get('date', ''), '%d-%m-%Y %H:%M')
+        except ValueError:
+            continue
+        if ts < window_start or ts >= window_end:
+            continue
+        count += 1
+        dur = float(s.get('duration_h') or 0)
+        total_duration += dur
+        fps = s.get('fps')
+        if fps is not None and dur > 0:
+            weighted_fps += float(fps) * dur
+
+    avg_fps = round(weighted_fps / total_duration, 1) if total_duration > 0 else None
+    return {
+        "avg_fps": avg_fps,
+        "total_runtime_h": round(total_duration, 2),
+        "sessions_count": count,
+        "recent": sessions[:5],
+    }
+
+
+@app.get("/api/report")
+def get_report(period: str = Query("today"),
+               from_: str | None = Query(None, alias="from"),
+               to: str | None = Query(None)):
+    try:
+        window_start, window_end = _resolve_report_window(period, from_, to)
+    except ValueError as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+    counts, total, mix_pct, peak = _aggregate_events(window_start, window_end)
+    sessions_agg = _aggregate_sessions(window_start, window_end, _SESSIONS_PATH)
+
+    window_hours = (window_end - window_start).total_seconds() / 3600.0
+    throughput_per_hour = (
+        round(total / window_hours, 1) if window_hours > 0 else 0.0
+    )
+
+    return {
+        "status": "success",
+        "period": period,
+        "window": {
+            "from": window_start.isoformat(),
+            "to": window_end.isoformat(),
+        },
+        "counts": {**counts, "total": total},
+        "mix_pct": mix_pct,
+        "peak": peak,
+        "throughput_per_hour": throughput_per_hour,
+        "avg_fps": sessions_agg["avg_fps"],
+        "total_runtime_h": sessions_agg["total_runtime_h"],
+        "sessions_count": sessions_agg["sessions_count"],
+        "recent_sessions": sessions_agg["recent"],
+    }
+
+
+@app.get("/api/events/export")
+def export_events(from_: str | None = Query(None, alias="from"),
+                  to: str | None = Query(None)):
+    if not (from_ and to):
+        return JSONResponse({"status": "error",
+                             "message": "from and to (YYYY-MM-DD) required"},
+                            status_code=400)
+    try:
+        window_start = datetime.datetime.strptime(from_, '%Y-%m-%d')
+        window_end = datetime.datetime.strptime(to, '%Y-%m-%d') \
+                     + datetime.timedelta(days=1)
+    except ValueError:
+        return JSONResponse({"status": "error", "message": "bad date format"},
+                            status_code=400)
+
+    def _generate():
+        yield "ts,class,id\n"
+        for ts, cls, eid in EventLogger.read_events(_events_dir(),
+                                                    window_start, window_end):
+            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''}\n"
+
+    filename = f"events_{from_}_to_{to}.csv"
+    return StreamingResponse(
+        _generate(),
+        media_type='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/events/search")
+def search_events(id: str = Query(...)):
+    try:
+        target_id = int(id)
+    except ValueError:
+        return JSONResponse({"status": "error",
+                             "message": "id must be an integer"},
+                            status_code=400)
+    now = datetime.datetime.now()
+    window_start = now - datetime.timedelta(days=31)
+    window_end = now + datetime.timedelta(days=1)
+    matches = []
+    for ts, cls, eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        if eid == target_id:
+            matches.append({"ts": ts.isoformat(), "class": cls, "id": eid})
+    matches.reverse()
+    return {"status": "success", "id": target_id, "events": matches}
+
+
 @app.get("/api/models")
 def get_models():
     # After the bucket restructure this file lives at webapp/isitec_api/app.py,

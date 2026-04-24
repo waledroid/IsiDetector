@@ -629,6 +629,116 @@ body {
 .sess-model-yolo   { color: #1b9bd8; font-weight: 600; }
 .sess-model-rfdetr { color: #1b9bd8; font-weight: 600; }
 
+/* ── Analytics: Production Summary ──────────────────────────────────────── */
+.analytics-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.analytics-period {
+    display: flex;
+    gap: 6px;
+}
+.report-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.report-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 18px 12px;
+    border-radius: 8px;
+    border: 1px solid #dadce0;
+    background: #f8f9fa;
+    min-height: 88px;
+}
+.report-card.carton  { background: #e3f2fd; border-color: #bbdefb; }
+.report-card.polybag { background: #FCE4EC; border-color: #F8BBD0; }
+.report-card.total   { background: #e8f5e9; border-color: #c8e6c9; }
+.report-card.fps     { background: #fff8e1; border-color: #ffe0b2; }
+.report-card.runtime { background: #ede7f6; border-color: #d1c4e9; }
+.report-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.1;
+}
+.report-card.carton  .report-value { color: #0d47a1; }
+.report-card.polybag .report-value { color: #880E4F; }
+.report-card.total   .report-value { color: #1b5e20; }
+.report-card.fps     .report-value { color: #e65100; }
+.report-card.runtime .report-value { color: #4527a0; }
+.report-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-top: 4px;
+}
+.report-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    font-size: 13px;
+    color: var(--text-light);
+    padding-top: 8px;
+    border-top: 1px solid #ecedef;
+}
+.report-details strong { color: var(--text-main); font-weight: 600; }
+
+/* ── Analytics: Export & Audit ──────────────────────────────────────────── */
+.export-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+.export-row label {
+    font-size: 13px;
+    color: var(--text-light);
+    font-weight: 500;
+}
+.date-input {
+    padding: 8px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    background: #fff;
+    color: var(--text-main);
+}
+.date-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+.search-result {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-light);
+    min-height: 20px;
+}
+.search-result .hit {
+    padding: 6px 10px;
+    background: #f8f9fa;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    margin: 4px 0;
+    font-family: 'Roboto Mono', monospace;
+}
+.search-result .hit.empty { font-style: italic; }
+
+@media (max-width: 900px) {
+    .report-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* ── Settings Panel ─────────────────────────────────────────────────────── */
 .settings-grid {
     display: grid;

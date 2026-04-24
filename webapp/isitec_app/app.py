@@ -269,6 +269,202 @@ def get_chart_data():
         "series": series,
     })
 
+
+# ── /api/report helpers ─────────────────────────────────────────────────────
+# Production-summary aggregates powering the Analytics page. Events come
+# from the per-crossing log (isidet/logs/events/); session-level metrics
+# like FPS and runtime come from webapp/isitec_app/logs/sessions.json,
+# written at stream stop by PerformanceMonitor.save_session_summary.
+
+_SESSIONS_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'sessions.json')
+
+
+def _resolve_report_window(period: str, from_s: str | None, to_s: str | None):
+    """Return (window_start, window_end) for the requested period.
+
+    ``period`` is one of 'today', 'yesterday', '7d', '30d', 'custom'.
+    For 'custom' both ``from_s`` and ``to_s`` (YYYY-MM-DD) must be given;
+    the window is inclusive of both dates (to_end = to_date + 1 day).
+    """
+    now = datetime.datetime.now()
+    today = now.date()
+    if period == 'today':
+        start = datetime.datetime.combine(today, datetime.time.min)
+        end = start + datetime.timedelta(days=1)
+    elif period == 'yesterday':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=1), datetime.time.min)
+        end = start + datetime.timedelta(days=1)
+    elif period == '7d':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=6), datetime.time.min)
+        end = datetime.datetime.combine(today + datetime.timedelta(days=1), datetime.time.min)
+    elif period == '30d':
+        start = datetime.datetime.combine(today - datetime.timedelta(days=29), datetime.time.min)
+        end = datetime.datetime.combine(today + datetime.timedelta(days=1), datetime.time.min)
+    elif period == 'custom' and from_s and to_s:
+        start = datetime.datetime.strptime(from_s, '%Y-%m-%d')
+        end = datetime.datetime.strptime(to_s, '%Y-%m-%d') + datetime.timedelta(days=1)
+    else:
+        raise ValueError(f"invalid period/range: {period!r}")
+    return start, end
+
+
+def _aggregate_events(window_start, window_end):
+    """Walk the event log for the window and return counts, peak hour, mix."""
+    counts: dict[str, int] = {}
+    by_hour: dict[str, int] = {}
+    for ts, cls, _eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        counts[cls] = counts.get(cls, 0) + 1
+        hour_key = ts.strftime('%Y-%m-%d %H:00')
+        by_hour[hour_key] = by_hour.get(hour_key, 0) + 1
+
+    for c in ('carton', 'polybag'):
+        counts.setdefault(c, 0)
+    total = sum(counts.values())
+    mix_pct = {
+        c: (round(100.0 * n / total, 1) if total > 0 else 0.0)
+        for c, n in counts.items()
+    }
+    if by_hour:
+        peak_bucket, peak_events = max(by_hour.items(), key=lambda kv: kv[1])
+        # Render peak_bucket as HH:00 on date (human-friendly label handled client-side)
+        peak = {"hour": peak_bucket, "events": peak_events}
+    else:
+        peak = {"hour": None, "events": 0}
+    return counts, total, mix_pct, peak
+
+
+def _aggregate_sessions(window_start, window_end, sessions_path: str):
+    """Read sessions.json and aggregate FPS (duration-weighted) + runtime.
+
+    Session ``date`` field is stored as ``"DD-MM-YYYY HH:MM"`` (save time,
+    near end-of-session). A session falls in the window if its save time
+    is within ``[window_start, window_end)``.
+    """
+    try:
+        if not os.path.exists(sessions_path):
+            return {"avg_fps": None, "total_runtime_h": 0.0, "sessions_count": 0,
+                    "recent": []}
+        with open(sessions_path) as f:
+            sessions = json.load(f)
+    except Exception:
+        return {"avg_fps": None, "total_runtime_h": 0.0, "sessions_count": 0,
+                "recent": []}
+
+    weighted_fps = 0.0
+    total_duration = 0.0
+    count = 0
+    for s in sessions:
+        try:
+            ts = datetime.datetime.strptime(s.get('date', ''), '%d-%m-%Y %H:%M')
+        except ValueError:
+            continue
+        if ts < window_start or ts >= window_end:
+            continue
+        count += 1
+        dur = float(s.get('duration_h') or 0)
+        total_duration += dur
+        fps = s.get('fps')
+        if fps is not None and dur > 0:
+            weighted_fps += float(fps) * dur
+
+    avg_fps = round(weighted_fps / total_duration, 1) if total_duration > 0 else None
+    return {
+        "avg_fps": avg_fps,
+        "total_runtime_h": round(total_duration, 2),
+        "sessions_count": count,
+        "recent": sessions[:5],
+    }
+
+
+@app.route('/api/report', methods=['GET'])
+def get_report():
+    period = request.args.get('period', 'today')
+    from_s = request.args.get('from')
+    to_s = request.args.get('to')
+    try:
+        window_start, window_end = _resolve_report_window(period, from_s, to_s)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    counts, total, mix_pct, peak = _aggregate_events(window_start, window_end)
+    sessions_agg = _aggregate_sessions(window_start, window_end, _SESSIONS_PATH)
+
+    window_hours = (window_end - window_start).total_seconds() / 3600.0
+    throughput_per_hour = (
+        round(total / window_hours, 1) if window_hours > 0 else 0.0
+    )
+
+    return jsonify({
+        "status": "success",
+        "period": period,
+        "window": {
+            "from": window_start.isoformat(),
+            "to": window_end.isoformat(),
+        },
+        "counts": {**counts, "total": total},
+        "mix_pct": mix_pct,
+        "peak": peak,
+        "throughput_per_hour": throughput_per_hour,
+        "avg_fps": sessions_agg["avg_fps"],
+        "total_runtime_h": sessions_agg["total_runtime_h"],
+        "sessions_count": sessions_agg["sessions_count"],
+        "recent_sessions": sessions_agg["recent"],
+    })
+
+
+@app.route('/api/events/export', methods=['GET'])
+def export_events():
+    """Stream the event log as a single CSV for the given date range."""
+    from_s = request.args.get('from')
+    to_s = request.args.get('to')
+    if not (from_s and to_s):
+        return jsonify({"status": "error",
+                        "message": "from and to (YYYY-MM-DD) required"}), 400
+    try:
+        window_start = datetime.datetime.strptime(from_s, '%Y-%m-%d')
+        window_end = datetime.datetime.strptime(to_s, '%Y-%m-%d') \
+                     + datetime.timedelta(days=1)
+    except ValueError:
+        return jsonify({"status": "error", "message": "bad date format"}), 400
+
+    def _generate():
+        yield "ts,class,id\n"
+        for ts, cls, eid in EventLogger.read_events(_events_dir(),
+                                                    window_start, window_end):
+            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''}\n"
+
+    filename = f"events_{from_s}_to_{to_s}.csv"
+    return Response(
+        _generate(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route('/api/events/search', methods=['GET'])
+def search_events():
+    """Find events by tracker id. Tracker ids repeat across sessions
+    (ByteTrack resets per start), so a single id may match many events —
+    return them all, newest first."""
+    try:
+        target_id = int(request.args.get('id', ''))
+    except ValueError:
+        return jsonify({"status": "error",
+                        "message": "id must be an integer"}), 400
+    # Search the full retained window (30 days by default). Upper bound is
+    # open-ended so events with timestamps slightly past `now` (clock drift,
+    # or rows just logged) still match.
+    now = datetime.datetime.now()
+    window_start = now - datetime.timedelta(days=31)
+    window_end = now + datetime.timedelta(days=1)
+    matches = []
+    for ts, cls, eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        if eid == target_id:
+            matches.append({"ts": ts.isoformat(), "class": cls, "id": eid})
+    matches.reverse()
+    return jsonify({"status": "success", "id": target_id, "events": matches})
+
+
 @app.route('/api/models', methods=['GET'])
 def get_models():
     # After the bucket restructure this file lives at webapp/isitec_app/app.py,
