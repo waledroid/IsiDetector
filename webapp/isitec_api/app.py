@@ -287,7 +287,10 @@ def get_chart_data(period: str = Query("live")):
 
     now = datetime.datetime.now()
     if period == '24h':
-        window_end = now.replace(minute=0, second=0, microsecond=0)
+        # End at the NEXT hour boundary so the current partial hour is the
+        # rightmost bucket and fills in real time as events arrive.
+        window_end = now.replace(minute=0, second=0, microsecond=0) \
+                     + datetime.timedelta(hours=1)
         window_start = window_end - datetime.timedelta(hours=24)
         bucket_size = datetime.timedelta(hours=1)
         n_buckets = 24

@@ -347,6 +347,21 @@ document.addEventListener('DOMContentLoaded', () => {
     _buildLiveChart();
 
     // Chart Filter Buttons Logic
+    // Live mode updates via the 500 ms /api/stats poll. Historical modes
+    // (24h / 7d / 30d) auto-refresh every 5 s so the rightmost bucket
+    // visibly fills as events arrive.
+    let chartHistoricalInterval = null;
+    function _stopHistoricalChartPolling() {
+        if (chartHistoricalInterval) {
+            clearInterval(chartHistoricalInterval);
+            chartHistoricalInterval = null;
+        }
+    }
+    function _startHistoricalChartPolling(period) {
+        _stopHistoricalChartPolling();
+        chartHistoricalInterval = setInterval(() => updateChartData(period), 5000);
+    }
+
     const filterBtns = document.querySelectorAll('.filter-btn');
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -354,6 +369,11 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.add('active');
             currentChartPeriod = btn.getAttribute('data-period');
             updateChartData(currentChartPeriod);
+            if (currentChartPeriod === 'live') {
+                _stopHistoricalChartPolling();
+            } else {
+                _startHistoricalChartPolling(currentChartPeriod);
+            }
         });
     });
 
