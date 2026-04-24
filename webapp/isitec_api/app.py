@@ -493,25 +493,6 @@ def export_events(from_: str | None = Query(None, alias="from"),
     )
 
 
-@app.get("/api/events/search")
-def search_events(id: str = Query(...)):
-    try:
-        target_id = int(id)
-    except ValueError:
-        return JSONResponse({"status": "error",
-                             "message": "id must be an integer"},
-                            status_code=400)
-    now = datetime.datetime.now()
-    window_start = now - datetime.timedelta(days=31)
-    window_end = now + datetime.timedelta(days=1)
-    matches = []
-    for ts, cls, eid in EventLogger.read_events(_events_dir(), window_start, window_end):
-        if eid == target_id:
-            matches.append({"ts": ts.isoformat(), "class": cls, "id": eid})
-    matches.reverse()
-    return {"status": "success", "id": target_id, "events": matches}
-
-
 @app.get("/api/models")
 def get_models():
     # After the bucket restructure this file lives at webapp/isitec_api/app.py,
