@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
 # Inferencers imported lazily in main() to avoid rfdetr CUDA segfault in Docker
-from src.utils.analytics_logger import DailyLogger 
+from src.utils.event_logger import EventLogger
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger("IsiDetector-Live")
@@ -172,8 +172,10 @@ def main():
     class_names_list = list(engine.class_names.values())
     class_totals = {name: 0 for name in class_names_list}
 
-    # Pass config variables directly to the logger
-    auto_logger = DailyLogger(class_names=class_names_list, log_dir=log_dir, save_interval=save_int)
+    # Per-event logger — one CSV row per line crossing, 30-day retention.
+    retention_days = int(log_cfg.get('retention_days', 30))
+    events_dir = f"{str(log_dir).rstrip('/')}/events"
+    event_logger = EventLogger(log_dir=events_dir, retention_days=retention_days)
 
     logger.info(f"📡 {mode_text} Live Stream Active: {args.source}")
     logger.info(f"⚙️ Config Loaded: Conf={conf_thresh}, TrackerBuffer={t_buffer}, SaveInterval={save_int}s")
@@ -198,6 +200,7 @@ def main():
                         name = engine.class_names.get(class_id, "object")
                         class_totals[name] = class_totals.get(name, 0) + 1
                         counted_ids.add(t_id)
+                        event_logger.log(name, int(t_id))
 
             annotated = frame.copy()
             if detections.mask is not None:
@@ -214,15 +217,12 @@ def main():
             annotated = line_annotator.annotate(frame=annotated, line_counter=line_zone)
             annotated = draw_isi_ui(annotated, class_totals, mode_text)
 
-            auto_logger.update(class_totals)
-
             cv2.imshow("IsiDetector", annotated)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
     finally:
-        logger.info("🛑 Shutting down stream. Saving final counts...")
-        auto_logger.save(class_totals, auto=False) 
+        logger.info(f"🛑 Shutting down stream. Final counts: {class_totals}")
         stream.stop()
         cv2.destroyAllWindows()
 

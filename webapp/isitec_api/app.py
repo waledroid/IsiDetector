@@ -3,7 +3,6 @@ import os
 import socket
 import json
 import re
-import csv
 import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,6 +25,7 @@ from isitec_api.stream_handler import StreamHandler
 from isitec_api.dependencies import (
     DEV_PASSWORD, require_dev, create_dev_token, discard_dev_token, check_dev_token,
 )
+from src.utils.event_logger import EventLogger
 
 # ── Globals ──────────────────────────────────────────────────────────────────
 stream_handler: StreamHandler | None = None
@@ -266,95 +266,17 @@ def get_performance(_token: str = Depends(require_dev)):
 
 
 # ── /api/chart helpers (mirrored from isitec_app/app.py — keep in sync) ─────
-# See Flask counterpart for prose on the algorithm. DailyLogger writes
-# cumulative-since-midnight hourly snapshots to isidet/logs/report_*.csv;
-# we diff within-day for per-snapshot deltas, then bucket.
+# EventLogger writes one CSV row per line-crossing to
+# isidet/logs/events/events_YYYY-MM-DD.csv (columns: ts, class, id). The
+# chart endpoint just counts events per bucket; logger self-prunes to
+# the last 30 days on init and rollover.
 
-def _logs_dir():
-    """isidet/logs/ resolved from this file's location (webapp/isitec_api/app.py
-    → parents[2] = repo root)."""
+def _events_dir():
+    """isidet/logs/events/ resolved from this file's location
+    (webapp/isitec_api/app.py → parents[2] = repo root)."""
     here = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(os.path.dirname(here))
-    return os.path.join(repo_root, 'isidet', 'logs')
-
-
-def _parse_snapshots(logs_dir, from_date, to_date):
-    snapshots = []
-    class_names = None
-    if not os.path.isdir(logs_dir):
-        return [], []
-    for filename in sorted(os.listdir(logs_dir)):
-        if not (filename.startswith('report_') and filename.endswith('.csv')):
-            continue
-        try:
-            file_date = datetime.datetime.strptime(
-                filename[len('report_'):-len('.csv')], '%d-%m-%Y'
-            ).date()
-        except ValueError:
-            continue
-        if file_date < from_date or file_date > to_date:
-            continue
-        try:
-            with open(os.path.join(logs_dir, filename), encoding='utf-8') as f:
-                reader = csv.reader(f)
-                header = next(reader, None)
-                if not header or len(header) < 2:
-                    continue
-                local_classes = header[1:]
-                if class_names is None:
-                    class_names = list(local_classes)
-                for row in reader:
-                    if len(row) < 1 + len(local_classes):
-                        continue
-                    try:
-                        h, m, s = row[0].split(':')
-                        ts = datetime.datetime.combine(
-                            file_date, datetime.time(int(h), int(m), int(s))
-                        )
-                    except (ValueError, AttributeError):
-                        continue
-                    counts = {}
-                    for i, cname in enumerate(local_classes):
-                        try:
-                            counts[cname] = int(row[1 + i])
-                        except (ValueError, IndexError):
-                            counts[cname] = 0
-                    snapshots.append((ts, counts))
-        except Exception:
-            continue
-    snapshots.sort(key=lambda x: x[0])
-    return (class_names or []), snapshots
-
-
-def _within_day_deltas(snapshots):
-    out = []
-    prev_ts = None
-    prev_counts = None
-    for ts, counts in snapshots:
-        if prev_ts is None or ts.date() != prev_ts.date():
-            out.append((ts, dict(counts)))
-        else:
-            delta = {k: max(0, v - prev_counts.get(k, 0)) for k, v in counts.items()}
-            out.append((ts, delta))
-        prev_ts, prev_counts = ts, counts
-    return out
-
-
-def _bucketize(deltas, window_start, n_buckets, bucket_size, class_names):
-    bucket_secs = bucket_size.total_seconds()
-    series = {c: [0] * n_buckets for c in class_names}
-    for ts, delta in deltas:
-        offset = (ts - window_start).total_seconds()
-        if offset < 0:
-            continue
-        idx = int(offset // bucket_secs)
-        if idx >= n_buckets:
-            continue
-        for c, v in delta.items():
-            if c not in series:
-                series[c] = [0] * n_buckets
-            series[c][idx] += v
-    return series
+    return os.path.join(repo_root, 'isidet', 'logs', 'events')
 
 
 @app.get("/api/chart")
@@ -392,16 +314,17 @@ def get_chart_data(period: str = Query("live")):
         return {"status": "success", "view": "timeseries",
                 "buckets": [], "series": {}}
 
-    class_names, snapshots = _parse_snapshots(
-        _logs_dir(),
-        window_start.date(),
-        (window_end - datetime.timedelta(microseconds=1)).date(),
-    )
-    if not class_names:
-        class_names = ['carton', 'polybag']
+    bucket_secs = bucket_size.total_seconds()
+    series: dict[str, list[int]] = {}
+    for ts, cls, _eid in EventLogger.read_events(_events_dir(), window_start, window_end):
+        idx = int((ts - window_start).total_seconds() // bucket_secs)
+        if 0 <= idx < n_buckets:
+            if cls not in series:
+                series[cls] = [0] * n_buckets
+            series[cls][idx] += 1
 
-    deltas = _within_day_deltas(snapshots)
-    series = _bucketize(deltas, window_start, n_buckets, bucket_size, class_names)
+    for c in ('carton', 'polybag'):
+        series.setdefault(c, [0] * n_buckets)
 
     buckets = [
         (window_start + i * bucket_size).strftime(label_fmt)

@@ -195,7 +195,7 @@ Five backends, selected automatically by file extension in `StreamHandler._build
 ### Layer 5: Support modules
 
 - `isidet/src/shared/vision_engine.py` — unified orchestrator: ByteTrack tracking, line-crossing counting, annotation, telemetry.
-- `isidet/src/utils/analytics_logger.py` — hourly CSV snapshots with daily rollover to `isidet/logs/`.
+- `isidet/src/utils/event_logger.py` — one CSV row per line-crossing to `isidet/logs/events/events_YYYY-MM-DD.csv`; daily rollover + 30-day rolling retention. Source of truth for the `/api/chart` history.
 - `isidet/src/preprocess/clahe_engine.py` — SpecularGuard: CLAHE on LAB L-channel for industrial glare on polybags.
 - `isidet/src/training/hooks/industrial_logger.py` — epoch-level stats hook (GPU mem, losses).
 
@@ -216,7 +216,7 @@ Flask (`webapp/isitec_app/`) and FastAPI (`webapp/isitec_api/`) share `isidet/sr
 - `counted_ids` (set of ByteTrack IDs already triggered)
 - The ByteTrack tracker instance (IoU matching carries tracks across the swap)
 - `LineZone` position + anchor
-- `DailyLogger` (CSV keeps writing to the same file)
+- `EventLogger` (event CSV keeps appending to the same per-day file)
 
 Rebuilt: the inferencer reference and palette-indexed annotators (mask/box/label), so per-class colours reflect the new model's class-ID convention. Swap latency ~2 s on GPU (CUDNN kernel cache is primed via `preload_onnx()` at container boot).
 
@@ -288,13 +288,14 @@ POST /api/start → StreamHandler (hot-swap path if same source)
   → _inference_loop:
       per frame:
         engine.process_frame(frame) → (annotated, detections, new_events[])
+          └─ inside VisionEngine: each new crossing → EventLogger.log(class, id)
+                                                     (→ isidet/logs/events/events_YYYY-MM-DD.csv)
         for event in new_events:
           latency_ns = UDPPublisher.publish(class, event_id)  → datagram → sorter (port 9502)
           monitor.track_udp_publish(latency_ns)                → histogram
           update last_detected + class_totals
-      DailyLogger.update(class_totals) → hourly CSV snapshots
       latest_annotated JPEG → /video_feed (MJPEG) or /ws/video (WebSocket)
-  → /api/stats: live counts  →  /api/chart: CSV-aggregated history
+  → /api/stats: live counts  →  /api/chart: event-log-bucketed history (24h/7d/30d)
 ```
 
 ## Dataset formats

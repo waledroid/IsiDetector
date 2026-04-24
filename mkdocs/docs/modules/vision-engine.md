@@ -16,7 +16,7 @@ graph TD
     Engine --> Inf[Inferencer]
     Inf --> Track[ByteTrack]
     Track --> Line[LineZone Counter]
-    Line --> Log[DailyLogger]
+    Line --> Log[EventLogger]
     Log --> Output[Annotated Frame + Events]
 ```
 

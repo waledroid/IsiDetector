@@ -87,7 +87,7 @@ logistic/
 │   │   ├── training/          #   BaseTrainer + YOLO / RF-DETR trainers + hooks
 │   │   ├── shared/            #   registry.py, vision_engine.py
 │   │   ├── preprocess/        #   CLAHE SpecularGuard
-│   │   └── utils/             #   analytics_logger.py (daily CSV rollover)
+│   │   └── utils/             #   event_logger.py (per-event CSV, 30-day retention)
 │   ├── scripts/               #   run_train.py / run_live.py / run_infer.py / …
 │   ├── configs/               #   train.yaml + optimizers/*.yaml
 │   ├── data/                  #   Training & validation datasets (gitignored)
