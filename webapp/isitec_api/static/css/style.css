@@ -694,12 +694,13 @@ body {
 }
 .report-details strong { color: var(--text-main); font-weight: 600; }
 
-/* ── Analytics: Export & Audit ──────────────────────────────────────────── */
+/* ── Analytics: Export ──────────────────────────────────────────────────── */
 .export-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 10px;
+    margin-bottom: 20px;
 }
 .export-row label {
     font-size: 13px;
@@ -719,21 +720,37 @@ body {
     outline: none;
     border-color: var(--primary-color);
 }
-.search-result {
-    margin-top: 12px;
-    font-size: 13px;
-    color: var(--text-light);
-    min-height: 20px;
+.btn-download {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 12px 28px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--primary-color);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(27, 155, 216, 0.25);
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
 }
-.search-result .hit {
-    padding: 6px 10px;
-    background: #f8f9fa;
-    border: 1px solid #dadce0;
-    border-radius: 4px;
-    margin: 4px 0;
-    font-family: 'Roboto Mono', monospace;
+.btn-download .material-icons {
+    font-size: 20px;
 }
-.search-result .hit.empty { font-style: italic; }
+.btn-download:hover {
+    background: var(--primary-dark);
+    box-shadow: 0 4px 12px rgba(27, 155, 216, 0.35);
+    transform: translateY(-1px);
+}
+.btn-download:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(27, 155, 216, 0.25);
+}
 
 @media (max-width: 900px) {
     .report-grid { grid-template-columns: repeat(2, 1fr); }

@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.11">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.12">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -193,29 +193,19 @@
                 </div>
             </div>
 
-            <!-- Export & Audit -->
+            <!-- Export -->
             <div class="card">
-                <h2 data-i18n="analytics_export">Export & Audit</h2>
+                <h2 data-i18n="analytics_export">Export Events</h2>
                 <div class="export-row">
                     <label data-i18n="rep_from">From</label>
                     <input type="date" id="exportFrom" class="date-input">
                     <label data-i18n="rep_to">To</label>
                     <input type="date" id="exportTo" class="date-input">
-                    <button id="btnExportCsv" class="btn-primary">
-                        <i class="material-icons">file_download</i>
-                        <span data-i18n="rep_download_csv">Download CSV</span>
-                    </button>
                 </div>
-
-                <div class="export-row" style="margin-top: 16px;">
-                    <label data-i18n="rep_find_id">Find event by tracker ID</label>
-                    <input type="number" id="searchEventId" class="date-input" min="1" placeholder="e.g. 42">
-                    <button id="btnSearchEvent" class="btn-primary">
-                        <i class="material-icons">search</i>
-                        <span data-i18n="rep_search">Search</span>
-                    </button>
-                </div>
-                <div id="searchResult" class="search-result"></div>
+                <button id="btnExportCsv" class="btn-download">
+                    <i class="material-icons">file_download</i>
+                    <span data-i18n="rep_download_csv">Download CSV</span>
+                </button>
             </div>
 
             <!-- Recent Sessions -->
@@ -443,7 +433,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.11"></script>
+    <script src="/static/js/main.js?v=2.12"></script>
 </body>
 
 </html>

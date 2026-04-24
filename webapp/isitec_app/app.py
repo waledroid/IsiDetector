@@ -441,30 +441,6 @@ def export_events():
     )
 
 
-@app.route('/api/events/search', methods=['GET'])
-def search_events():
-    """Find events by tracker id. Tracker ids repeat across sessions
-    (ByteTrack resets per start), so a single id may match many events —
-    return them all, newest first."""
-    try:
-        target_id = int(request.args.get('id', ''))
-    except ValueError:
-        return jsonify({"status": "error",
-                        "message": "id must be an integer"}), 400
-    # Search the full retained window (30 days by default). Upper bound is
-    # open-ended so events with timestamps slightly past `now` (clock drift,
-    # or rows just logged) still match.
-    now = datetime.datetime.now()
-    window_start = now - datetime.timedelta(days=31)
-    window_end = now + datetime.timedelta(days=1)
-    matches = []
-    for ts, cls, eid in EventLogger.read_events(_events_dir(), window_start, window_end):
-        if eid == target_id:
-            matches.append({"ts": ts.isoformat(), "class": cls, "id": eid})
-    matches.reverse()
-    return jsonify({"status": "success", "id": target_id, "events": matches})
-
-
 @app.route('/api/models', methods=['GET'])
 def get_models():
     # After the bucket restructure this file lives at webapp/isitec_app/app.py,

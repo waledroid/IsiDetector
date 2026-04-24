@@ -18,7 +18,7 @@ const translations = {
         "start_tracking": "Start",
         "stop": "Stop",
         "analytics_overview": "Production Summary",
-        "analytics_export": "Export & Audit",
+        "analytics_export": "Export Events",
         "period_today": "Today",
         "period_yesterday": "Yesterday",
         "rep_total": "Total",
@@ -31,8 +31,6 @@ const translations = {
         "rep_from": "From",
         "rep_to": "To",
         "rep_download_csv": "Download CSV",
-        "rep_find_id": "Find event by tracker ID",
-        "rep_search": "Search",
         "sess_empty": "No sessions recorded yet.",
         "model_management": "Model Management",
         "model_soon": "Model Directory Viewer Coming Soon.",
@@ -86,7 +84,7 @@ const translations = {
         "start_tracking": "Démarrer",
         "stop": "Arrêter",
         "analytics_overview": "Résumé de production",
-        "analytics_export": "Exportation et audit",
+        "analytics_export": "Exporter les événements",
         "period_today": "Aujourd'hui",
         "period_yesterday": "Hier",
         "rep_total": "Total",
@@ -99,8 +97,6 @@ const translations = {
         "rep_from": "Du",
         "rep_to": "Au",
         "rep_download_csv": "Télécharger CSV",
-        "rep_find_id": "Rechercher par ID de suivi",
-        "rep_search": "Rechercher",
         "sess_empty": "Aucune session enregistrée.",
         "model_management": "Gestion des modèles",
         "model_soon": "Visionneur de répertoire de modèles à venir.",
@@ -1023,32 +1019,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const btnSearchEvent = document.getElementById('btnSearchEvent');
-    if (btnSearchEvent) {
-        btnSearchEvent.addEventListener('click', async () => {
-            const id = document.getElementById('searchEventId').value;
-            const out = document.getElementById('searchResult');
-            if (!id) { out.innerHTML = ''; return; }
-            try {
-                const res = await fetch(`/api/events/search?id=${encodeURIComponent(id)}`);
-                const d = await res.json();
-                if (d.status !== 'success') {
-                    out.innerHTML = `<div class="hit empty">${d.message || 'Error'}</div>`;
-                    return;
-                }
-                if (!d.events.length) {
-                    out.innerHTML = `<div class="hit empty">No event found for id #${d.id}.</div>`;
-                    return;
-                }
-                out.innerHTML = d.events.map(e => {
-                    const t = e.ts.replace('T', ' ').split('.')[0];
-                    return `<div class="hit">${t} \u2014 <strong>${e.class}</strong> #${e.id}</div>`;
-                }).join('');
-            } catch (e) {
-                out.innerHTML = `<div class="hit empty">Search failed.</div>`;
-            }
-        });
-    }
 
     // Always start perf polling on load
     startPerfPolling();
