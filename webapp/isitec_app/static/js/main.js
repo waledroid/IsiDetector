@@ -272,45 +272,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Chart.js Initialization ---
+    // Two chart modes:
+    //   LIVE       — one dataset, two bars (carton + polybag). Counts update
+    //                every 500 ms from /api/stats while a stream runs.
+    //   TIMESERIES — stacked bars across N time buckets (24 hourly for 24h,
+    //                7 daily for 7d, 30 daily for 30d). Fetched once on
+    //                period change from /api/chart?period=…
+    //
+    // Chart.js doesn't gracefully swap between stacked multi-dataset and
+    // non-stacked single-dataset configs at runtime, so we destroy+rebuild
+    // when crossing that boundary.
+    const CHART_COLORS = {
+        carton:  '#1b9bd8',   // brand blue
+        polybag: '#ec407a',   // pink (matches the stat card palette)
+    };
+    const FALLBACK_COLOR = '#607d8b';
+    const ctx = document.getElementById('analyticsChart').getContext('2d');
+
     let detectionChart = null;
     let currentChartPeriod = 'live';
-    
-    const ctx = document.getElementById('analyticsChart').getContext('2d');
-    detectionChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Count',
-                data: [],
-                backgroundColor: [
-                    'rgba(63, 81, 181, 0.7)',
-                    'rgba(255, 64, 129, 0.7)',
-                    'rgba(76, 175, 80, 0.7)'
-                ],
-                borderColor: [
-                    'rgba(63, 81, 181, 1)',
-                    'rgba(255, 64, 129, 1)',
-                    'rgba(76, 175, 80, 1)'
-                ],
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { precision: 0 }
-                }
+
+    function _buildLiveChart() {
+        if (detectionChart) detectionChart.destroy();
+        detectionChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Count',
+                    data: [],
+                    backgroundColor: [CHART_COLORS.carton, CHART_COLORS.polybag, '#43a047'],
+                    borderColor:     [CHART_COLORS.carton, CHART_COLORS.polybag, '#43a047'],
+                    borderWidth: 1,
+                    borderRadius: 4,
+                }],
             },
-            plugins: {
-                legend: { display: false }
-            }
-        }
-    });
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    function _buildTimeseriesChart(payload) {
+        if (detectionChart) detectionChart.destroy();
+        const classes = Object.keys(payload.series);
+        const datasets = classes.map(c => ({
+            label: c.charAt(0).toUpperCase() + c.slice(1),
+            data: payload.series[c],
+            backgroundColor: CHART_COLORS[c] || FALLBACK_COLOR,
+            borderRadius: 2,
+        }));
+        detectionChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: payload.buckets, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+                    y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+                },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false },
+                },
+            },
+        });
+    }
+
+    // Initial render: simple two-bar (Live mode is the default period).
+    _buildLiveChart();
 
     // Chart Filter Buttons Logic
     const filterBtns = document.querySelectorAll('.filter-btn');
@@ -327,17 +361,20 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`/api/chart?period=${period}`);
             const data = await res.json();
-            
-            if (data.status === 'success') {
-                const labels = Object.keys(data.data);
-                const values = Object.values(data.data);
-                
-                detectionChart.data.labels = labels.map(l => l.toUpperCase());
-                detectionChart.data.datasets[0].data = values;
-                detectionChart.update('none');  // data-only update, no animation overhead
+            if (data.status !== 'success') return;
+
+            if (data.view === 'timeseries') {
+                _buildTimeseriesChart(data);
+            } else {
+                // Legacy/live shape: {data: {class: count, ...}}
+                _buildLiveChart();
+                const counts = data.data || {};
+                detectionChart.data.labels = Object.keys(counts).map(l => l.toUpperCase());
+                detectionChart.data.datasets[0].data = Object.values(counts);
+                detectionChart.update('none');
             }
         } catch (e) {
-            console.error("Error fetching chart data", e);
+            console.error('Error fetching chart data', e);
         }
     }
 

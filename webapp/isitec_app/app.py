@@ -185,61 +185,176 @@ def get_performance():
         return jsonify({"status": "error", "message": "Unauthorized"}), 403
     return jsonify(stream_handler.get_performance())
 
+# ── /api/chart helpers ──────────────────────────────────────────────────────
+# DailyLogger writes cumulative counts since midnight as hourly snapshots to
+# isidet/logs/report_DD-MM-YYYY.csv. Each row is "HH:MM:SS,<count_class1>,...".
+# For the historical chart we need per-bucket deltas (hourly for 24h, daily
+# for 7d/30d), which means:
+#   1) resolve the real log dir (isidet/logs/, NOT webapp/isitec_app/logs/),
+#   2) parse rows as (date_from_filename + HH:MM:SS, counts_per_class),
+#   3) diff consecutive cumulative rows within the same day to get per-snapshot
+#      deltas (midnight resets, so first-of-day = full cumulative),
+#   4) bucket the deltas.
+
+def _logs_dir():
+    """isidet/logs/ resolved from this file's location (webapp/isitec_app/app.py
+    → parents[2] = repo root)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(here))
+    return os.path.join(repo_root, 'isidet', 'logs')
+
+
+def _parse_snapshots(logs_dir, from_date, to_date):
+    """Read every report_*.csv whose filename date falls in [from_date, to_date].
+    Returns (class_names, snapshots) where snapshots is a list of
+    (datetime, {class: cumulative_count}) sorted ascending by time."""
+    snapshots = []
+    class_names = None
+    if not os.path.isdir(logs_dir):
+        return [], []
+    for filename in sorted(os.listdir(logs_dir)):
+        if not (filename.startswith('report_') and filename.endswith('.csv')):
+            continue
+        try:
+            file_date = datetime.datetime.strptime(
+                filename[len('report_'):-len('.csv')], '%d-%m-%Y'
+            ).date()
+        except ValueError:
+            continue
+        if file_date < from_date or file_date > to_date:
+            continue
+        try:
+            with open(os.path.join(logs_dir, filename), encoding='utf-8') as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header or len(header) < 2:
+                    continue
+                local_classes = header[1:]
+                if class_names is None:
+                    class_names = list(local_classes)
+                for row in reader:
+                    if len(row) < 1 + len(local_classes):
+                        continue
+                    try:
+                        h, m, s = row[0].split(':')
+                        ts = datetime.datetime.combine(
+                            file_date, datetime.time(int(h), int(m), int(s))
+                        )
+                    except (ValueError, AttributeError):
+                        continue
+                    counts = {}
+                    for i, cname in enumerate(local_classes):
+                        try:
+                            counts[cname] = int(row[1 + i])
+                        except (ValueError, IndexError):
+                            counts[cname] = 0
+                    snapshots.append((ts, counts))
+        except Exception:
+            continue  # corrupted/partial CSV — skip silently
+    snapshots.sort(key=lambda x: x[0])
+    return (class_names or []), snapshots
+
+
+def _within_day_deltas(snapshots):
+    """Convert cumulative snapshots to per-snapshot deltas. The logger resets
+    at midnight, so the first snapshot of each day IS the day's cumulative
+    up to that point (treat previous day's final cumulative as unrelated)."""
+    out = []
+    prev_ts = None
+    prev_counts = None
+    for ts, counts in snapshots:
+        if prev_ts is None or ts.date() != prev_ts.date():
+            out.append((ts, dict(counts)))
+        else:
+            delta = {k: max(0, v - prev_counts.get(k, 0)) for k, v in counts.items()}
+            out.append((ts, delta))
+        prev_ts, prev_counts = ts, counts
+    return out
+
+
+def _bucketize(deltas, window_start, n_buckets, bucket_size, class_names):
+    """Aggregate (ts, delta) pairs into n_buckets of size bucket_size starting
+    at window_start. Returns {class: [n_buckets]}."""
+    bucket_secs = bucket_size.total_seconds()
+    series = {c: [0] * n_buckets for c in class_names}
+    for ts, delta in deltas:
+        offset = (ts - window_start).total_seconds()
+        if offset < 0:
+            continue
+        idx = int(offset // bucket_secs)
+        if idx >= n_buckets:
+            continue
+        for c, v in delta.items():
+            if c not in series:
+                series[c] = [0] * n_buckets
+            series[c][idx] += v
+    return series
+
+
 @app.route('/api/chart', methods=['GET'])
 def get_chart_data():
     period = request.args.get('period', 'live')
-    
+
+    # Live mode is identical to the running session's counts — shape kept
+    # backward-compatible so any legacy consumer still works.
     if period == 'live':
         stats = stream_handler.get_stats()
         return jsonify({"status": "success", "data": stats['counts']})
-        
+
     now = datetime.datetime.now()
     if period == '24h':
-        cutoff = now - datetime.timedelta(days=1)
+        # Rolling 24h ending at the most recent hour boundary (so each bucket
+        # is a complete hour). Buckets labelled by hour-of-day only.
+        window_end = now.replace(minute=0, second=0, microsecond=0)
+        window_start = window_end - datetime.timedelta(hours=24)
+        bucket_size = datetime.timedelta(hours=1)
+        n_buckets = 24
+        label_fmt = "%H:00"
     elif period == '7d':
-        cutoff = now - datetime.timedelta(days=7)
+        # 7 daily buckets ending today. window_start = midnight 6 days ago.
+        today = now.date()
+        start_date = today - datetime.timedelta(days=6)
+        window_start = datetime.datetime.combine(start_date, datetime.time.min)
+        window_end = datetime.datetime.combine(today + datetime.timedelta(days=1),
+                                               datetime.time.min)
+        bucket_size = datetime.timedelta(days=1)
+        n_buckets = 7
+        label_fmt = "%a %d"
     elif period == '30d':
-        cutoff = now - datetime.timedelta(days=30)
+        today = now.date()
+        start_date = today - datetime.timedelta(days=29)
+        window_start = datetime.datetime.combine(start_date, datetime.time.min)
+        window_end = datetime.datetime.combine(today + datetime.timedelta(days=1),
+                                               datetime.time.min)
+        bucket_size = datetime.timedelta(days=1)
+        n_buckets = 30
+        label_fmt = "%b %d"
     else:
-        cutoff = now - datetime.timedelta(days=1)
-        
-    counts = {}
-    logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
-    if not os.path.exists(logs_dir):
-        return jsonify({"status": "success", "data": counts})
+        return jsonify({"status": "success", "view": "timeseries",
+                        "buckets": [], "series": {}})
 
-    for filename in os.listdir(logs_dir):
-        if not filename.endswith('.csv'):
-            continue
-        # Log filenames are report_DD-MM-YYYY.csv — skip files outside the period
-        # without opening them (avoids reading the entire logs directory for short periods)
-        try:
-            date_part = filename.replace('report_', '').replace('.csv', '')
-            file_date = datetime.datetime.strptime(date_part, '%d-%m-%Y')
-            if file_date.date() < cutoff.date():
-                continue
-        except ValueError:
-            pass  # unexpected filename format — read it anyway
+    class_names, snapshots = _parse_snapshots(
+        _logs_dir(),
+        window_start.date(),
+        (window_end - datetime.timedelta(microseconds=1)).date(),
+    )
+    if not class_names:
+        class_names = ['carton', 'polybag']
 
-        filepath = os.path.join(logs_dir, filename)
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                header = next(reader, None)
-                for row in reader:
-                    if len(row) >= 2:
-                        ts_str = row[0]
-                        class_name = row[1]
-                        try:
-                            row_ts = datetime.datetime.fromisoformat(ts_str)
-                            if row_ts >= cutoff:
-                                counts[class_name] = counts.get(class_name, 0) + 1
-                        except ValueError:
-                            pass
-        except Exception:
-            pass  # Skip corrupted logs safely
-            
-    return jsonify({"status": "success", "data": counts})
+    deltas = _within_day_deltas(snapshots)
+    series = _bucketize(deltas, window_start, n_buckets, bucket_size, class_names)
+
+    buckets = [
+        (window_start + i * bucket_size).strftime(label_fmt)
+        for i in range(n_buckets)
+    ]
+
+    return jsonify({
+        "status": "success",
+        "view": "timeseries",
+        "buckets": buckets,
+        "series": series,
+    })
 
 @app.route('/api/models', methods=['GET'])
 def get_models():

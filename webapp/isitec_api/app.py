@@ -265,6 +265,98 @@ def get_performance(_token: str = Depends(require_dev)):
     return stream_handler.get_performance()
 
 
+# ── /api/chart helpers (mirrored from isitec_app/app.py — keep in sync) ─────
+# See Flask counterpart for prose on the algorithm. DailyLogger writes
+# cumulative-since-midnight hourly snapshots to isidet/logs/report_*.csv;
+# we diff within-day for per-snapshot deltas, then bucket.
+
+def _logs_dir():
+    """isidet/logs/ resolved from this file's location (webapp/isitec_api/app.py
+    → parents[2] = repo root)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(os.path.dirname(here))
+    return os.path.join(repo_root, 'isidet', 'logs')
+
+
+def _parse_snapshots(logs_dir, from_date, to_date):
+    snapshots = []
+    class_names = None
+    if not os.path.isdir(logs_dir):
+        return [], []
+    for filename in sorted(os.listdir(logs_dir)):
+        if not (filename.startswith('report_') and filename.endswith('.csv')):
+            continue
+        try:
+            file_date = datetime.datetime.strptime(
+                filename[len('report_'):-len('.csv')], '%d-%m-%Y'
+            ).date()
+        except ValueError:
+            continue
+        if file_date < from_date or file_date > to_date:
+            continue
+        try:
+            with open(os.path.join(logs_dir, filename), encoding='utf-8') as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header or len(header) < 2:
+                    continue
+                local_classes = header[1:]
+                if class_names is None:
+                    class_names = list(local_classes)
+                for row in reader:
+                    if len(row) < 1 + len(local_classes):
+                        continue
+                    try:
+                        h, m, s = row[0].split(':')
+                        ts = datetime.datetime.combine(
+                            file_date, datetime.time(int(h), int(m), int(s))
+                        )
+                    except (ValueError, AttributeError):
+                        continue
+                    counts = {}
+                    for i, cname in enumerate(local_classes):
+                        try:
+                            counts[cname] = int(row[1 + i])
+                        except (ValueError, IndexError):
+                            counts[cname] = 0
+                    snapshots.append((ts, counts))
+        except Exception:
+            continue
+    snapshots.sort(key=lambda x: x[0])
+    return (class_names or []), snapshots
+
+
+def _within_day_deltas(snapshots):
+    out = []
+    prev_ts = None
+    prev_counts = None
+    for ts, counts in snapshots:
+        if prev_ts is None or ts.date() != prev_ts.date():
+            out.append((ts, dict(counts)))
+        else:
+            delta = {k: max(0, v - prev_counts.get(k, 0)) for k, v in counts.items()}
+            out.append((ts, delta))
+        prev_ts, prev_counts = ts, counts
+    return out
+
+
+def _bucketize(deltas, window_start, n_buckets, bucket_size, class_names):
+    bucket_secs = bucket_size.total_seconds()
+    series = {c: [0] * n_buckets for c in class_names}
+    for ts, delta in deltas:
+        offset = (ts - window_start).total_seconds()
+        if offset < 0:
+            continue
+        idx = int(offset // bucket_secs)
+        if idx >= n_buckets:
+            continue
+        for c, v in delta.items():
+            if c not in series:
+                series[c] = [0] * n_buckets
+            series[c][idx] += v
+    return series
+
+
 @app.get("/api/chart")
 def get_chart_data(period: str = Query("live")):
     if period == 'live':
@@ -273,49 +365,55 @@ def get_chart_data(period: str = Query("live")):
 
     now = datetime.datetime.now()
     if period == '24h':
-        cutoff = now - datetime.timedelta(days=1)
+        window_end = now.replace(minute=0, second=0, microsecond=0)
+        window_start = window_end - datetime.timedelta(hours=24)
+        bucket_size = datetime.timedelta(hours=1)
+        n_buckets = 24
+        label_fmt = "%H:00"
     elif period == '7d':
-        cutoff = now - datetime.timedelta(days=7)
+        today = now.date()
+        start_date = today - datetime.timedelta(days=6)
+        window_start = datetime.datetime.combine(start_date, datetime.time.min)
+        window_end = datetime.datetime.combine(today + datetime.timedelta(days=1),
+                                               datetime.time.min)
+        bucket_size = datetime.timedelta(days=1)
+        n_buckets = 7
+        label_fmt = "%a %d"
     elif period == '30d':
-        cutoff = now - datetime.timedelta(days=30)
+        today = now.date()
+        start_date = today - datetime.timedelta(days=29)
+        window_start = datetime.datetime.combine(start_date, datetime.time.min)
+        window_end = datetime.datetime.combine(today + datetime.timedelta(days=1),
+                                               datetime.time.min)
+        bucket_size = datetime.timedelta(days=1)
+        n_buckets = 30
+        label_fmt = "%b %d"
     else:
-        cutoff = now - datetime.timedelta(days=1)
+        return {"status": "success", "view": "timeseries",
+                "buckets": [], "series": {}}
 
-    counts = {}
-    logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
-    if not os.path.exists(logs_dir):
-        return {"status": "success", "data": counts}
+    class_names, snapshots = _parse_snapshots(
+        _logs_dir(),
+        window_start.date(),
+        (window_end - datetime.timedelta(microseconds=1)).date(),
+    )
+    if not class_names:
+        class_names = ['carton', 'polybag']
 
-    for filename in os.listdir(logs_dir):
-        if not filename.endswith('.csv'):
-            continue
-        try:
-            date_part = filename.replace('report_', '').replace('.csv', '')
-            file_date = datetime.datetime.strptime(date_part, '%d-%m-%Y')
-            if file_date.date() < cutoff.date():
-                continue
-        except ValueError:
-            pass
+    deltas = _within_day_deltas(snapshots)
+    series = _bucketize(deltas, window_start, n_buckets, bucket_size, class_names)
 
-        filepath = os.path.join(logs_dir, filename)
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                reader = csv.reader(f)
-                next(reader, None)
-                for row in reader:
-                    if len(row) >= 2:
-                        ts_str = row[0]
-                        class_name = row[1]
-                        try:
-                            row_ts = datetime.datetime.fromisoformat(ts_str)
-                            if row_ts >= cutoff:
-                                counts[class_name] = counts.get(class_name, 0) + 1
-                        except ValueError:
-                            pass
-        except Exception:
-            pass
+    buckets = [
+        (window_start + i * bucket_size).strftime(label_fmt)
+        for i in range(n_buckets)
+    ]
 
-    return {"status": "success", "data": counts}
+    return {
+        "status": "success",
+        "view": "timeseries",
+        "buckets": buckets,
+        "series": series,
+    }
 
 
 @app.get("/api/models")
