@@ -39,6 +39,34 @@ docker compose down           # stop the stack
 
 ---
 
+## 📹 Camera discovery (once per site)
+
+Plugged a new IP camera into the LAN and don't know its URL? Scan the subnet for RTSP (554) and camera web UIs (80 / 8080):
+
+```bash
+sudo apt install nmap -y
+# Adjust the subnet to match the site LAN (check with: ip route | grep default)
+sudo nmap -p 554,80,8080 --open 192.168.1.0/24
+```
+
+Each camera's exact RTSP path comes from its manual. Common shapes:
+
+```
+rtsp://<user>:<pass>@<ip>:554/<stream>
+rtsp://<ip>:554/user=<user>&password=<pass>&channel=1&stream=0.sdp?
+```
+
+**Examples discovered at the current site** (per-site — rediscover on every new install):
+
+```
+rtsp://admin:admin@192.168.1.88:554/11
+rtsp://192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?
+```
+
+Paste the URL into **Live Inference → RTSP URL** in the web UI. Change factory `admin/admin` credentials on the camera before leaving site.
+
+---
+
 ## 🌐 Network lock-down (once per site, after the LAN is stable)
 
 ```bash
