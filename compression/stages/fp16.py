@@ -135,6 +135,28 @@ class FP16Stage(Stage):
             )
         console.print(f"   [dim]✓ converted in {time.perf_counter() - t0:.1f}s[/dim]")
 
+        # `convert_float_to_float16` rewrites weight initializers and
+        # inserts boundary Cast pairs around blocklisted ops, but it
+        # does NOT touch the ``to`` attribute of pre-existing Cast nodes
+        # baked into the original export. On Ultralytics YOLO graphs
+        # there is at least one such Cast (``/model.23/Cast_2``) whose
+        # output feeds a Concat alongside three FP16 tensors. After
+        # conversion that Cast still emits FP32, the Concat sees mixed
+        # dtypes, and ORT refuses to load with::
+        #
+        #   Type Error: Type parameter (T) of Optype (Concat) bound to
+        #   different types (tensor(float16) and tensor(float)) in node
+        #   (/model.23/Concat_7).
+        #
+        # Sweep the graph and rewrite orphaned ``Cast(to=FP32)`` nodes
+        # to ``Cast(to=FP16)`` unless they're legitimate boundary casts
+        # (feeding a blocklisted op, or a model output under keep_io_types).
+        n_fixed = self._fix_orphan_fp32_casts(converted)
+        if n_fixed:
+            console.print(
+                f"   [dim]✓ rewrote {n_fixed} orphan FP32→FP16 cast(s)[/dim]"
+            )
+
         # The converter appends new FP16 value_info entries without
         # removing the matching FP32 ones, so the graph ends up with
         # duplicate entries for the same tensor name (one FLOAT, one
@@ -162,3 +184,47 @@ class FP16Stage(Stage):
         onnx.save(converted, str(out))
         console.print(f"   [dim]✓ saved in {time.perf_counter() - t0:.1f}s[/dim]")
         return out
+
+    def _fix_orphan_fp32_casts(self, model) -> int:
+        """Rewrite leftover ``Cast(to=FP32)`` nodes the converter missed.
+
+        ``convert_float_to_float16`` does not touch the ``to`` attribute
+        of pre-existing Cast nodes from the original export. When such
+        a Cast feeds a now-FP16 op, its FP32 output causes a load-time
+        Type Error in ORT. Walk the graph and rewrite each orphan to
+        ``to=FP16``, preserving the cases where FP32 is correct:
+
+        * the consumer is a blocklisted op (Resize/Upsample/TopK/
+          ReduceSum) that legitimately stayed FP32 — this is the
+          converter's own boundary cast,
+        * the cast's output is a model output (``keep_io_types=True``
+          forces FP32 at the IO boundary).
+
+        Returns the number of casts rewritten.
+        """
+        FP32, FP16 = 1, 10
+        consumers: dict[str, list] = {}
+        for node in model.graph.node:
+            for inp in node.input:
+                consumers.setdefault(inp, []).append(node)
+        output_names = {o.name for o in model.graph.output}
+        blocklisted = set(self.fp16_op_block_list)
+
+        fixed = 0
+        for node in model.graph.node:
+            if node.op_type != "Cast":
+                continue
+            to_attr = next(
+                (a for a in node.attribute if a.name == "to"), None
+            )
+            if to_attr is None or to_attr.i != FP32:
+                continue
+            out_name = node.output[0]
+            if out_name in output_names:
+                continue
+            if any(c.op_type in blocklisted
+                   for c in consumers.get(out_name, [])):
+                continue
+            to_attr.i = FP16
+            fixed += 1
+        return fixed
