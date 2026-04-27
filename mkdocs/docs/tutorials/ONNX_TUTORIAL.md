@@ -758,7 +758,7 @@ return sv.Detections(
 
 ---
 
-## 13. Case Studies: The Ten Bugs We Squashed
+## 13. Case Studies: The Eleven Bugs We Squashed
 
 Each bug teaches a distinct lesson. Cross-referenced to the lines in `isidet/src/inference/onnx_inferencer.py`. The last three (7, 8, 9) are RF-DETR specific and together produce the most interesting lesson in the whole exercise: **preprocessing is recipe-specific, and "close enough" is not a thing in transformer backbones**.
 
@@ -846,6 +846,55 @@ Anti-pattern: building an object in a worker thread and passing the reference fo
 **How we found it**: stopwatched the hang. Noticed `cache HIT` fired at T=0 but the handler didn't return for T+80. Nothing between those two log lines except `_warmup()` → 3 × `session.run()`. If `run()` itself is slow on a *fresh* cached session (that was just built seconds ago), cross-thread sync is the top suspect. Confirmed by removing the cache entirely: swap cost became consistent 1–3 s across every invocation, matching the fresh-build baseline — which would be impossible if session construction were the bottleneck.
 
 **Bonus corollary**: this is why subsequent swaps after the first cold swap are fast even without a cache. The *process* already has CUDNN kernels compiled for that graph; only the first swap in a given process pays the autotune cost. Cold swap #1: 3–5 s. Cold swap #2+: 1–2 s. No caching needed.
+
+### Bug #11 — Orphan FP32 Cast nodes left behind by `convert_float_to_float16`
+
+**Symptom**: an FP16-converted YOLO ONNX (produced via `compression/stages/fp16.py` calling `onnxconverter_common.float16.convert_float_to_float16`) refused to load in `OptimizedONNXInferencer`. Session creation died with::
+
+    Type Error: Type parameter (T) of Optype (Concat) bound to different
+    types (tensor(float16) and tensor(float)) in node (/model.23/Concat_7).
+
+The FP32 source loaded fine; the FP16 file halved size as expected (10 MB → 5.3 MB) and 240 of 242 weight tensors were correctly converted to FP16. So the conversion *looked* right — the failure was a single typed-tensor mismatch deep in the graph.
+
+**Cause**: `convert_float_to_float16` rewrites weight initializers and inserts boundary `Cast(FP32↔FP16)` pairs around blocklisted ops (`Resize`, `TopK`, …), but **it does not touch the `to` attribute of pre-existing Cast nodes that were baked into the original export**. Ultralytics' YOLO graph contains `/model.23/Cast_2` — a Cast(INT64→FP32) the export inserts so an `Unsqueeze`-derived index can be concatenated with float coordinates. After conversion, `Cast_2` still emits FP32, but the three other inputs to its consumer `/model.23/Concat_7` are now FP16. The Concat op requires all inputs to share dtype, and ORT's loader checks types at session creation — hence the immediate `Type Error` before a single inference frame runs.
+
+This is *not* a bug in the converter's blocklist or in `keep_io_types=True` — those work as designed. It's a gap: the converter has no way to know whether an *original* Cast(to=FP32) is "really FP32 because the consumer wants FP32" or "incidentally FP32 because the export was FP32 throughout". When the rest of the graph drops to FP16, the orphan stands out.
+
+**Fix**: a post-conversion sweep that walks the graph and rewrites any `Cast(to=FP32)` whose consumer is no longer FP32:
+
+```python
+def _fix_orphan_fp32_casts(self, model) -> int:
+    FP32, FP16 = 1, 10
+    consumers: dict[str, list] = {}
+    for node in model.graph.node:
+        for inp in node.input:
+            consumers.setdefault(inp, []).append(node)
+    output_names = {o.name for o in model.graph.output}
+    blocklisted = set(self.fp16_op_block_list)
+
+    fixed = 0
+    for node in model.graph.node:
+        if node.op_type != "Cast":
+            continue
+        to_attr = next((a for a in node.attribute if a.name == "to"), None)
+        if to_attr is None or to_attr.i != FP32:
+            continue
+        out_name = node.output[0]
+        # Two cases where FP32 is correct and we leave it alone:
+        if out_name in output_names:
+            continue                              # keep_io_types boundary
+        if any(c.op_type in blocklisted for c in consumers.get(out_name, [])):
+            continue                              # converter's own boundary cast
+        to_attr.i = FP16
+        fixed += 1
+    return fixed
+```
+
+Call it immediately after `convert_float_to_float16` and before the existing `del value_info / shape_inference.infer_shapes` step — the re-inference picks up the corrected types automatically. On the YOLO graph the sweep rewrites exactly **one** node (`/model.23/Cast_2`); the six other `Cast(to=FP32)` survivors are legitimate boundary casts feeding `Resize`/`TopK` and stay alone.
+
+**Lesson**: when a graph-rewriting tool advertises "halves your weights to FP16", it operates on weight tensors and inserts compatibility scaffolding around known-hostile ops. It does **not** introspect every existing Cast. The places this leaks through are graphs whose original export already contained Cast nodes that *coincidentally* targeted FP32 — at which point those Casts become silent FP32 islands in an otherwise FP16 graph. The two safe categories (boundary toward a blocklisted op, boundary toward the model output under `keep_io_types`) are easy to enumerate; everything else can be rewritten.
+
+**How we found it**: ORT's `Type Error` message names the offending Concat node, which is the consumer, not the producer. Tracing each of `Concat_7`'s four inputs by walking the graph produced one FP32 input among three FP16 — and the producer of that FP32 input was an unmodified `Cast(to=1)`. From there it was clear the converter had skipped that one `to` attribute. Validation: top-5 confidence scores from the patched FP16 model matched the FP32 baseline within `2×10⁻⁴` on a realistic (uniform `[0,1]`) input, confirming the fix didn't subtly break inference math.
 
 ---
 
