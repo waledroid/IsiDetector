@@ -1,0 +1,25 @@
+# Auto-deployed by deploy\windows\install.ps1 to %USERPROFILE%\.wslconfig
+# Tunes the WSL2 backend that Docker Desktop uses on Windows. The site
+# operator never opens a WSL terminal — this file just caps how much of
+# the host the Docker VM may consume.
+#
+# After editing, run `wsl --shutdown` (or quit + reopen Docker Desktop)
+# so the next container start picks up the new limits.
+
+[wsl2]
+# RAM cap. Default would be 50% of host RAM, which is too greedy on a
+# site PC that also runs the operator's browser + sorter UI. 4 GB is
+# enough for image build (~3 GB peak) and runtime (~1.5 GB).
+memory=4GB
+
+# Logical CPUs the WSL VM may use. YOLO-nano CPU inference is single-
+# threaded heavy; 2 leaves the rest of the cores for the host.
+processors=2
+
+# Swap inside the WSL VM. Cushion against OOM during image build.
+swap=2GB
+
+# Make localhost:9501 reachable from the Windows browser without extra
+# port-forwarding (the default in current Docker Desktop, set here
+# explicitly so the behaviour survives a Docker Desktop downgrade).
+localhostForwarding=true

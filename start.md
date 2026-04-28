@@ -83,15 +83,18 @@ Paste the URL into **Live Inference → RTSP URL** in the web UI. Change factory
 
 ## 🚢 Deploying to a site PC
 
-Site PCs track the **`deploy`** branch — runtime-only subset, no training / compression / docs. From a fresh Ubuntu site PC:
+Site PCs track the **`deploy`** branch — runtime-only subset, no training / compression / docs. Two host platforms:
 
+**Linux** (Ubuntu 22.04 / 24.04, GPU or CPU):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/deploy/install.sh | bash
 ```
 
-This clones the `deploy` branch, installs Docker, and walks through the rest. See the `deploy` branch's own `start.md` for the full on-site playbook.
+**Windows** (10 build 19041+ / Windows 11, CPU-only): clone or unzip the `deploy` branch into `C:\logistic`, then **double-click `Install.bat`** at the repo root. UAC will prompt; the installer drops Docker Desktop with the WSL2 backend, writes a `%USERPROFILE%\.wslconfig` with conservative caps (4 GB / 2 vCPU), builds the CPU image, and creates a desktop shortcut. Operator never opens a Linux terminal.
 
-**When you change runtime-relevant files on `main`** (Dockerfiles, compose, `isidet/src/inference`, `webapp/`, `isidet/configs/`, shell wrappers), refresh `deploy` by replaying the deletion set from commit `a6ead19` — see its commit message for the canonical list.
+Both paths converge on the same web stack at **http://localhost:9501**. See the `deploy` branch's own `start.md` for the full on-site playbook for either platform.
+
+**When you change runtime-relevant files on `main`** (Dockerfiles, compose, `isidet/src/inference`, `webapp/`, `isidet/configs/`, shell wrappers, `deploy/windows/*`), refresh `deploy` by replaying the deletion set from commit `a6ead19` — see its commit message for the canonical list.
 
 ---
 
