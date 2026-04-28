@@ -359,7 +359,11 @@ class StreamHandler:
                 with open(settings_path) as f:
                     settings = json.load(f)
                 engine.skip_masks = bool(settings.get('skip_masks', False))
-                logger.info(f"VisionEngine render: skip_masks={engine.skip_masks}")
+                engine.skip_traces = bool(settings.get('skip_traces', False))
+                logger.info(
+                    f"VisionEngine render: skip_masks={engine.skip_masks} "
+                    f"skip_traces={engine.skip_traces}"
+                )
         except Exception:
             pass
 

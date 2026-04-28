@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.14-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.15-fps">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -378,6 +378,11 @@
                             <span data-i18n="set_skip_masks_label">Skip mask drawing (lightweight render)</span>
                         </label>
 
+                        <label title="Skip the motion-trail polylines drawn behind each tracked object. Decorative; cheap win.">
+                            <input type="checkbox" id="set_skip_traces" style="margin-right: 8px; vertical-align: middle;">
+                            <span data-i18n="set_skip_traces_label">Skip trace lines (no motion trail)</span>
+                        </label>
+
                         <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="perf_settings_hint">
                             Restart the stream after saving for changes to take effect.
                         </p>
@@ -460,7 +465,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.14-fps"></script>
+    <script src="/static/js/main.js?v=2.15-fps"></script>
 </body>
 
 </html>

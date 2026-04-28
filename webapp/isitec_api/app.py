@@ -264,11 +264,13 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             )
     if 'skip_masks' in request_body:
         request_body['skip_masks'] = bool(request_body['skip_masks'])
+    if 'skip_traces' in request_body:
+        request_body['skip_traces'] = bool(request_body['skip_traces'])
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
-        'belt_direction', 'cpu_threads', 'skip_masks',
+        'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
     )
     current = _load_settings()
     for k in allowed_keys:

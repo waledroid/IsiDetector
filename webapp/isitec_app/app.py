@@ -183,11 +183,13 @@ def settings():
             return jsonify({"status": "error", "message": str(e)}), 400
     if 'skip_masks' in data:
         data['skip_masks'] = bool(data['skip_masks'])
+    if 'skip_traces' in data:
+        data['skip_traces'] = bool(data['skip_traces'])
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
-        'belt_direction', 'cpu_threads', 'skip_masks',
+        'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
     )
     current = _load_settings()
     for k in allowed_keys:

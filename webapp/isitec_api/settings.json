@@ -9,5 +9,6 @@
   "line_position": 0.5,
   "belt_direction": "left_to_right",
   "cpu_threads": 8,
-  "skip_masks": false
+  "skip_masks": false,
+  "skip_traces": false
 }

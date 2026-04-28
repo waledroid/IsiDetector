@@ -101,11 +101,14 @@ class VisionEngine:
         self._frame_w = 0
         self._frame_h = 0
 
-        # 7. Render flags — let the operator skip per-frame mask blending
-        # for a big FPS win on busy belts (mask alpha-blend is the most
-        # expensive supervision call, and scales with N detections).
-        # Boxes + labels still draw, so the UI stays informative.
+        # 7. Render flags — let the operator skip per-frame work that
+        # scales with detection count for FPS on busy belts. Boxes +
+        # labels always draw so the UI stays informative.
+        # - skip_masks: skip mask alpha-blend (biggest single win).
+        # - skip_traces: skip the motion-trail polylines behind tracker
+        #   IDs (decorative; trail builds up over time so cost grows).
         self.skip_masks = False
+        self.skip_traces = False
 
     # Belt direction → leading-edge anchor map. The leading edge is the side
     # of the bbox that enters the line zone FIRST given the belt's motion.
@@ -262,7 +265,10 @@ class VisionEngine:
         if detections.mask is not None and not self.skip_masks:
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
 
-        annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
+        # Trace lines (motion trail) are decorative and grow with track
+        # history; cheap to skip when chasing FPS on a CPU site PC.
+        if not self.skip_traces:
+            annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
         annotated = self.box_annotator.annotate(scene=annotated, detections=detections)
         
         if detections.tracker_id is not None:

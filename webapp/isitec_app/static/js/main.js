@@ -39,6 +39,7 @@ const translations = {
         "perf_settings_hint": "Restart the stream after saving for changes to take effect.",
         "set_cpu_threads_label": "CPU Threads",
         "set_skip_masks_label": "Skip mask drawing (lightweight render)",
+        "set_skip_traces_label": "Skip trace lines (no motion trail)",
         "about_title": "About ISITEC visionAI",
         "about_desc": "Industrial Object Detection and Tracking Platform",
         "version": "Version 1.0.0-beta",
@@ -109,6 +110,7 @@ const translations = {
         "perf_settings_hint": "Redémarrer le flux après l'enregistrement pour appliquer les changements.",
         "set_cpu_threads_label": "Fils CPU",
         "set_skip_masks_label": "Désactiver les masques (rendu allégé)",
+        "set_skip_traces_label": "Désactiver les traces (pas de traînée)",
         "about_title": "À propos d'ISITEC visionAI",
         "about_desc": "Plateforme industrielle de détection et de suivi d'objets",
         "version": "Version 1.0.0-bêta",
@@ -1190,6 +1192,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cpuThreadsValEl) cpuThreadsValEl.textContent = cpuThreads;
         const skipMasksEl = document.getElementById('set_skip_masks');
         if (skipMasksEl) skipMasksEl.checked = !!serverSettings.skip_masks;
+        const skipTracesEl = document.getElementById('set_skip_traces');
+        if (skipTracesEl) skipTracesEl.checked = !!serverSettings.skip_traces;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1284,6 +1288,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 belt_direction: beltDirection,
                 cpu_threads:   parseInt(document.getElementById('set_cpu_threads').value),
                 skip_masks:    document.getElementById('set_skip_masks').checked,
+                skip_traces:   document.getElementById('set_skip_traces').checked,
             };
 
             // Save to server first — if it rejects (e.g. RF-DETR .xml,
