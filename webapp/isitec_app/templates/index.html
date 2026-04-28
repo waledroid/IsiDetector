@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.13">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.14-fps">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -367,6 +367,33 @@
                     </div>
                 </div>
 
+                <!-- PERFORMANCE CONFIG -->
+                <div class="settings-group" style="grid-column: 1 / -1;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#43a047;">PERF</span>
+                        <h3 data-i18n="perf_settings">Performance (CPU sites)</h3>
+                    </div>
+                    <div class="sg-body">
+                        <label title="OpenVINO inference threads. Default 8 leaves room for the operator's browser; raise on a dedicated host.">
+                            <span data-i18n="set_cpu_threads_label">CPU Threads</span>
+                            (<span id="val_cpu_threads">8</span>)
+                        </label>
+                        <div class="slider-wrap">
+                            <input type="range" id="set_cpu_threads" min="1" max="16" step="1" value="8">
+                            <span class="slider-val" id="val_cpu_threads_unit">threads</span>
+                        </div>
+
+                        <label title="Skip the per-frame mask alpha-blend. Big FPS win on busy belts; boxes + labels still draw.">
+                            <input type="checkbox" id="set_skip_masks" style="margin-right: 8px; vertical-align: middle;">
+                            <span data-i18n="set_skip_masks_label">Skip mask drawing (lightweight render)</span>
+                        </label>
+
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="perf_settings_hint">
+                            Restart the stream after saving for changes to take effect.
+                        </p>
+                    </div>
+                </div>
+
                 <!-- TRACKING LINE CONFIG -->
                 <div class="settings-group" style="grid-column: 1 / -1;">
                     <div class="sg-header">
@@ -443,7 +470,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.13"></script>
+    <script src="/static/js/main.js?v=2.14-fps"></script>
 </body>
 
 </html>

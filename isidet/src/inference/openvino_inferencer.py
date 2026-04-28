@@ -3,6 +3,7 @@ OpenVINO Inference Engine — optimized for CPU (Intel) deployment.
 Loads models exported via export_engine.py (.xml + .bin format).
 """
 
+import os
 import cv2
 import numpy as np
 import supervision as sv
@@ -29,6 +30,7 @@ class OpenVINOInferencer(BaseInferencer):
         conf_threshold: float = 0.5,
         device: str = None,
         imgsz: int = None,
+        cpu_threads: int = None,
     ):
         super().__init__(model_path, conf_threshold, device, imgsz)
 
@@ -47,6 +49,30 @@ class OpenVINOInferencer(BaseInferencer):
                 ov_device = "GPU"
             else:
                 logger.info(f"Intel GPU not available, using CPU. Available: {available}")
+
+        # Tune for single-stream realtime. Default OpenVINO hint is THROUGHPUT
+        # (multi-stream, batch-style), wrong for our single-camera serial pipeline.
+        # LATENCY pours every allowed thread into one frame at a time.
+        # Resolve cpu_threads: explicit ctor arg > auto (cpu_count - 4, Chrome-aware).
+        if cpu_threads is not None:
+            n_threads = max(1, int(cpu_threads))
+        else:
+            cpu = os.cpu_count() or 4
+            n_threads = max(1, cpu - 4)
+        try:
+            core.set_property(ov_device, {
+                "PERFORMANCE_HINT": "LATENCY",
+                "INFERENCE_NUM_THREADS": str(n_threads),
+                "NUM_STREAMS": "1",
+            })
+            logger.info(
+                f"OpenVINO compile: {ov_device} hint=LATENCY threads={n_threads} "
+                f"(host has {os.cpu_count()} logical cores)"
+            )
+        except Exception as e:
+            # Older OpenVINO versions reject some properties — fall back silently
+            # so we never break stream startup over a tuning hint.
+            logger.warning(f"OpenVINO set_property failed (using defaults): {e}")
 
         self.compiled = core.compile_model(model, ov_device)
         self.infer_request = self.compiled.create_infer_request()

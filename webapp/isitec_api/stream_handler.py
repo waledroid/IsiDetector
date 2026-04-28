@@ -348,6 +348,21 @@ class StreamHandler:
         except Exception:
             pass
 
+    def _apply_render_settings(self, engine):
+        """Load render-perf settings from settings.json and apply to engine.
+
+        Mirrors the Flask backend; see isitec_app/stream_handler.py.
+        """
+        settings_path = Path(__file__).parent / 'settings.json'
+        try:
+            if settings_path.exists():
+                with open(settings_path) as f:
+                    settings = json.load(f)
+                engine.skip_masks = bool(settings.get('skip_masks', False))
+                logger.info(f"VisionEngine render: skip_masks={engine.skip_masks}")
+        except Exception:
+            pass
+
     def get_stats(self):
         with self.lock:
             stats = {
@@ -511,6 +526,18 @@ class StreamHandler:
         has_gpu = self.monitor.has_gpu
         device_label = "GPU" if has_gpu else "CPU"
 
+        # Read perf knobs from settings.json (Settings UI is source of truth).
+        try:
+            from pathlib import Path as _P
+            settings_path = _P(__file__).parent / 'settings.json'
+            if settings_path.exists():
+                ui_settings = json.loads(settings_path.read_text())
+            else:
+                ui_settings = {}
+        except Exception:
+            ui_settings = {}
+        cpu_threads = ui_settings.get('cpu_threads')
+
         model_path = weights
         if not model_path:
             model_path = self._resolve_default_weights(model_type)
@@ -529,7 +556,10 @@ class StreamHandler:
             mode_text = f"TensorRT • {device_label}"
         elif ext == '.xml':
             from src.inference.openvino_inferencer import OpenVINOInferencer
-            base_engine = OpenVINOInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
+            base_engine = OpenVINOInferencer(
+                model_path=model_path, conf_threshold=final_conf,
+                device=device, imgsz=imgsz, cpu_threads=cpu_threads,
+            )
             mode_text = f"OpenVINO • CPU"
         elif ext == '.onnx':
             from src.inference.onnx_inferencer import ONNXInferencer
@@ -599,6 +629,9 @@ class StreamHandler:
                 # swap_inferencer rebuilt the palette annotators with defaults —
                 # re-apply our web-resolution tuning on top.
                 self._tune_annotators(self.engine)
+                # Re-read render flags on every Start so a Settings toggle
+                # (e.g. skip_masks) takes effect even if the source is unchanged.
+                self._apply_render_settings(self.engine)
                 # Backfill class_totals with any NEW class names the new model exposes
                 # (without zeroing existing counts for classes that still apply).
                 for name in base_engine.class_names.values():
@@ -626,6 +659,7 @@ class StreamHandler:
                 self.engine = VisionEngine(inferencer=base_engine, config=self.config)
                 self._tune_annotators(self.engine)
                 self._apply_line_settings(self.engine)
+                self._apply_render_settings(self.engine)
                 self.mode_text = mode_text
             except ValueError as e:
                 return False, str(e)

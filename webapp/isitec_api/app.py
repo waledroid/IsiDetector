@@ -251,7 +251,25 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             status_code=400,
         )
 
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
+    # Range-validate the perf knobs before they hit settings.json.
+    if 'cpu_threads' in request_body:
+        try:
+            n = int(request_body['cpu_threads'])
+            if not (1 <= n <= 64):
+                raise ValueError("cpu_threads must be between 1 and 64")
+            request_body['cpu_threads'] = n
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+    if 'skip_masks' in request_body:
+        request_body['skip_masks'] = bool(request_body['skip_masks'])
+
+    allowed_keys = (
+        'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
+        'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
+        'belt_direction', 'cpu_threads', 'skip_masks',
+    )
     current = _load_settings()
     for k in allowed_keys:
         if k in request_body:

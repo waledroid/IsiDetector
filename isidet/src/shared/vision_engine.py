@@ -101,6 +101,12 @@ class VisionEngine:
         self._frame_w = 0
         self._frame_h = 0
 
+        # 7. Render flags — let the operator skip per-frame mask blending
+        # for a big FPS win on busy belts (mask alpha-blend is the most
+        # expensive supervision call, and scales with N detections).
+        # Boxes + labels still draw, so the UI stays informative.
+        self.skip_masks = False
+
     # Belt direction → leading-edge anchor map. The leading edge is the side
     # of the bbox that enters the line zone FIRST given the belt's motion.
     # Using the leading edge maximises the sorter's reaction window.
@@ -249,9 +255,13 @@ class VisionEngine:
 
         # 3. Visual Composition
         annotated = frame.copy()
-        if detections.mask is not None:
+        # Mask alpha-blending is the most expensive supervision call and
+        # scales with detection count. On a CPU-only site PC this is what
+        # makes FPS drop visibly when the belt fills up. The operator can
+        # disable it from the Settings page; boxes + labels still draw.
+        if detections.mask is not None and not self.skip_masks:
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
-        
+
         annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
         annotated = self.box_annotator.annotate(scene=annotated, detections=detections)
         

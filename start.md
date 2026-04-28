@@ -1,4 +1,37 @@
-# 🚀 IsiDetector — Quick Deployment Guide
+# 🚀 IsiDetector — `fps` test branch (CPU-tuning experiment)
+
+> ⚠ **You're on the `fps` branch, not `deploy`.** This is a throwaway test branch
+> derived from `deploy` with two extra Settings knobs to A/B CPU performance on
+> a dedicated site PC: a **CPU Threads** slider and a **Skip mask drawing**
+> checkbox. Compose project name is `fps` (not `deploy`) so this clone can run
+> alongside a working `~/logistic/` install without colliding on
+> `docker compose ps` / volumes / networks.
+>
+> **Site-PC test workflow:**
+> ```bash
+> # 1. Stop the working stack to free port 9501
+> cd ~/logistic && docker compose down
+>
+> # 2. Clone this branch into a separate folder
+> git clone --branch fps https://github.com/waledroid/IsiDetector.git ~/fps
+> cd ~/fps && ./up.sh --force-cpu
+>
+> # 3. In the browser: dev-unlock, Settings → tweak CPU Threads + Skip mask
+> #    drawing, Save. Then Stop / Start the stream so the new values take
+> #    effect, and watch FPS in the Performance tab.
+> ```
+>
+> **Rollback (under 30 s):**
+> ```bash
+> cd ~/fps && docker compose down
+> cd ~/logistic && ./up.sh --force-cpu
+> ```
+>
+> The two new knobs are **not yet in `deploy`**. If they win, the change set
+> gets cherry-picked back to `deploy` later. Until then, treat this branch as
+> experimental.
+
+---
 
 You're on the **`deploy`** branch — the lean runtime subset shipped to site PCs. No training, no compression, no docs source. Just the inference stack and the sorter UDP feed.
 

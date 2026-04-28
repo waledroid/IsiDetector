@@ -171,7 +171,24 @@ def settings():
             ),
         }), 400
 
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
+    # Range-validate the perf knobs before they hit settings.json.
+    # Bad values would only fail later at engine construction, so reject early.
+    if 'cpu_threads' in data:
+        try:
+            n = int(data['cpu_threads'])
+            if not (1 <= n <= 64):
+                raise ValueError("cpu_threads must be between 1 and 64")
+            data['cpu_threads'] = n
+        except (ValueError, TypeError) as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+    if 'skip_masks' in data:
+        data['skip_masks'] = bool(data['skip_masks'])
+
+    allowed_keys = (
+        'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
+        'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
+        'belt_direction', 'cpu_threads', 'skip_masks',
+    )
     current = _load_settings()
     for k in allowed_keys:
         if k in data:

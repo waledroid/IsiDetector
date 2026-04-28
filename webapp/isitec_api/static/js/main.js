@@ -35,6 +35,10 @@ const translations = {
         "model_management": "Model Management",
         "model_soon": "Model Directory Viewer Coming Soon.",
         "system_settings": "System Settings",
+        "perf_settings": "Performance (CPU sites)",
+        "perf_settings_hint": "Restart the stream after saving for changes to take effect.",
+        "set_cpu_threads_label": "CPU Threads",
+        "set_skip_masks_label": "Skip mask drawing (lightweight render)",
         "about_title": "About ISITEC visionAI",
         "about_desc": "Industrial Object Detection and Tracking Platform",
         "version": "Version 1.0.0-beta",
@@ -101,6 +105,10 @@ const translations = {
         "model_management": "Gestion des modèles",
         "model_soon": "Visionneur de répertoire de modèles à venir.",
         "system_settings": "Paramètres du système",
+        "perf_settings": "Performance (sites CPU)",
+        "perf_settings_hint": "Redémarrer le flux après l'enregistrement pour appliquer les changements.",
+        "set_cpu_threads_label": "Fils CPU",
+        "set_skip_masks_label": "Désactiver les masques (rendu allégé)",
         "about_title": "À propos d'ISITEC visionAI",
         "about_desc": "Plateforme industrielle de détection et de suivi d'objets",
         "version": "Version 1.0.0-bêta",
@@ -1120,6 +1128,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+    // CPU threads slider — plain integer display (no `px` / `.XX` suffix)
+    const cpuThreadsSlider = document.getElementById('set_cpu_threads');
+    const cpuThreadsVal = document.getElementById('val_cpu_threads');
+    if (cpuThreadsSlider && cpuThreadsVal) {
+        cpuThreadsSlider.addEventListener('input', (e) => {
+            cpuThreadsVal.textContent = e.target.value;
+        });
+    }
 
     function applySliderValue(id, val) {
         const slider = document.getElementById(`set_${id}`);
@@ -1142,6 +1158,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const val = serverSettings[id] || localStorage.getItem(`isitec_${id}`);
             if (val != null) applySliderValue(id, val);
         });
+
+        // Performance knobs (cpu_threads slider + skip_masks checkbox)
+        const cpuThreads = serverSettings.cpu_threads ?? 8;
+        const cpuThreadsEl = document.getElementById('set_cpu_threads');
+        const cpuThreadsValEl = document.getElementById('val_cpu_threads');
+        if (cpuThreadsEl) cpuThreadsEl.value = cpuThreads;
+        if (cpuThreadsValEl) cpuThreadsValEl.textContent = cpuThreads;
+        const skipMasksEl = document.getElementById('set_skip_masks');
+        if (skipMasksEl) skipMasksEl.checked = !!serverSettings.skip_masks;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1230,6 +1255,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 line_orientation: lineOrientation,
                 line_position: parseInt(lineSlider.value) / 100,
                 belt_direction: beltDirection,
+                cpu_threads:   parseInt(document.getElementById('set_cpu_threads').value),
+                skip_masks:    document.getElementById('set_skip_masks').checked,
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
