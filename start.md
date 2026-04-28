@@ -21,22 +21,25 @@ Same web stack, same UDP protocol, same Docker images on every box. Only the boo
 On a fresh Ubuntu host with internet:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/deploy/install.sh | bash
+# Need git first (curl is optional). Install if missing:
+sudo apt install -y git
+
+# Clone, build, run
+git clone --branch deploy https://github.com/waledroid/IsiDetector.git ~/logistic
+cd ~/logistic
+./run_start.sh                # auto: GPU if nvidia-smi works, CPU otherwise
+# (or force the path on a CPU-only host:  ./run_start.sh --force-cpu)
+
+# Log out and back in so the docker group membership takes effect, then:
+./up.sh                       # opens the browser at http://localhost:9501
 ```
 
-What it does, in order:
-1. Preflight (sudo, Ubuntu version, no-WSL2 reminder).
-2. `apt install` git + curl if missing.
-3. `git clone --branch deploy --depth 1` into `~/logistic`.
-4. `chmod +x` the runtime scripts.
-5. Asks if you want to run `./run_start.sh` now (Y default).
+`run_start.sh` installs Docker (+ NVIDIA Container Toolkit on GPU hosts), builds the right image (`Dockerfile` for GPU, `Dockerfile.cpu` for CPU), and writes the deployment marker `.deployment.env` so future `./up.sh` calls pick the same profile. The deploy branch already ships a working trained YOLO model under `isidet/runs/segment/models/yolo/yolo26n_320_200/`, so the web UI's model dropdowns are populated immediately — no scp / USB transfer needed.
 
-`run_start.sh` then auto-detects GPU vs CPU via `nvidia-smi`, installs Docker (+ the NVIDIA Container Toolkit on GPU hosts), builds the right image, and writes the deployment marker `.deployment.env`. Log out and back in afterwards so your Docker group membership takes effect.
+**Alternative (single curl one-liner)** — only useful when curl is already on the host. Wraps the same flow plus an interactive `Run ./run_start.sh now? [Y/n]` prompt at the end:
 
-Override the auto-detection if needed:
 ```bash
-./run_start.sh --force-cpu     # build CPU image even with GPU present
-./run_start.sh --force-gpu     # build CUDA image on a no-GPU box (rare)
+curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/deploy/install.sh | bash
 ```
 
 ### 🪟 Windows (CPU only)

@@ -5,18 +5,28 @@
 
 # ── isidet/ bucket — ML core, mostly large artefacts ────────────────────────
 /isidet/data/
-/isidet/runs/
 /isidet/logs/
-#
-# models/ is special: we ignore EVERYTHING under it (trained run outputs,
-# exported ONNX/XML/engine files, etc.) but keep the pretrained/ sub-dir
-# tracked. Two rules are needed because git does NOT walk into an
-# excluded directory, so using `/isidet/models/` as the exclude pattern
-# would make the !pretrained/ exception have no effect. Instead, we
-# exclude models/'s CONTENTS with `models/*` and then re-include
-# pretrained/ so git keeps walking.
+
+# runs/ — exclude all training artefacts EXCEPT one specific trained model
+# run we ship with the deploy branch so a single `git clone` gives the
+# site PC a working detector out of the box (no scp / USB / cloud fetch
+# needed). Each parent directory must be re-included before git recurses
+# into its child — hence the layered chain below.
+/isidet/runs/*
+!/isidet/runs/segment/
+/isidet/runs/segment/*
+!/isidet/runs/segment/models/
+/isidet/runs/segment/models/*
+!/isidet/runs/segment/models/yolo/
+/isidet/runs/segment/models/yolo/*
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/**
+
+# models/ — fully excluded on the deploy branch. Pretrained baselines
+# (yolo26n.pt, yolov8m-seg.pt) live on the `main` branch as training
+# inputs; site PCs never use them, only the exported / trained models
+# under runs/.
 /isidet/models/*
-!/isidet/models/pretrained/
 
 # ── webapp/ bucket — per-backend runtime state ──────────────────────────────
 /webapp/isitec_app/uploads/
@@ -36,11 +46,10 @@
 *.onnx
 *.pt
 
-# ── Exceptions for the two baseline pretrained weights that ship with
-#    the repo. These must come AFTER *.pt above since gitignore is
-#    last-match-wins.
-!/isidet/models/pretrained/yolo26n.pt
-!/isidet/models/pretrained/yolov8m-seg.pt
+# Re-include every weight artefact inside the shipped trained model run.
+# This rule must come AFTER the extension rules above since gitignore is
+# last-match-wins.
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/**
 
 # ── Python hygiene ──────────────────────────────────────────────────────────
 **/__pycache__/
