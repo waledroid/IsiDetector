@@ -16,9 +16,12 @@
 > git clone --branch fps https://github.com/waledroid/IsiDetector.git ~/fps
 > cd ~/fps && ./up.sh --force-cpu
 >
-> # 3. In the browser: dev-unlock, Settings → tweak CPU Threads + Skip mask
-> #    drawing, Save. Then Stop / Start the stream so the new values take
-> #    effect, and watch FPS in the Performance tab.
+> # 3. In the browser: dev-unlock, Settings → Performance group:
+> #      • CPU Threads slider
+> #      • Skip mask drawing  (biggest win on busy belts)
+> #      • Skip trace lines    (removes motion-trail polylines)
+> #    Save, Stop / Start the stream so the new values take effect,
+> #    and watch FPS in the Performance tab.
 > ```
 >
 > **Rollback (under 30 s):**
