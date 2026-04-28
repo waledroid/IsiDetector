@@ -1,0 +1,12 @@
+# Force LF on shell scripts so Windows checkouts don't break bash on Linux
+# site PCs (a CRLF on a `#!/usr/bin/env bash` line gives "command not found").
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows scripts use CRLF (PowerShell + cmd.exe default expectation)
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# WSL config template — read by the Linux WSL VM, keep LF
+wslconfig.template text eol=lf
