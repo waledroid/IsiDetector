@@ -51,29 +51,21 @@ Same web stack, same UDP protocol, same Docker images on every box. Only the boo
 
 ### 🐧 Linux (GPU or CPU — auto-detected)
 
-On a fresh Ubuntu host with internet:
+Three commands on a fresh Ubuntu host with internet (assumes `git` is already installed — `sudo apt install -y git` if not):
 
 ```bash
-# Need git first (curl is optional). Install if missing:
-sudo apt install -y git
-
-# Clone, build, run
 git clone --branch deploy https://github.com/waledroid/IsiDetector.git ~/logistic
 cd ~/logistic
-./run_start.sh                # auto: GPU if nvidia-smi works, CPU otherwise
-# (or force the path on a CPU-only host:  ./run_start.sh --force-cpu)
-
-# Log out and back in so the docker group membership takes effect, then:
-./up.sh                       # opens the browser at http://localhost:9501
+./run_start.sh --force-cpu      # drop --force-cpu if the host has an NVIDIA GPU
 ```
 
-`run_start.sh` installs Docker (+ NVIDIA Container Toolkit on GPU hosts), builds the right image (`Dockerfile` for GPU, `Dockerfile.cpu` for CPU), and writes the deployment marker `.deployment.env` so future `./up.sh` calls pick the same profile. The deploy branch already ships a working trained YOLO model under `isidet/runs/segment/models/yolo/yolo26n_320_200/`, so the web UI's model dropdowns are populated immediately — no scp / USB transfer needed.
-
-**Alternative (single curl one-liner)** — only useful when curl is already on the host. Wraps the same flow plus an interactive `Run ./run_start.sh now? [Y/n]` prompt at the end:
+Then **log out and back in** (so the `docker` group membership takes effect), and:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/waledroid/IsiDetector/deploy/install.sh | bash
+cd ~/logistic && ./up.sh        # opens the browser at http://localhost:9501
 ```
+
+That's it. `run_start.sh` installs Docker (+ NVIDIA Container Toolkit on GPU hosts), builds the right image, and writes a deployment marker so future `./up.sh` calls pick the same profile. The deploy branch ships a working trained YOLO model under `isidet/runs/segment/models/yolo/yolo26n_320_200/` — no scp / USB transfer needed; the model dropdowns populate immediately.
 
 ### 🪟 Windows (CPU only)
 
@@ -113,6 +105,43 @@ docker compose ps              # container status
 docker compose logs -f web     # live logs
 docker compose down            # stop the stack
 ```
+
+---
+
+## 🔁 Switching between `~/logistic` (deploy) and `~/fps` (test branch)
+
+Only one stack runs at a time — both bind port 9501. To swap between the
+working **deploy** stack and the **fps** test stack, stop one and start the
+other.
+
+**One-time setup** (clone the test branch alongside — only needed once):
+
+```bash
+git clone --branch fps https://github.com/waledroid/IsiDetector.git ~/fps
+```
+
+**Switch from `~/logistic` (deploy) → `~/fps` (test):**
+```bash
+cd ~/logistic && docker compose down && cd ~/fps && ./up.sh --force-cpu
+```
+
+**Switch back from `~/fps` (test) → `~/logistic` (deploy):**
+```bash
+cd ~/fps && docker compose down && cd ~/logistic && ./up.sh --force-cpu
+```
+
+Each clone keeps its own `settings.json` (RTSP URL, line config, CPU
+threads, render toggles) so flipping back and forth doesn't lose your
+configuration on either side.
+
+To pull the latest changes on either branch before the next switch:
+```bash
+cd ~/fps && git pull            # or: cd ~/logistic && git pull
+```
+
+When you're happy with `fps` and want it to become the canonical install,
+the change set gets cherry-picked back into `deploy` and you can
+`rm -rf ~/fps` after pulling on `~/logistic`.
 
 ---
 
