@@ -45,6 +45,10 @@ const translations = {
         "cam_settings": "Camera",
         "cam_settings_hint": "Tip: most IP cameras expose a sub-stream at a lower resolution — typically <code>stream=1</code> or <code>/102</code> in the URL path. On a CPU-only site PC, sub-stream gives much higher FPS.",
         "set_rtsp_url_label": "Default RTSP URL",
+        "sorter_settings": "Sorter (UDP target)",
+        "sorter_settings_hint": "Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.",
+        "set_udp_host_label": "Sorter IP / hostname",
+        "set_udp_port_label": "UDP port",
         "about_title": "About ISITEC visionAI",
         "about_desc": "Industrial Object Detection and Tracking Platform",
         "version": "Version 1.0.0-beta",
@@ -121,6 +125,10 @@ const translations = {
         "cam_settings": "Caméra",
         "cam_settings_hint": "Astuce : la plupart des caméras IP exposent un sous-flux à plus faible résolution — typiquement <code>stream=1</code> ou <code>/102</code> dans l'URL. Sur un PC site CPU-only, le sous-flux donne un FPS beaucoup plus élevé.",
         "set_rtsp_url_label": "URL RTSP par défaut",
+        "sorter_settings": "Trieur (cible UDP)",
+        "sorter_settings_hint": "Chaque franchissement de ligne envoie un datagramme JSON ~60 octets <code>{class, id, ts}</code> à cette adresse. Enregistrer → l'éditeur retargete immédiatement, pas de redémarrage du flux. Tester avec <code>./net.sh test</code>.",
+        "set_udp_host_label": "IP / hôte du trieur",
+        "set_udp_port_label": "Port UDP",
         "about_title": "À propos d'ISITEC visionAI",
         "about_desc": "Plateforme industrielle de détection et de suivi d'objets",
         "version": "Version 1.0.0-bêta",
@@ -159,7 +167,7 @@ const msgTrans = {
         "msg_network_err": "Network error.",
         "msg_starting": "Starting inference stream...",
         "msg_enter_url": "Please enter a valid source URL/ID.",
-        "placeholder_rtsp": "Enter RTSP URL (e.g. rtsp://192.168.1.100:554/stream)",
+        "placeholder_rtsp": "Enter RTSP URL (e.g. rtsp://192.168.1.108:554/stream)",
         "placeholder_cam": "Enter Camera ID (e.g. 0 or 1)"
     },
     fr: {
@@ -168,7 +176,7 @@ const msgTrans = {
         "msg_network_err": "Erreur réseau.",
         "msg_starting": "Démarrage automatique du flux d'inférence...",
         "msg_enter_url": "Veuillez entrer une URL / ID de source valide.",
-        "placeholder_rtsp": "Entrez l'URL RTSP (ex. rtsp://192.168.1.100:554/stream)",
+        "placeholder_rtsp": "Entrez l'URL RTSP (ex. rtsp://192.168.1.108:554/stream)",
         "placeholder_cam": "Entrez l'ID de la caméra (ex. 0 ou 1)"
     }
 };
@@ -1219,6 +1227,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (skipTracesEl) skipTracesEl.checked = !!serverSettings.skip_traces;
         const rtspUrlEl = document.getElementById('set_rtsp_url');
         if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
+        const udpHostEl = document.getElementById('set_udp_host');
+        if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '127.0.0.1';
+        const udpPortEl = document.getElementById('set_udp_port');
+        if (udpPortEl) udpPortEl.value = serverSettings.udp_port ?? 9502;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1315,6 +1327,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 skip_masks:    document.getElementById('set_skip_masks').checked,
                 skip_traces:   document.getElementById('set_skip_traces').checked,
                 rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
+                udp_host:      document.getElementById('set_udp_host').value.trim(),
+                udp_port:      parseInt(document.getElementById('set_udp_port').value),
             };
 
             // Save to server first — if it rejects (e.g. RF-DETR .xml,

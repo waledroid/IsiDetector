@@ -276,18 +276,49 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
                 status_code=400,
             )
         request_body['rtsp_url'] = v.strip()
+    if 'udp_host' in request_body:
+        v = request_body['udp_host']
+        if not isinstance(v, str) or len(v) > 255 or not v.strip():
+            return JSONResponse(
+                {"status": "error",
+                 "message": "udp_host must be a non-empty string (IP or hostname)"},
+                status_code=400,
+            )
+        request_body['udp_host'] = v.strip()
+    if 'udp_port' in request_body:
+        try:
+            n = int(request_body['udp_port'])
+            if not (1 <= n <= 65535):
+                raise ValueError("udp_port must be between 1 and 65535")
+            request_body['udp_port'] = n
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
-        'rtsp_url',
+        'rtsp_url', 'udp_host', 'udp_port',
     )
     current = _load_settings()
     for k in allowed_keys:
         if k in request_body:
             current[k] = request_body[k]
     _save_settings(current)
+
+    # Live-retarget the UDP publisher if the sorter address changed —
+    # spares the operator a stream restart for what's a single-call config.
+    if 'udp_host' in request_body or 'udp_port' in request_body:
+        try:
+            stream_handler.publisher.update_target(
+                current.get('udp_host', '127.0.0.1'),
+                int(current.get('udp_port', 9502)),
+            )
+        except Exception:
+            pass
+
     return {"status": "success", "settings": current}
 
 

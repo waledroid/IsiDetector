@@ -194,18 +194,46 @@ def settings():
                 "message": "rtsp_url must be a string ≤ 512 chars starting with rtsp:// or rtspt://",
             }), 400
         data['rtsp_url'] = v.strip()
+    if 'udp_host' in data:
+        v = data['udp_host']
+        if not isinstance(v, str) or len(v) > 255 or not v.strip():
+            return jsonify({
+                "status": "error",
+                "message": "udp_host must be a non-empty string (IP or hostname)",
+            }), 400
+        data['udp_host'] = v.strip()
+    if 'udp_port' in data:
+        try:
+            n = int(data['udp_port'])
+            if not (1 <= n <= 65535):
+                raise ValueError("udp_port must be between 1 and 65535")
+            data['udp_port'] = n
+        except (ValueError, TypeError) as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
-        'rtsp_url',
+        'rtsp_url', 'udp_host', 'udp_port',
     )
     current = _load_settings()
     for k in allowed_keys:
         if k in data:
             current[k] = data[k]
     _save_settings(current)
+
+    # Live-retarget the UDP publisher if the sorter address changed.
+    # Spares the operator a stream restart for what's a one-call config.
+    if 'udp_host' in data or 'udp_port' in data:
+        try:
+            stream_handler.publisher.update_target(
+                current.get('udp_host', '127.0.0.1'),
+                int(current.get('udp_port', 9502)),
+            )
+        except Exception:
+            pass  # publisher may not be initialised yet — settings still saved
+
     return jsonify({"status": "success", "settings": current})
 
 @app.route('/api/performance', methods=['GET'])

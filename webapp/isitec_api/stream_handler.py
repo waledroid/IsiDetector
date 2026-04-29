@@ -330,10 +330,26 @@ class StreamHandler:
         _, _buf = cv2.imencode('.jpg', _blank)
         self._standby_frame = _buf.tobytes()
 
-        # UDP Telemetry — priority: env var > train.yaml > default
+        # UDP Telemetry — config priority (highest wins):
+        #   1. settings.json (operator-edited from Settings UI; persists)
+        #   2. UDP_HOST / UDP_PORT env vars (compose / .env)
+        #   3. train.yaml inference.udp.host / port
+        #   4. Hardcoded default 127.0.0.1:9502
         udp_cfg = self.config.get('inference', {}).get('udp', {})
-        udp_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '127.0.0.1'))
-        udp_port = int(os.environ.get('UDP_PORT', udp_cfg.get('port', 9502)))
+        env_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '127.0.0.1'))
+        env_port = int(os.environ.get('UDP_PORT', udp_cfg.get('port', 9502)))
+        udp_host, udp_port = env_host, env_port
+        try:
+            settings_path = Path(__file__).parent / 'settings.json'
+            if settings_path.exists():
+                with open(settings_path) as f:
+                    ui = json.load(f)
+                if isinstance(ui.get('udp_host'), str) and ui['udp_host'].strip():
+                    udp_host = ui['udp_host'].strip()
+                if isinstance(ui.get('udp_port'), int) and 1 <= ui['udp_port'] <= 65535:
+                    udp_port = ui['udp_port']
+        except Exception:
+            pass
         udp_enabled = udp_cfg.get('enabled', True)
         self.publisher = UDPPublisher(host=udp_host, port=udp_port, enabled=udp_enabled)
         logger.info(f"[UDP] Publisher ready → {self.publisher.host}:{self.publisher.port}")

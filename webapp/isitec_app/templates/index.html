@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.16-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.17-fps">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -333,6 +333,29 @@
                     </div>
                 </div>
 
+                <!-- SORTER / UDP CONFIG (where each line-crossing UDP datagram is sent) -->
+                <div class="settings-group" style="grid-column: 1 / -1; margin-bottom: 24px;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#7e57c2;">UDP</span>
+                        <h3 data-i18n="sorter_settings">Sorter (UDP target)</h3>
+                    </div>
+                    <div class="sg-body">
+                        <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+                            <div style="flex: 2 1 240px;">
+                                <label data-i18n="set_udp_host_label" title="Host or IP of the automate's PC that receives sort triggers.">Sorter IP / hostname</label>
+                                <input type="text" id="set_udp_host" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="10.0.0.1">
+                            </div>
+                            <div style="flex: 0 0 120px;">
+                                <label data-i18n="set_udp_port_label">UDP port</label>
+                                <input type="number" id="set_udp_port" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" min="1" max="65535" value="9502">
+                            </div>
+                        </div>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="sorter_settings_hint">
+                            Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="settings-grid">
                     <!-- MODE 1 CONFIG -->
                     <div class="settings-group">
@@ -495,7 +518,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.16-fps"></script>
+    <script src="/static/js/main.js?v=2.17-fps"></script>
 </body>
 
 </html>
