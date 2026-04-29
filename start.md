@@ -246,16 +246,18 @@ Paste the URL into **Live Inference → RTSP URL** in the web UI. Change factory
 ### 🐧 Linux (Ubuntu Desktop with NetworkManager)
 
 ```bash
-./net.sh show              # current IP/gateway/DNS, UDP target
-sudo ./net.sh apply        # freeze DHCP → static NetworkManager config
-./net.sh test              # 5-step reachability check incl. live UDP egress probe
-./net.sh manual            # bilingual (FR/EN) UDP protocol sheet for the automaticien
+./net.sh show              # current IP/gateway/DNS, UDP target (offline-tolerant)
+sudo ./net.sh setup        # interactive multi-NIC freeze — prompts per NIC for static/DHCP/skip + IP
+sudo ./net.sh apply        # legacy single-NIC freeze (works when there's a default gateway)
+./net.sh test              # reachability check incl. live UDP egress probe (offline-tolerant)
 sudo ./net.sh revert       # back to DHCP
 ```
 
+`setup` is the right starting point on a typical site PC (two LAN NICs, no internet uplink). It auto-discovers every physical NIC by name (`enp1s0`, `enp2s0`, etc.), shows current state, then prompts you per NIC. Saves the result with `autoconnect=yes` so it survives reboot.
+
 ### 🪟 Windows
 
-No `net.ps1` yet — set the static IP via the GUI (**Settings → Network → Ethernet → IP assignment → Manual**) using the values from your network sheet. Print the bilingual UDP protocol sheet for the automaticien from a Linux dev box (`./net.sh manual`) if you need a paper copy on site.
+No `net.ps1` yet — set the static IP via the GUI (**Settings → Network → Ethernet → IP assignment → Manual**) using the values from your network sheet.
 
 ---
 

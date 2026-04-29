@@ -94,14 +94,18 @@ docker compose exec web bash
 ### Network lock-down (site PC workflow — `net.sh`)
 
 ```bash
-./net.sh show        # current IP/gateway/DNS + UDP target (read-only, no sudo)
-./net.sh manual      # bilingual (FR/EN) protocol sheet for the automaticien
-./net.sh test        # 5 checks incl. live UDP egress probe (auto-escalates to sudo)
-./net.sh apply       # freeze DHCP config as static NM (auto-escalates to sudo)
+./net.sh show        # current IP/gateway/DNS + UDP target (read-only, no sudo, offline-tolerant)
+./net.sh setup       # interactive multi-NIC freeze (auto-escalates to sudo)
+./net.sh test        # reachability + live UDP egress probe; offline/no-docker → yellow skip
+./net.sh apply       # legacy single-NIC freeze of the DHCP-issued config (auto-escalates to sudo)
 ./net.sh revert      # back to DHCP (auto-escalates to sudo)
 ```
 
-`test`/`apply`/`revert` re-exec themselves via `sudo -E` if not already root (preserves flags via `ORIG_ARGS`). Read-only `show`/`manual` run as the regular user. Not for WSL2 or Ubuntu Server — gracefully errors with "NetworkManager not installed" if that's the host.
+`setup` is the right entry point for typical site PCs: two LAN NICs (e.g. `enp1s0` for the camera subnet, `enp2s0` for the automate subnet), no default gateway, no internet uplink. It enumerates every physical NIC via `ip -o link` (so down interfaces are still listed), prompts per NIC for `static / dhcp / skip`, then writes via `nmcli connection modify` — or `connection add` if no profile exists yet — with `autoconnect=yes` + `autoconnect-priority=100` so the config survives reboot. Gateway and DNS are optional in the static path (blank is fine on a no-uplink site).
+
+`apply` is the older single-NIC flow that freezes whatever the active DHCP profile picked up; useful on a normal LAN with a real default gateway.
+
+`test`/`apply`/`revert`/`setup` re-exec themselves via `sudo -E` if not already root (preserves flags via `ORIG_ARGS`). Read-only `show` runs as the regular user. Not for WSL2 or Ubuntu Server — gracefully errors with "NetworkManager not installed" if that's the host. The internet-reachability and Docker-egress checks in `test` degrade to yellow `skip` lines when the WAN cable is unplugged or the web container isn't running, so offline runs produce no `[FAIL]` noise.
 
 ---
 

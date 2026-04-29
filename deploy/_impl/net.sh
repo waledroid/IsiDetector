@@ -4,19 +4,18 @@
 #
 # Freezes the current DHCP-issued IP / gateway / DNS into a static
 # NetworkManager config so they can never drift after a restart, Wi-Fi
-# reconnect, or lease expiry — and prints a ready-to-email mini manual
-# for the automation engineer on the other end of the UDP link.
+# reconnect, or lease expiry. Site PCs typically have two NICs and no
+# default gateway — `setup` walks each NIC interactively for that case.
 #
 # Usage:
 #   ./net.sh                            # same as 'show'
 #   ./net.sh show                       # current network + UDP publisher state
+#   ./net.sh setup                      # interactive multi-NIC freeze, offline-clean (sudo)
 #   ./net.sh apply                      # lock the discovered values (sudo)
 #   ./net.sh apply --force              # same, skip confirm prompt
 #   ./net.sh apply [--ip ... | --gateway ... | --dns '...' | --conn NAME]
 #   ./net.sh revert                     # restore DHCP (sudo)
-#   ./net.sh test                       # reachability + live UDP egress
-#   ./net.sh manual                     # French mini-manual for the automaticien
-#   ./net.sh manual --en                # English variant
+#   ./net.sh test                       # reachability + live UDP egress (offline-tolerant)
 #   ./net.sh -h | --help
 #
 # Discovery-first design: no site-specific value (SSID, IP, gateway, automate
@@ -151,10 +150,9 @@ ARG_GATEWAY=""
 ARG_DNS=""
 ARG_AUTOMATE=""
 ARG_PORT=""
-ARG_LANG="fr"
 
 print_help() {
-    sed -n '2,24p' "$0" | sed 's/^# *//'
+    sed -n '2,23p' "$0" | sed 's/^# *//'
 }
 
 # Preserve the original args so the auto-sudo re-exec below can hand
@@ -164,7 +162,7 @@ ORIG_ARGS=("$@")
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        show|apply|revert|test|manual|help) CMD="$1" ;;
+        show|apply|revert|test|setup|help) CMD="$1" ;;
         --force)            ARG_FORCE=1 ;;
         --conn)             ARG_CONN="${2:-}"; shift ;;
         --conn=*)           ARG_CONN="${1#*=}" ;;
@@ -178,7 +176,6 @@ while [ $# -gt 0 ]; do
         --automate=*)       ARG_AUTOMATE="${1#*=}" ;;
         --port)             ARG_PORT="${2:-}"; shift ;;
         --port=*)           ARG_PORT="${1#*=}" ;;
-        --en)               ARG_LANG="en" ;;
         -h|--help)          print_help; exit 0 ;;
         *)                  fail "Unknown argument: $1"; echo "Try: $0 --help" >&2; exit 2 ;;
     esac
@@ -190,10 +187,10 @@ if [ "$CMD" = "help" ]; then print_help; exit 0; fi
 # ── Auto-escalate for root-only subcommands ─────────────────────────────────
 # `test` needs root to run tcpdump -w in the background (sudo -n inside
 # the script can't prompt, and without cached credentials the capture
-# silently fails). `apply` / `revert` need root to modify NetworkManager
-# state. `show` and `manual` are read-only / pure text — don't need root.
+# silently fails). `apply` / `revert` / `setup` need root to modify
+# NetworkManager state. `show` is read-only — doesn't need root.
 case "$CMD" in
-    test|apply|revert)
+    test|apply|revert|setup)
         if [ "$(id -u)" -ne 0 ]; then
             info "'$CMD' needs root (tcpdump / nmcli). Re-executing with sudo…"
             exec sudo -E "$0" "${ORIG_ARGS[@]}"
@@ -349,8 +346,7 @@ cmd_show() {
 cmd_apply() {
     resolve_inputs
     if [ -z "$GATEWAY" ]; then
-        fail "No default gateway found. Pass --gateway X.Y.Z.W."
-        exit 3
+        warn "No default gateway found — proceeding without one (acceptable on no-uplink site)."
     fi
 
     header "Lock network config — $CONN"
@@ -444,11 +440,12 @@ cmd_test() {
     fi
 
     # 2. Internet — 1.1.1.1 is a universally-routable endpoint, not a site-specific IP.
+    #    Site PCs are deliberately air-gapped, so a fail here isn't a real failure.
     printf "  2. Internet reachable      → %-16s" "1.1.1.1"
     if ping -c 2 -W 1 1.1.1.1 >/dev/null 2>&1; then
         echo -e "  ${GREEN}✅${NC}"
     else
-        echo -e "  ${RED}❌${NC}"; failed=1
+        echo -e "  ${YELLOW}skip (offline / air-gapped LAN)${NC}"
     fi
 
     # 3. Automate
@@ -471,8 +468,10 @@ cmd_test() {
 
     # 5. Live UDP egress probe
     printf "  5. Live UDP egress         → "
-    if [ -z "$UDP_HOST" ] || [ -z "$UDP_PORT" ] || ! command -v docker >/dev/null 2>&1; then
-        echo -e "${YELLOW}skip (no target or no docker)${NC}"
+    if [ -z "$UDP_HOST" ] || [ -z "$UDP_PORT" ] \
+         || ! command -v docker >/dev/null 2>&1 \
+         || ! docker compose ps --services --filter status=running 2>/dev/null | grep -q '^web$'; then
+        echo -e "${YELLOW}skip (no target / no docker / web not up)${NC}"
     else
         local pcap_file
         pcap_file=$(mktemp --suffix=.pcap)
@@ -511,129 +510,131 @@ s.sendto(b'net.sh-probe', ('$UDP_HOST', $UDP_PORT))
     fi
 }
 
-cmd_manual() {
-    # Manual is read-only and doesn't need a live NM connection — accept
-    # whatever we can discover and fill placeholders for the rest.
-    resolve_inputs 0
-    if [ -z "$UDP_HOST" ] || [ -z "$UDP_PORT" ]; then
-        warn "UDP_HOST/UDP_PORT not discovered. Placeholders will be left in the manual."
-        UDP_HOST="${UDP_HOST:-<AUTOMATE_IP>}"
-        UDP_PORT="${UDP_PORT:-<AUTOMATE_PORT>}"
+cmd_setup() {
+    # Interactive multi-NIC setup for site PCs that typically have two LAN
+    # interfaces and no default gateway (each subnet reached via a directly-
+    # attached NIC). Discovers all physical NICs, prompts per-NIC for
+    # static / dhcp / skip, writes the result via NetworkManager with
+    # autoconnect=yes so it persists across reboot.
+    require_cmd nmcli || exit 3
+    require_cmd ip    || exit 3
+
+    header "Interactive site-PC network setup"
+
+    # Discover every physical NIC (skip lo / docker* / br-* / veth* / tun / tap).
+    # `ip -o link` lists down interfaces too — operator may need to assign an
+    # IP to a NIC whose cable isn't plugged in yet.
+    local NICS=()
+    while IFS= read -r line; do
+        NICS+=("$line")
+    done < <(
+        ip -o link show 2>/dev/null \
+        | awk -F': ' '{print $2}' \
+        | awk '{sub(/@.*/,""); print}' \
+        | grep -Ev '^(lo|docker|br-|veth|tun|tap)' \
+        | grep -E '^(en|eth|wl)'
+    )
+    if [ ${#NICS[@]} -eq 0 ]; then
+        fail "No physical network interfaces found."
+        exit 3
     fi
 
-    if [ "$ARG_LANG" = "en" ]; then
-        cat <<EOF
-─── Mini-manual for the automation engineer ─────────────────────────────
+    info "Detected ${#NICS[@]} interface(s):"
+    local nic link mac ip4 conn
+    for nic in "${NICS[@]}"; do
+        link=$(ip -br link show "$nic" 2>/dev/null | awk '{print $2}')
+        mac=$(ip  -br link show "$nic" 2>/dev/null | awk '{print $3}')
+        ip4=$(ip -4 -br addr show dev "$nic" 2>/dev/null | awk '{print $3}')
+        conn=$(nmcli -t -f DEVICE,NAME connection show 2>/dev/null \
+               | awk -F: -v d="$nic" '$1==d {print $2; exit}')
+        printf "  %-10s  link=%-10s mac=%s  ip=%s  nm=%s\n" \
+            "$nic" "${link:-?}" "${mac:-?}" "${ip4:-<none>}" "${conn:-<none>}"
+    done
+    echo ""
 
-UDP sender:
-  Machine    : $(hostname)
-  Source IP  : $IP
-  (Static — will not change on reboot)
+    local choice ip cidr gw dns
+    for nic in "${NICS[@]}"; do
+        echo ""
+        echo -e "${BOLD}── $nic ─────────────────────────${NC}"
 
-UDP receiver (your side):
-  IP         : $UDP_HOST
-  Port       : $UDP_PORT
-  Protocol   : UDP/IPv4
-  Payload    : JSON, ~60 bytes per event
+        while :; do
+            read -rp "  [s]tatic / [d]hcp / s[k]ip ? " choice
+            case "$choice" in
+                s|S|static)        choice=static; break ;;
+                d|D|dhcp)          choice=dhcp;   break ;;
+                k|K|skip)          choice=skip;   break ;;
+                *) warn "Pick one of: s d k" ;;
+            esac
+        done
+        [ "$choice" = "skip" ] && continue
 
-Payload format:
-  {"class":"carton"|"polybag", "id":<int>, "ts":"<ISO8601>"}
+        # Locate or create an NM connection bound to this NIC.
+        conn=$(nmcli -t -f DEVICE,NAME connection show 2>/dev/null \
+               | awk -F: -v d="$nic" '$1==d {print $2; exit}')
+        if [ -z "$conn" ]; then
+            conn="site-$nic"
+            info "  No NM profile for $nic — creating '$conn'."
+            if ! nmcli connection add type ethernet ifname "$nic" con-name "$conn" \
+                    ipv4.method disabled ipv6.method ignore >/dev/null; then
+                fail "  Couldn't create profile '$conn' for $nic. Skipping."
+                continue
+            fi
+        fi
 
-Maximum rate: ~3000 events/hour.
+        if [ "$choice" = "dhcp" ]; then
+            if ! nmcli connection modify "$conn" \
+                    ipv4.method auto \
+                    ipv4.addresses "" \
+                    ipv4.gateway "" \
+                    ipv4.dns "" \
+                    ipv4.ignore-auto-dns no \
+                    ipv6.method auto \
+                    connection.autoconnect yes \
+                    connection.autoconnect-priority 100; then
+                fail "  nmcli modify failed for '$conn'. Skipping."
+                continue
+            fi
+        else
+            # Static path. CIDR optional (default 24); gateway + DNS optional (default empty).
+            while :; do
+                read -rp "  IP for $nic (e.g. 192.168.1.50): " ip
+                if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    break
+                else
+                    warn "Not an IPv4 address."
+                fi
+            done
+            read -rp "  CIDR prefix (default 24): " cidr
+            cidr="${cidr:-24}"
+            read -rp "  Gateway (blank = none, common on dual-NIC setups): " gw
+            read -rp "  DNS servers, space-separated (blank = none): " dns
 
-Emission latency (measured on this PC):
-  Median 78 µs · p99 474 µs · worst observed 637 µs
-  Under 1 ms, quasi-instantaneous vs. your PLC scan cycle.
+            if ! nmcli connection modify "$conn" \
+                    ipv4.method manual \
+                    ipv4.addresses "$ip/$cidr" \
+                    ipv4.gateway "$gw" \
+                    ipv4.dns "$dns" \
+                    ipv4.ignore-auto-dns yes \
+                    ipv6.method link-local \
+                    connection.autoconnect yes \
+                    connection.autoconnect-priority 100; then
+                fail "  nmcli modify failed for '$conn'. Skipping."
+                continue
+            fi
+        fi
 
-To receive (pick ONE method):
+        # Bounce the connection so the new config takes effect now.
+        nmcli connection down "$conn" >/dev/null 2>&1 || true
+        if nmcli connection up "$conn" >/dev/null 2>&1; then
+            success "  $nic → $conn applied + auto-connect on boot."
+        else
+            warn  "  $nic → $conn saved, but bring-up failed (cable unplugged?)."
+            warn  "  Will auto-connect when the link comes up."
+        fi
+    done
 
-  # Python (portable):
-  python3 -c 'import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(("0.0.0.0",${UDP_PORT}));print("listening");[print(s.recvfrom(1024)[0].decode()) for _ in iter(int,1)]'
-
-  # Netcat (Linux):
-  nc -u -l ${UDP_PORT}
-
-  # PowerShell (Windows admin):
-  \$udp = New-Object System.Net.Sockets.UdpClient ${UDP_PORT}
-  \$ep  = New-Object System.Net.IPEndPoint([Net.IPAddress]::Any, 0)
-  while (\$true) { Write-Host ([Text.Encoding]::UTF8.GetString(\$udp.Receive([ref]\$ep))) }
-
-Firewall to allow (generic examples — adapt to your system):
-
-  Linux (iptables):
-    sudo iptables -A INPUT -p udp --dport ${UDP_PORT} -s ${IP} -j ACCEPT
-
-  Windows (PowerShell admin):
-    New-NetFirewallRule -DisplayName "UDP ISIDetector" -Direction Inbound \\
-      -Protocol UDP -LocalPort ${UDP_PORT} -RemoteAddress ${IP} -Action Allow
-
-Validation handshake:
-  1. Start your listener (Python/nc/PowerShell above).
-  2. On my PC, I fire:
-       docker compose exec web python3 -c 'import socket; socket.socket(socket.AF_INET,socket.SOCK_DGRAM).sendto(b"test-from-abdul", ("${UDP_HOST}", ${UDP_PORT})); print("sent")'
-  3. You should immediately see the string "test-from-abdul".
-     → Yes : the full path works; real events arrive the same way.
-     → No  : issue on your side (firewall / bind / VLAN).
-
-─────────────────────────────────────────────────────────────────────────
-EOF
-    else
-        cat <<EOF
-─── Mini-manuel pour l'automaticien ─────────────────────────────────────
-
-Émetteur UDP :
-  Machine    : $(hostname)
-  IP source  : $IP
-  (IP fixée — ne changera plus après redémarrage)
-
-Récepteur UDP (chez toi) :
-  IP         : $UDP_HOST
-  Port       : $UDP_PORT
-  Protocole  : UDP/IPv4
-  Payload    : JSON, ~60 octets par événement
-
-Format du payload :
-  {"class":"carton"|"polybag", "id":<int>, "ts":"<ISO8601>"}
-
-Cadence maximale : ~3000 événements/heure.
-
-Latence émission (mesurée sur ce PC) :
-  Médiane 78 µs · p99 474 µs · pire cas observé 637 µs
-  Inférieur à 1 ms, quasi-instantané vs ton cycle automate.
-
-Pour recevoir (choisir UNE méthode) :
-
-  # Python (portable) :
-  python3 -c 'import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(("0.0.0.0",${UDP_PORT}));print("listening");[print(s.recvfrom(1024)[0].decode()) for _ in iter(int,1)]'
-
-  # Netcat (Linux) :
-  nc -u -l ${UDP_PORT}
-
-  # PowerShell (Windows admin) :
-  \$udp = New-Object System.Net.Sockets.UdpClient ${UDP_PORT}
-  \$ep  = New-Object System.Net.IPEndPoint([Net.IPAddress]::Any, 0)
-  while (\$true) { Write-Host ([Text.Encoding]::UTF8.GetString(\$udp.Receive([ref]\$ep))) }
-
-Pare-feu à autoriser (exemples génériques — adapte à ton système) :
-
-  Linux (iptables) :
-    sudo iptables -A INPUT -p udp --dport ${UDP_PORT} -s ${IP} -j ACCEPT
-
-  Windows (PowerShell admin) :
-    New-NetFirewallRule -DisplayName "UDP ISIDetector" -Direction Inbound \\
-      -Protocol UDP -LocalPort ${UDP_PORT} -RemoteAddress ${IP} -Action Allow
-
-Handshake de validation :
-  1. Lance ton écouteur (Python/nc/PowerShell ci-dessus).
-  2. Sur mon PC, je déclenche :
-       docker compose exec web python3 -c 'import socket; socket.socket(socket.AF_INET,socket.SOCK_DGRAM).sendto(b"test-from-abdul", ("${UDP_HOST}", ${UDP_PORT})); print("sent")'
-  3. Tu dois voir apparaître la chaîne "test-from-abdul" immédiatement.
-     → Oui : le chemin complet fonctionne, les vrais événements arrivent pareil.
-     → Non : problème sur ton côté (pare-feu / bind / VLAN).
-
-─────────────────────────────────────────────────────────────────────────
-EOF
-    fi
+    echo ""
+    success "Setup complete. Re-run './net.sh show' to verify."
 }
 
 # ── Dispatch ────────────────────────────────────────────────────────────────
@@ -642,6 +643,6 @@ case "$CMD" in
     apply)   cmd_apply ;;
     revert)  cmd_revert ;;
     test)    cmd_test ;;
-    manual)  cmd_manual ;;
+    setup)   cmd_setup ;;
     *)       fail "Unknown command: $CMD"; print_help; exit 2 ;;
 esac
