@@ -5,13 +5,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
-    <!-- Modern Fonts and Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.17-fps">
+    <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.18-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.18-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.18-fps">
 
-    <!-- Chart.js for Advanced Analytics -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
+    <script src="/static/vendor/chart.min.js?v=2.18-fps"></script>
 </head>
 
 <body>
@@ -508,7 +508,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.17-fps"></script>
+    <script src="/static/js/main.js?v=2.18-fps"></script>
 </body>
 
 </html>
