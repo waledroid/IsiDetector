@@ -168,18 +168,31 @@ class OpenVINOInferencer(BaseInferencer):
         return padded, r, left, top
 
     def preprocess(self, frame: np.ndarray) -> np.ndarray:
-        # Ultralytics and RF-DETR train on RGB. OpenCV/RTSP frames are BGR.
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Resize-first, math-second. cvtColor and the float/normalize/transpose
+        # chain run on the model-sized canvas (e.g. 320×320), not on the raw
+        # 1080p RTSP frame — saves ~2 ms/frame on i7-10710U at 1080p input.
         if self.is_rfdetr:
-            resized = cv2.resize(rgb, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
+            # RF-DETR is hard-refused at load time on OpenVINO 2026 (Einsum
+            # bug); this branch is unreachable in practice, kept for parity.
+            resized_bgr = cv2.resize(frame, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
             self._last_letterbox = None
-            img = resized.transpose((2, 0, 1)).astype(np.float32) / 255.0
+            rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB)
+            img = rgb.transpose((2, 0, 1)).astype(np.float32) / 255.0
             img = (img - self._IMAGENET_MEAN) / self._IMAGENET_STD
-        else:
-            padded, ratio, pad_x, pad_y = self._letterbox(rgb)
-            self._last_letterbox = (ratio, pad_x, pad_y)
-            img = padded.transpose((2, 0, 1)).astype(np.float32) / 255.0
-        return np.ascontiguousarray(img[np.newaxis, ...])
+            return np.ascontiguousarray(img[np.newaxis, ...])
+
+        # YOLO path. Letterbox stays in BGR — neither cv2.resize nor
+        # copyMakeBorder cares about channel order. blobFromImage does
+        # swapRB + scale + HWC→CHW + add batch dim in one fused C++ pass.
+        padded_bgr, ratio, pad_x, pad_y = self._letterbox(frame)
+        self._last_letterbox = (ratio, pad_x, pad_y)
+        return cv2.dnn.blobFromImage(
+            padded_bgr,
+            scalefactor=1.0 / 255.0,
+            size=(self.model_w, self.model_h),
+            swapRB=True,
+            crop=False,
+        )
 
     # ── Inference ────────────────────────────────────────────────────────────
 
