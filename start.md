@@ -117,6 +117,54 @@ docker compose down            # stop the stack
 
 ---
 
+## 🔌 Boot-to-running auto-start (Linux site PC, hands-free kiosk)
+
+For a fully unattended site PC — power on → boot → desktop opens → stack
+running → browser fullscreen on the dashboard, no human input, no
+internet — wire up two things once:
+
+### A. OS auto-login (operator opens, no password)
+
+On the desktop: **Settings → Users → unlock → enable Automatic Login** for
+the account that runs the stack. One-time GUI tweak.
+
+### B. Auto-start the stack + open Chrome at login
+
+Run once on the site PC:
+
+```bash
+cd ~/fps               # or ~/logistic — wherever the install lives
+./autostart.sh enable
+```
+
+That writes `~/.config/autostart/isidetector.desktop`, which the desktop
+session runs ~10 s after login. The entry calls
+`./up.sh --no-build --kiosk --force-cpu`:
+
+- `--no-build` — skips `docker compose --build`, so **no internet needed at
+  boot**. The image must already exist locally (it does, after the first
+  `run_start.sh`). Containers come up in seconds.
+- `--kiosk` — Chrome opens fullscreen, no address bar, no tabs. Operator
+  can't accidentally close the dashboard or navigate away. Press
+  **Ctrl+Alt+F2** for a TTY if you ever need to drop out.
+- `--force-cpu` — explicit on a CPU-only site PC, harmless on GPU.
+
+Other subcommands:
+```bash
+./autostart.sh status      # is it currently enabled?
+./autostart.sh disable     # remove the autostart file
+```
+
+Why `restart: unless-stopped` in `docker-compose.yml` isn't enough on its
+own: it only resumes containers that were running before shutdown. On a
+**first** boot after install, or after a fresh `docker compose down`,
+nothing brings them back. The autostart entry catches that case and
+opens the browser regardless. After that, subsequent boots are
+fastest-path: containers auto-resume, autostart confirms they're up,
+opens Chrome.
+
+---
+
 ## 🔁 Switching between `~/logistic` (deploy) and `~/fps` (test branch)
 
 Only one stack runs at a time — both bind port 9501. To swap between the

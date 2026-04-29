@@ -35,6 +35,8 @@ for arg in "$@"; do
     case "$arg" in
         --force-cpu|--cpu)  FORCE_MODE="cpu" ;;
         --force-gpu|--gpu)  FORCE_MODE="gpu" ;;
+        --no-build)         NO_BUILD=1 ;;     # skip docker compose's --build flag
+        --kiosk)            KIOSK=1 ;;        # open browser fullscreen, no chrome
         -h|--help)
             sed -n '2,21p' "$0" | sed 's/^# *//'
             exit 0
@@ -113,8 +115,17 @@ else
 fi
 
 # ── Start the stack ─────────────────────────────────────────────────────────
-echo "▶ Starting IsiDetector stack (docker compose up -d --build)..."
-$COMPOSE_CMD up -d --build
+# --no-build (or NO_BUILD=1) skips the rebuild step so an offline boot
+# (e.g. autostart on a site PC with no internet) doesn't fail trying to
+# pull base layers. The image must already exist locally — first install
+# always runs run_start.sh which builds it.
+if [[ "${NO_BUILD:-0}" == "1" ]]; then
+    echo "▶ Starting IsiDetector stack (docker compose up -d, no build)..."
+    $COMPOSE_CMD up -d
+else
+    echo "▶ Starting IsiDetector stack (docker compose up -d --build)..."
+    $COMPOSE_CMD up -d --build
+fi
 
 echo "▶ Waiting for web container to finish ONNX preload (timeout ${TIMEOUT_SEC}s)..."
 
@@ -140,12 +151,30 @@ fi
 open_url() {
     local url="$1"
 
+    # Kiosk-mode flags — applied to Chrome/Chromium when KIOSK=1 is set
+    # (or --kiosk was passed). Used by the autostart desktop entry so a
+    # site-PC operator can't accidentally close the tab or navigate away.
+    local kiosk_args=()
+    if [[ "${KIOSK:-0}" == "1" ]]; then
+        kiosk_args=(
+            --kiosk
+            --no-first-run
+            --noerrdialogs
+            --disable-translate
+            --disable-features=TranslateUI
+            --disable-pinch
+            --overscroll-history-navigation=0
+            --autoplay-policy=no-user-gesture-required
+        )
+    fi
+
     # 1. Chrome first (any packaging)
     for cmd in google-chrome google-chrome-stable chromium chromium-browser; do
         if command -v "$cmd" >/dev/null 2>&1; then
-            "$cmd" "$url" >/dev/null 2>&1 &
+            "$cmd" "${kiosk_args[@]}" "$url" >/dev/null 2>&1 &
             disown
-            echo "✓ Opened $url in $cmd"
+            local mode="${KIOSK:+kiosk }"
+            echo "✓ Opened $url in $cmd (${mode:-windowed})"
             return 0
         fi
     done
