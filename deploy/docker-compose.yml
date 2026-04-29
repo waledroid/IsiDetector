@@ -32,11 +32,12 @@ services:
       - UDP_HOST=127.0.0.1
       - UDP_PORT=9502
       - CUDA_MODULE_LOADING=LAZY
-      # Force RTSP-over-TCP for any cv2.VideoCapture(rtsp://...) call. ffmpeg
-      # default is UDP, which silently drops packets and triggers expensive
-      # recovery loops on noisy LANs (the typical site environment). TCP
-      # trades a tiny fixed latency for delivery guarantees → smoother
-      # decode, fewer "stalled then catch-up" stutters.
+      # Default RTSP transport for any code path that doesn't explicitly
+      # set its own. LiveReader (in stream_handler.py) overrides this
+      # per-call with a TCP-first / UDP-fallback dance — but any third-party
+      # code that calls cv2.VideoCapture('rtsp://...') without going
+      # through LiveReader inherits this default. Kept here so RTSP-over-TCP
+      # is the documented out-of-the-box behaviour.
       - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
     # GPU device reservation is added via docker-compose.gpu.yml — the
     # base file stays device-agnostic so CPU hosts don't need any

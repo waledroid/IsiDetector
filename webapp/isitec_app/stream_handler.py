@@ -154,13 +154,78 @@ class LiveReader:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
+    def _open_capture(self):
+        """Open ``self.source`` with sensible defaults + RTSP fallback.
+
+        For RTSP sources, prefer ``rtsp_transport=tcp`` (more reliable on
+        noisy site LANs) and **fall back to UDP** if TCP can't open or
+        can't decode a frame. This avoids on-site troubleshooting trips
+        for the few cameras / firewalls where TCP is blocked.
+
+        Non-RTSP sources (file, integer webcam index) skip the dance —
+        they have no transport to choose.
+
+        Also caps the open timeout at 5 s via
+        ``CAP_PROP_OPEN_TIMEOUT_MSEC`` so a bad URL fails fast instead
+        of hanging the inference thread for 30+ s.
+
+        Returns:
+            cv2.VideoCapture — caller checks ``isOpened()``.
+        """
+        is_rtsp = (
+            isinstance(self.source, str)
+            and self.source.lower().startswith(('rtsp://', 'rtspt://'))
+        )
+        if not is_rtsp:
+            return cv2.VideoCapture(self.source)
+
+        # Open params: 5s open timeout (so bad URLs fail in seconds).
+        # Wrap in try/except: older OpenCV (< 4.5) doesn't accept the
+        # 3-arg form and raises; fall back to the bare ctor in that case.
+        def _try_open():
+            try:
+                return cv2.VideoCapture(
+                    self.source, cv2.CAP_FFMPEG,
+                    [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000],
+                )
+            except Exception:
+                return cv2.VideoCapture(self.source)
+
+        # ── Attempt 1: TCP (preferred) ──────────────────────────────────
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        cap = _try_open()
+        if cap.isOpened():
+            # Quick read test — ffmpeg sometimes claims open() succeeded
+            # but the TCP stream is dead behind a firewall.
+            ok, _ = cap.read()
+            if ok:
+                logger.info("📡 RTSP transport: TCP (preferred)")
+                return cap
+            logger.warning("📡 RTSP TCP opened but first read failed; trying UDP fallback")
+            cap.release()
+        else:
+            logger.warning("📡 RTSP TCP open failed; trying UDP fallback")
+
+        # ── Attempt 2: UDP (fallback) ───────────────────────────────────
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;udp'
+        cap = _try_open()
+        if cap.isOpened():
+            logger.info("📡 RTSP transport: UDP (TCP unavailable on this network)")
+        else:
+            logger.error("📡 RTSP failed to open on both TCP and UDP")
+        # Restore TCP as the default for any subsequent reconnect attempt
+        # — UDP only "won" because TCP failed *this time*; if the network
+        # heals we want to try TCP again on the next reconnect.
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        return cap
+
     def _run(self):
         logger.info(f"🚀 LiveReader: Thread started for source {self.source}")
         while self.running:
             try:
                 with self._cap_lock:
                     if self.cap is None or not self.cap.isOpened():
-                        self.cap = cv2.VideoCapture(self.source)
+                        self.cap = self._open_capture()
                         if not self.cap.isOpened():
                             self.cap = None
                             logger.error(f"❌ LiveReader: Failed to open {self.source}. Retrying in 2s...")
