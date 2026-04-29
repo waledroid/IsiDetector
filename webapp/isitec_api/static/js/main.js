@@ -40,6 +40,11 @@ const translations = {
         "set_cpu_threads_label": "CPU Threads",
         "set_skip_masks_label": "Skip mask drawing (lightweight render)",
         "set_skip_traces_label": "Skip trace lines (no motion trail)",
+        "src_site_camera": "Site Camera",
+        "site_camera_caption": "Saved camera (configurable in Settings → Camera)",
+        "cam_settings": "Camera",
+        "cam_settings_hint": "Tip: most IP cameras expose a sub-stream at a lower resolution — typically <code>stream=1</code> or <code>/102</code> in the URL path. On a CPU-only site PC, sub-stream gives much higher FPS.",
+        "set_rtsp_url_label": "Default RTSP URL",
         "about_title": "About ISITEC visionAI",
         "about_desc": "Industrial Object Detection and Tracking Platform",
         "version": "Version 1.0.0-beta",
@@ -111,6 +116,11 @@ const translations = {
         "set_cpu_threads_label": "Fils CPU",
         "set_skip_masks_label": "Désactiver les masques (rendu allégé)",
         "set_skip_traces_label": "Désactiver les traces (pas de traînée)",
+        "src_site_camera": "Caméra du site",
+        "site_camera_caption": "Caméra enregistrée (configurable dans Paramètres → Caméra)",
+        "cam_settings": "Caméra",
+        "cam_settings_hint": "Astuce : la plupart des caméras IP exposent un sous-flux à plus faible résolution — typiquement <code>stream=1</code> ou <code>/102</code> dans l'URL. Sur un PC site CPU-only, le sous-flux donne un FPS beaucoup plus élevé.",
+        "set_rtsp_url_label": "URL RTSP par défaut",
         "about_title": "À propos d'ISITEC visionAI",
         "about_desc": "Plateforme industrielle de détection et de suivi d'objets",
         "version": "Version 1.0.0-bêta",
@@ -188,9 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const sourceText = document.getElementById('sourceText');
-        if (currentSourceType === 'rtsp') {
-            sourceText.placeholder = msgTrans[lang].placeholder_rtsp;
-        } else if (currentSourceType === 'camera') {
+        if (currentSourceType === 'camera') {
             sourceText.placeholder = msgTrans[lang].placeholder_cam;
         }
 
@@ -616,38 +624,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileDropArea = document.getElementById('fileDropArea');
     const sourceFile = document.getElementById('sourceFile');
     const sourceText = document.getElementById('sourceText');
+    const siteCamCaption = document.getElementById('siteCameraCaption');
     const fileMsg = document.querySelector('.file-msg');
 
-    let currentSourceType = 'image';
+    // Default source = the saved Site Camera (RTSP URL from settings.json).
+    // 'rtsp' type removed — its text input duplicated the saved URL. Other
+    // 3 buttons are ad-hoc overrides (Image / Video / USB Camera).
+    let currentSourceType = 'site_camera';
     let uploadedFilePath = '';
+
+    function _showSourceUI(type) {
+        if (fileDropArea) fileDropArea.style.display = 'none';
+        if (sourceText) sourceText.style.display = 'none';
+        if (siteCamCaption) siteCamCaption.style.display = 'none';
+
+        if (type === 'image') {
+            fileDropArea.style.display = 'flex';
+            sourceFile.setAttribute('accept', 'image/*');
+            fileMsg.textContent = translations[currentLang].drag_drop;
+        } else if (type === 'video') {
+            fileDropArea.style.display = 'flex';
+            sourceFile.setAttribute('accept', 'video/mp4,video/x-m4v,video/*');
+            fileMsg.textContent = translations[currentLang].drag_drop;
+        } else if (type === 'camera') {
+            sourceText.style.display = 'block';
+            sourceText.placeholder = msgTrans[currentLang].placeholder_cam;
+            sourceText.value = '0';
+        } else {
+            // site_camera (default) — no input field; backend uses settings.rtsp_url
+            if (siteCamCaption) siteCamCaption.style.display = 'flex';
+        }
+    }
+
+    _showSourceUI(currentSourceType);
 
     sourceBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             sourceBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentSourceType = btn.getAttribute('data-type');
-
-            if (currentSourceType === 'image') {
-                fileDropArea.style.display = 'flex';
-                sourceText.style.display = 'none';
-                sourceFile.setAttribute('accept', 'image/*');
-                fileMsg.textContent = translations[currentLang].drag_drop;
-            } else if (currentSourceType === 'video') {
-                fileDropArea.style.display = 'flex';
-                sourceText.style.display = 'none';
-                sourceFile.setAttribute('accept', 'video/mp4,video/x-m4v,video/*');
-                fileMsg.textContent = translations[currentLang].drag_drop;
-            } else if (currentSourceType === 'rtsp') {
-                fileDropArea.style.display = 'none';
-                sourceText.style.display = 'block';
-                sourceText.placeholder = msgTrans[currentLang].placeholder_rtsp;
-                sourceText.value = '';
-            } else if (currentSourceType === 'camera') {
-                fileDropArea.style.display = 'none';
-                sourceText.style.display = 'block';
-                sourceText.placeholder = msgTrans[currentLang].placeholder_cam;
-                sourceText.value = '0';
-            }
+            _showSourceUI(currentSourceType);
         });
     });
 
@@ -681,7 +697,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let finalSource = '';
 
-        if (currentSourceType === 'image' || currentSourceType === 'video') {
+        if (currentSourceType === 'site_camera') {
+            // Empty source → backend resolves from settings.rtsp_url.
+            finalSource = '';
+        } else if (currentSourceType === 'image' || currentSourceType === 'video') {
             if (sourceFile.files.length === 0 && !uploadedFilePath) {
                 showMessage(msgTrans[currentLang].msg_select_file, "error");
                 return;
@@ -713,6 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             finalSource = uploadedFilePath;
         } else {
+            // 'camera' (USB) — sourceText holds the device index
             finalSource = sourceText.value;
             if (!finalSource) {
                 showMessage(msgTrans[currentLang].msg_enter_url, "error");
@@ -1171,6 +1191,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (skipMasksEl) skipMasksEl.checked = !!serverSettings.skip_masks;
         const skipTracesEl = document.getElementById('set_skip_traces');
         if (skipTracesEl) skipTracesEl.checked = !!serverSettings.skip_traces;
+        const rtspUrlEl = document.getElementById('set_rtsp_url');
+        if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1262,6 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 cpu_threads:   parseInt(document.getElementById('set_cpu_threads').value),
                 skip_masks:    document.getElementById('set_skip_masks').checked,
                 skip_traces:   document.getElementById('set_skip_traces').checked,
+                rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);

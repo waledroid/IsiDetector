@@ -8,7 +8,7 @@
     <!-- Modern Fonts and Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.15-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.16-fps">
 
     <!-- Chart.js for Advanced Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -102,26 +102,31 @@
                     <div class="input-group">
                         <label data-i18n="input_source">Input Source</label>
                         <div class="source-buttons">
-                            <button class="source-btn active" data-type="image"><i class="material-icons">image</i>
+                            <button class="source-btn active" data-type="site_camera"><i class="material-icons">videocam</i>
+                                <span data-i18n="src_site_camera">Site Camera</span></button>
+                            <button class="source-btn" data-type="image"><i class="material-icons">image</i>
                                 <span data-i18n="src_image">Image</span></button>
                             <button class="source-btn" data-type="video"><i class="material-icons">movie</i> <span
                                     data-i18n="src_video">Video</span></button>
-                            <button class="source-btn" data-type="rtsp"><i class="material-icons">router</i> <span
-                                    data-i18n="src_rtsp">RTSP URL</span></button>
                             <button class="source-btn" data-type="camera"><i class="material-icons">photo_camera</i>
-                                <span data-i18n="src_camera">Camera</span></button>
+                                <span data-i18n="src_camera">USB Camera</span></button>
                         </div>
                     </div>
 
                     <div class="input-group" id="dynamicInputContainer">
                         <!-- File Upload Drop Area -->
-                        <div class="file-drop-area" id="fileDropArea">
+                        <div class="file-drop-area" id="fileDropArea" style="display:none;">
                             <span class="fake-file-btn" data-i18n="choose_file">Choose File</span>
                             <span class="file-msg" data-i18n="drag_drop">or drag and drop here</span>
                             <input class="file-input" type="file" id="sourceFile" accept="image/*">
                         </div>
-                        <!-- Text Input Area (for Camera ID or RTSP URL) -->
+                        <!-- Text Input Area (for USB Camera index) -->
                         <input type="text" id="sourceText" placeholder="" style="display:none; font-family: inherit;">
+                        <!-- Site Camera caption — shown when 'site_camera' source is active -->
+                        <div id="siteCameraCaption" class="site-camera-caption">
+                            <i class="material-icons" style="font-size:18px; vertical-align:middle;">info</i>
+                            <span data-i18n="site_camera_caption">Saved camera (configurable in Settings → Camera)</span>
+                        </div>
                     </div>
                 </div>
 
@@ -303,6 +308,21 @@
                 <h2 data-i18n="system_settings">System Settings</h2>
                 <p style="color: var(--text-light); font-size: 14px; margin: -10px 0 20px;">Configure AI models and inference parameters. Changes take effect on the next stream startup.</p>
                 
+                <!-- CAMERA CONFIG (top-level — drives the landing page's Site Camera button) -->
+                <div class="settings-group" style="grid-column: 1 / -1; margin-bottom: 24px;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#1b9bd8;">CAM</span>
+                        <h3 data-i18n="cam_settings">Camera</h3>
+                    </div>
+                    <div class="sg-body">
+                        <label data-i18n="set_rtsp_url_label" title="Saved camera URL used by the Site Camera button on the Live Inference page.">Default RTSP URL</label>
+                        <input type="text" id="set_rtsp_url" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="rtsp://user:pass@ip:554/...">
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="cam_settings_hint">
+                            Tip: most IP cameras expose a sub-stream at a lower resolution — typically <code>stream=1</code> or <code>/102</code> in the URL path. On a CPU-only site PC, sub-stream gives much higher FPS.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="settings-grid">
                     <!-- MODE 1 CONFIG -->
                     <div class="settings-group">
@@ -465,7 +485,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.15-fps"></script>
+    <script src="/static/js/main.js?v=2.16-fps"></script>
 </body>
 
 </html>

@@ -253,6 +253,19 @@ body {
     margin-bottom: 12px;
 }
 .file-drop-area:hover { background-color: #f1f3f4; border-color: var(--primary-color); }
+
+.site-camera-caption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    border: 1px dashed #bbdefb;
+    border-radius: 6px;
+    background: #e3f2fd;
+    color: #0d47a1;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
 .fake-file-btn {
     flex-shrink: 0;
     background-color: #fff;

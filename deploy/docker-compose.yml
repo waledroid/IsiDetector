@@ -32,6 +32,12 @@ services:
       - UDP_HOST=127.0.0.1
       - UDP_PORT=9502
       - CUDA_MODULE_LOADING=LAZY
+      # Force RTSP-over-TCP for any cv2.VideoCapture(rtsp://...) call. ffmpeg
+      # default is UDP, which silently drops packets and triggers expensive
+      # recovery loops on noisy LANs (the typical site environment). TCP
+      # trades a tiny fixed latency for delivery guarantees → smoother
+      # decode, fewer "stalled then catch-up" stutters.
+      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
     # GPU device reservation is added via docker-compose.gpu.yml — the
     # base file stays device-agnostic so CPU hosts don't need any
     # nested-array override gymnastics to drop the nvidia request.

@@ -266,11 +266,22 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
         request_body['skip_masks'] = bool(request_body['skip_masks'])
     if 'skip_traces' in request_body:
         request_body['skip_traces'] = bool(request_body['skip_traces'])
+    if 'rtsp_url' in request_body:
+        v = request_body['rtsp_url']
+        if (not isinstance(v, str) or len(v) > 512
+                or not v.lower().startswith(('rtsp://', 'rtspt://'))):
+            return JSONResponse(
+                {"status": "error",
+                 "message": "rtsp_url must be a string ≤ 512 chars starting with rtsp:// or rtspt://"},
+                status_code=400,
+            )
+        request_body['rtsp_url'] = v.strip()
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
+        'rtsp_url',
     )
     current = _load_settings()
     for k in allowed_keys:

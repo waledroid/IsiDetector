@@ -185,11 +185,21 @@ def settings():
         data['skip_masks'] = bool(data['skip_masks'])
     if 'skip_traces' in data:
         data['skip_traces'] = bool(data['skip_traces'])
+    if 'rtsp_url' in data:
+        v = data['rtsp_url']
+        if (not isinstance(v, str) or len(v) > 512
+                or not v.lower().startswith(('rtsp://', 'rtspt://'))):
+            return jsonify({
+                "status": "error",
+                "message": "rtsp_url must be a string ≤ 512 chars starting with rtsp:// or rtspt://",
+            }), 400
+        data['rtsp_url'] = v.strip()
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
+        'rtsp_url',
     )
     current = _load_settings()
     for k in allowed_keys:

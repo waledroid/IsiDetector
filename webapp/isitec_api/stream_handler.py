@@ -164,7 +164,33 @@ class LiveReader:
                             logger.error(f"❌ LiveReader: Failed to open {self.source}. Retrying in 2s...")
                             time.sleep(2)
                             continue
+                        # Cap OpenCV's internal queue at 1 frame so the reader
+                        # always returns the most-recent frame from the network.
+                        # Default 5 → up to ~165 ms of stale frames pile up on
+                        # RTSP. CPU-only sites can't afford the wasted decode.
+                        try:
+                            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        except Exception:
+                            pass
                         logger.info(f"✅ LiveReader: Connection established to {self.source}")
+
+                        # Stream info on connect — confirms what the camera is
+                        # actually sending (resolution, native fps, codec).
+                        # Saves an `ffprobe` round-trip during on-site debugging.
+                        try:
+                            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                            fps_native = self.cap.get(cv2.CAP_PROP_FPS) or 0.0
+                            fourcc = int(self.cap.get(cv2.CAP_PROP_FOURCC) or 0)
+                            codec = bytes(
+                                [(fourcc >> shift) & 0xFF for shift in (0, 8, 16, 24)]
+                            ).decode(errors='replace').strip('\x00') or '?'
+                            logger.info(
+                                f"📹 Stream: {w}×{h} @ {fps_native:.0f} fps codec={codec}"
+                            )
+                        except Exception:
+                            pass
+
                         if self.is_file:
                             fps = self.cap.get(cv2.CAP_PROP_FPS)
                             self.frame_delay = (1.0 / fps) if fps > 0 else (1.0 / 30)
@@ -606,6 +632,26 @@ class StreamHandler:
         Returns:
             ``(bool, str)`` — success flag and message.
         """
+        # Empty / None source → fall back to the saved RTSP URL from settings.
+        # The Live Inference landing page's "📡 Site Camera" button submits
+        # source="" so the URL itself stays in Settings → Camera and isn't
+        # editable on the landing page (avoiding URL-typing mistakes on site).
+        if not source:
+            try:
+                settings_path = Path(__file__).parent / 'settings.json'
+                if settings_path.exists():
+                    with open(settings_path) as f:
+                        ui_settings = json.load(f)
+                    saved = ui_settings.get('rtsp_url', '').strip()
+                    if saved:
+                        source = saved
+                        logger.info(f"▶ Using saved RTSP URL from settings: {source}")
+                    else:
+                        return False, ("No source provided and no rtsp_url is "
+                                       "configured in Settings → Camera.")
+            except Exception as e:
+                return False, f"Could not read saved rtsp_url: {e}"
+
         # Normalize source for comparison
         src_val = int(source) if str(source).isdigit() else source
 

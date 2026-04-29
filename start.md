@@ -1,11 +1,13 @@
 # 🚀 IsiDetector — `fps` test branch (CPU-tuning experiment)
 
 > ⚠ **You're on the `fps` branch, not `deploy`.** This is a throwaway test branch
-> derived from `deploy` with two extra Settings knobs to A/B CPU performance on
-> a dedicated site PC: a **CPU Threads** slider and a **Skip mask drawing**
-> checkbox. Compose project name is `fps` (not `deploy`) so this clone can run
-> alongside a working `~/logistic/` install without colliding on
-> `docker compose ps` / volumes / networks.
+> derived from `deploy` with extra Settings knobs to A/B CPU performance on a
+> dedicated site PC, plus RTSP-ingest fixes (`CAP_PROP_BUFFERSIZE=1`,
+> `rtsp_transport=tcp`, on-connect stream-info logging) and a `📡 Site Camera`
+> default-Start button that pulls its URL from Settings → Camera (so operators
+> don't type RTSP URLs on the landing page). Compose project name is `fps` (not
+> `deploy`) so this clone can run alongside a working `~/logistic/` install
+> without colliding on `docker compose ps` / volumes / networks.
 >
 > **Site-PC test workflow:**
 > ```bash
@@ -16,12 +18,16 @@
 > git clone --branch fps https://github.com/waledroid/IsiDetector.git ~/fps
 > cd ~/fps && ./up.sh --force-cpu
 >
-> # 3. In the browser: dev-unlock, Settings → Performance group:
-> #      • CPU Threads slider
-> #      • Skip mask drawing  (biggest win on busy belts)
-> #      • Skip trace lines    (removes motion-trail polylines)
-> #    Save, Stop / Start the stream so the new values take effect,
-> #    and watch FPS in the Performance tab.
+> # 3. In the browser: dev-unlock, then:
+> #    • Settings → Camera group:        Default RTSP URL (used by Site Camera button)
+> #    • Settings → Performance group:
+> #         - CPU Threads slider
+> #         - Skip mask drawing  (biggest win on busy belts)
+> #         - Skip trace lines    (removes motion-trail polylines)
+> #    Save. On Live Inference click ▶ Start (📡 Site Camera is the default
+> #    source — uses the saved RTSP URL). Watch FPS in the Performance tab;
+> #    container logs include a 📹 Stream: WxH @ FPS codec=… line so you can
+> #    confirm what the camera is actually sending.
 > ```
 >
 > **Rollback (under 30 s):**
