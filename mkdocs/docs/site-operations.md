@@ -208,7 +208,7 @@ backend). The Settings UI reads/writes via `GET`/`POST /api/settings`.
 | `cpu_threads` | int [1..64] | 8 | OpenVINO `INFERENCE_NUM_THREADS`. |
 | `skip_masks` / `skip_traces` | bool | false / false | Render shortcuts; significant FPS bump on busy belts. |
 | `rtsp_url` | str | per-build | Saved camera URL used by the **📡 Site Camera** landing-page button. |
-| `udp_host` / `udp_port` | str / int | 10.0.0.1 / 9502 | Sorter target. **Live-retargets** on save. |
+| `udp_host` / `udp_port` | str / int | 10.0.0.2 / 9502 | Sorter target. **Live-retargets** on save. |
 | `auto_start` | bool | false | If true, container boot replays the last successful Start. |
 | `last_model_type` / `last_weights` | str / str | "" | **Server-written** (rejected from client POST). Used by `auto_start`. |
 | `roi_enabled` | bool | false | If true, exposes the **📐 Set ROI** button on the Live Inference page. |
