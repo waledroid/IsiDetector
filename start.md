@@ -121,47 +121,64 @@ docker compose down            # stop the stack
 
 For a fully unattended site PC — power on → boot → desktop opens → stack
 running → browser fullscreen on the dashboard, no human input, no
-internet — wire up two things once:
-
-### A. OS auto-login (operator opens, no password)
-
-On the desktop: **Settings → Users → unlock → enable Automatic Login** for
-the account that runs the stack. One-time GUI tweak.
-
-### B. Auto-start the stack + open Chrome at login
-
-Run once on the site PC:
+internet — wire up **three independent layers**. Run all three on the
+site PC once:
 
 ```bash
 cd ~/fps               # or ~/logistic — wherever the install lives
-./autostart.sh enable
+
+sudo ./autostart.sh enable-autologin $USER   # Layer 1: OS skips the login screen
+sudo ./autostart.sh enable-systemd           # Layer 2: docker compose at boot via systemd
+./autostart.sh enable                        # Layer 3: kiosk Chrome opens at login
+
+./autostart.sh status                        # confirm all three are green
 ```
 
-That writes `~/.config/autostart/isidetector.desktop`, which the desktop
-session runs ~10 s after login. The entry calls
-`./up.sh --no-build --kiosk --force-cpu`:
+Each layer is independent and can be reverted with the matching
+`disable-*` subcommand. Together they take cold-boot-to-stream-running
+from "wait for kiosk + click Start" down to **~30–40 s with zero clicks**.
 
-- `--no-build` — skips `docker compose --build`, so **no internet needed at
-  boot**. The image must already exist locally (it does, after the first
-  `run_start.sh`). Containers come up in seconds.
-- `--kiosk` — Chrome opens fullscreen, no address bar, no tabs. Operator
-  can't accidentally close the dashboard or navigate away. Press
-  **Ctrl+Alt+F2** for a TTY if you ever need to drop out.
-- `--force-cpu` — explicit on a CPU-only site PC, harmless on GPU.
+### What each layer does
 
-Other subcommands:
-```bash
-./autostart.sh status      # is it currently enabled?
-./autostart.sh disable     # remove the autostart file
-```
+- **Layer 1 — `enable-autologin USER`** writes `AutomaticLogin=` for
+  GDM3 / LightDM / SDDM. Takes effect on next reboot. Auto-detects the
+  display manager. Removes the operator's only manual step (sitting at
+  the login screen). Reverse with `disable-autologin`.
 
-Why `restart: unless-stopped` in `docker-compose.yml` isn't enough on its
-own: it only resumes containers that were running before shutdown. On a
+- **Layer 2 — `enable-systemd`** installs
+  `/etc/systemd/system/isidetector.service` that runs `docker compose
+  up -d` from the install dir, ordered after `docker.service`. The stack
+  is up before the desktop session even loads. Cuts ~30 s off cold boot
+  vs. waiting for the .desktop autostart to fire. Reverse with
+  `disable-systemd`.
+
+- **Layer 3 — `enable`** writes
+  `~/.config/autostart/isidetector.desktop`, which the desktop session
+  runs ~10 s after login. Opens the dashboard in **kiosk Chrome** —
+  fullscreen, no address bar, no tabs, operator can't accidentally
+  navigate away. Press **Ctrl+Alt+F2** for a TTY if you need to drop
+  out. The entry auto-rewrites itself based on whether Layer 2 is
+  present: with systemd installed it uses `--open-only` (browser only,
+  no compose race); without, it uses full `up.sh --no-build --kiosk
+  --force-cpu` (compose + browser).
+
+### Combined with the in-app **Auto-start stream on boot** toggle
+
+Settings → Camera has a checkbox that makes the **stream itself**
+auto-resume on container start (replays the last successful Start). Tick
+it and click Start once to record the model. From then on, every
+container restart auto-resumes the saved camera + last-used model — no
+operator click on the dashboard.
+
+The three OS-level layers above + that one in-app toggle = the fully
+hands-free path. Power button → operator-ready in under a minute.
+
+### Why `restart: unless-stopped` in `docker-compose.yml` isn't enough
+
+It only resumes containers that were running before shutdown. On a
 **first** boot after install, or after a fresh `docker compose down`,
-nothing brings them back. The autostart entry catches that case and
-opens the browser regardless. After that, subsequent boots are
-fastest-path: containers auto-resume, autostart confirms they're up,
-opens Chrome.
+nothing brings them back. Layer 2 catches that case at boot, Layer 3
+opens the browser regardless of whether compose was already up.
 
 ---
 

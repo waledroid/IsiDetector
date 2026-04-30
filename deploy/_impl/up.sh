@@ -11,6 +11,10 @@
 #   ./up.sh                 # auto (reads .deployment.env, else detects)
 #   ./up.sh --force-cpu     # use CPU compose regardless of marker/GPU
 #   ./up.sh --force-gpu     # use GPU compose even if nvidia-smi fails
+#   ./up.sh --no-build      # skip docker compose's --build flag (offline-safe)
+#   ./up.sh --kiosk         # open browser fullscreen, no chrome UI
+#   ./up.sh --open-only     # don't touch compose; wait for port + open browser
+#                           # (use when systemd already brings the stack up)
 #   ./up.sh -h | --help     # print this usage and exit
 #
 # Environment overrides:
@@ -37,8 +41,9 @@ for arg in "$@"; do
         --force-gpu|--gpu)  FORCE_MODE="gpu" ;;
         --no-build)         NO_BUILD=1 ;;     # skip docker compose's --build flag
         --kiosk)            KIOSK=1 ;;        # open browser fullscreen, no chrome
+        --open-only)        OPEN_ONLY=1 ;;    # skip compose; just wait + open
         -h|--help)
-            sed -n '2,21p' "$0" | sed 's/^# *//'
+            sed -n '2,25p' "$0" | sed 's/^# *//'
             exit 0
             ;;
         *)
@@ -114,11 +119,41 @@ else
     echo "▶ Using GPU compose profile (rfdetr sidecar enabled)"
 fi
 
+# ── --open-only short-circuit ──────────────────────────────────────────────
+# When systemd brings the compose stack up at boot, the desktop autostart
+# entry runs `up.sh --open-only` which skips the compose calls entirely
+# and just waits for the web port to come alive, then opens the browser.
+# Avoids racing with the systemd unit and double-launching the stack.
+if [[ "${OPEN_ONLY:-0}" == "1" ]]; then
+    PORT="${URL##*:}"
+    PORT="${PORT%%/*}"
+    : "${PORT:=9501}"
+    echo "▶ --open-only: waiting for tcp/${PORT} (max ${TIMEOUT_SEC}s)..."
+    deadline=$(( $(date +%s) + TIMEOUT_SEC ))
+    while ! (echo > "/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; do
+        if (( $(date +%s) >= deadline )); then
+            echo "⚠ Port ${PORT} not reachable within ${TIMEOUT_SEC}s — opening browser anyway"
+            break
+        fi
+        sleep 1
+    done
+    [[ "$(echo > /dev/tcp/127.0.0.1/${PORT} 2>/dev/null && echo ok)" == "ok" ]] && echo "✓ Port ${PORT} is up"
+
+    if [[ "${NO_BROWSER:-0}" == "1" ]]; then
+        echo "ℹ NO_BROWSER=1 — skipping browser launch"
+        cd "$REPO_ROOT"
+        exit 0
+    fi
+    # Fall through to the open_url block at the end of this script.
+    SKIP_COMPOSE=1
+fi
+
 # ── Start the stack ─────────────────────────────────────────────────────────
 # --no-build (or NO_BUILD=1) skips the rebuild step so an offline boot
 # (e.g. autostart on a site PC with no internet) doesn't fail trying to
 # pull base layers. The image must already exist locally — first install
 # always runs run_start.sh which builds it.
+if [[ "${SKIP_COMPOSE:-0}" != "1" ]]; then
 if [[ "${NO_BUILD:-0}" == "1" ]]; then
     echo "▶ Starting IsiDetector stack (docker compose up -d, no build)..."
     $COMPOSE_CMD up -d
@@ -146,6 +181,7 @@ if [[ "${NO_BROWSER:-0}" == "1" ]]; then
     echo "ℹ NO_BROWSER=1 — skipping browser launch"
     exit 0
 fi
+fi  # /SKIP_COMPOSE guard
 
 # ── Open the UI ─────────────────────────────────────────────────────────────
 open_url() {
