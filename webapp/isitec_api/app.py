@@ -295,12 +295,20 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             return JSONResponse(
                 {"status": "error", "message": str(e)}, status_code=400
             )
+    if 'auto_start' in request_body:
+        request_body['auto_start'] = bool(request_body['auto_start'])
+    # last_model_type / last_weights are written by the server on a successful
+    # start(); reject client attempts to set them so the operator can't put
+    # the auto-start path into a wedged state via the Settings UI.
+    for k in ('last_model_type', 'last_weights'):
+        if k in request_body:
+            del request_body[k]
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
-        'rtsp_url', 'udp_host', 'udp_port',
+        'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
     )
     current = _load_settings()
     for k in allowed_keys:

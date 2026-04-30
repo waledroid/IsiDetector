@@ -377,6 +377,63 @@ class StreamHandler:
         # the operator's first hot-swap to RF-DETR is near-instant.
         threading.Thread(target=self._preload_default_onnx, daemon=True).start()
 
+        # Boot-time auto-start: if the operator ticked "Auto-start on boot"
+        # in Settings → Camera, replay the last successful start() so the
+        # site PC is operator-ready without anyone clicking Start.
+        threading.Thread(target=self._maybe_auto_start, daemon=True).start()
+
+    def _settings_path(self):
+        return Path(__file__).parent / 'settings.json'
+
+    def _persist_last_used(self, model_type: str, weights: str):
+        """Write the last successful (model_type, weights) back to settings.json
+        so a subsequent container boot can replay them via _maybe_auto_start.
+        """
+        try:
+            path = self._settings_path()
+            current = {}
+            if path.exists():
+                with open(path) as f:
+                    current = json.load(f) or {}
+            current['last_model_type'] = str(model_type or '')
+            current['last_weights'] = str(weights or '')
+            with open(path, 'w') as f:
+                json.dump(current, f, indent=2)
+        except Exception as e:
+            logger.warning(f"[auto-start] Could not persist last-used selection: {e}")
+
+    def _maybe_auto_start(self):
+        """If auto_start is enabled and we have a saved camera + last-used
+        model, kick off start() once the HTTP server is up. No-op otherwise.
+        """
+        # Wait for the WSGI server to bind. 5 s is enough on this hardware
+        # and short enough that the operator sees the stream come up while
+        # the kiosk Chrome window is still finishing its first paint.
+        time.sleep(5.0)
+        try:
+            path = self._settings_path()
+            if not path.exists():
+                return
+            with open(path) as f:
+                ui = json.load(f) or {}
+            if not ui.get('auto_start'):
+                return
+            rtsp_url = (ui.get('rtsp_url') or '').strip()
+            model_type = (ui.get('last_model_type') or '').strip()
+            weights = (ui.get('last_weights') or '').strip()
+            if not (rtsp_url and model_type and weights):
+                logger.info("[auto-start] Enabled but missing rtsp_url / last_model_type / "
+                            "last_weights — skipping. Click Start once to record them.")
+                return
+            logger.info(f"[auto-start] Replaying last session: model_type={model_type} weights={weights}")
+            ok, msg = self.start(source="", model_type=model_type, weights=weights)
+            if ok:
+                logger.info(f"[auto-start] {msg}")
+            else:
+                logger.warning(f"[auto-start] failed: {msg}")
+        except Exception as e:
+            logger.warning(f"[auto-start] error: {e}")
+
     def _preload_default_onnx(self):
         try:
             settings_path = Path(__file__).parent / 'settings.json'
@@ -747,6 +804,7 @@ class StreamHandler:
 
             self.monitor.start_session(model_type=model_type)
             logger.info(f"🔄 Model switched to {mode_text} (hot-swap — counts preserved)")
+            self._persist_last_used(model_type, weights)
             return True, f"Model switched to {mode_text}."
 
         # ── Full restart: different source or not running ────────────────
@@ -782,6 +840,7 @@ class StreamHandler:
             self.inf_thread.start()
 
             logger.info(f"✅ Web App: Processing started ({self.mode_text})")
+            self._persist_last_used(model_type, weights)
             return True, "Processing started."
 
     def stop(self):

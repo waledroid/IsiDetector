@@ -13,5 +13,8 @@
   "skip_traces": false,
   "rtsp_url": "rtsp://admin:admin123@192.168.1.108:554/user=admin&password=admin123&channel=1&stream=1.sdp?",
   "udp_host": "10.0.0.1",
-  "udp_port": 9502
+  "udp_port": 9502,
+  "auto_start": false,
+  "last_model_type": "",
+  "last_weights": ""
 }

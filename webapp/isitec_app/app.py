@@ -210,12 +210,20 @@ def settings():
             data['udp_port'] = n
         except (ValueError, TypeError) as e:
             return jsonify({"status": "error", "message": str(e)}), 400
+    if 'auto_start' in data:
+        data['auto_start'] = bool(data['auto_start'])
+    # last_model_type / last_weights are written by the server on a successful
+    # start(); reject client attempts to set them so the operator can't put
+    # the auto-start path into a wedged state via the Settings UI.
+    for k in ('last_model_type', 'last_weights'):
+        if k in data:
+            del data[k]
 
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
-        'rtsp_url', 'udp_host', 'udp_port',
+        'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
     )
     current = _load_settings()
     for k in allowed_keys:
