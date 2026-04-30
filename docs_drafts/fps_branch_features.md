@@ -241,8 +241,27 @@ git checkout -- webapp/isitec_app/settings.json webapp/isitec_api/settings.json
 cd ~/fps
 git pull                                     # safe — settings.json is skip-worktree
 sudo systemctl restart isidetector.service   # if Layer 2 is enabled
-# (or: sudo docker compose down && ./up.sh --force-cpu --no-build)
+# (or: sudo docker compose down && ./up.sh --force-cpu)
 ```
 
 That's it. The autostart layers + auto-resume + ROI persist across
 pulls and reboots — they're configured once per site PC.
+
+!!! warning "Don't use `--no-build` after a code-changing pull"
+    The Python source (`stream_handler.py`, `app.py`,
+    `openvino_inferencer.py`), templates, and JS are **baked into the
+    image at build time** via `COPY` — they are NOT bind-mounted volumes.
+    Running `./up.sh --no-build` after a pull keeps the **old image with
+    the new `settings.json`** → silent feature failures (new JSON keys
+    present, no UI, no `/api/snapshot`, no ROI crop, no auto-start).
+
+    The rebuild is **fast and offline-safe**: `requirements-deploy.txt`
+    rarely changes, so the dep layer cache hits and only the small COPY
+    layer re-runs. No internet needed for the rebuild itself once the
+    image has been built once on the host.
+
+    `--no-build` IS the correct flag for the **boot-time autostart**
+    path (`autostart.sh enable` writes it into the .desktop file) — at
+    that point the operator just wants to bring up whatever image is on
+    disk, with no network dependency. The `autostart.sh` defaults handle
+    this for you; don't pass `--no-build` from a manual update flow.

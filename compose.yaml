@@ -21,7 +21,7 @@
 #
 # Requires Docker Compose 2.20+. Check with: `docker compose version`.
 
-name: fps
+name: deploy
 
 include:
   - path: deploy/docker-compose.yml
