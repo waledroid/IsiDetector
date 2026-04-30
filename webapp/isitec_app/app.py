@@ -79,6 +79,20 @@ def video_feed():
     return Response(stream_handler.generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/api/snapshot')
+def api_snapshot():
+    """Return one full-resolution raw camera frame as JPEG.
+
+    Used by the Live-Inference Set-ROI configurator to draw the crop
+    rectangle on a true full-res snapshot. Returns 404 when the stream
+    isn't running (operator must Start first to capture a frame).
+    """
+    payload = stream_handler.get_raw_snapshot()
+    if not payload:
+        return jsonify({"status": "error",
+                        "message": "Start the stream first to capture a snapshot."}), 404
+    return Response(payload, mimetype='image/jpeg')
+
 @app.route('/api/start', methods=['POST'])
 def start_stream():
     data = request.json or {}
@@ -212,6 +226,27 @@ def settings():
             return jsonify({"status": "error", "message": str(e)}), 400
     if 'auto_start' in data:
         data['auto_start'] = bool(data['auto_start'])
+    if 'roi_enabled' in data:
+        data['roi_enabled'] = bool(data['roi_enabled'])
+    if 'roi_points' in data:
+        v = data['roi_points']
+        # Accept only an empty list (= clear) or exactly 4 [int,int] pairs.
+        # Anything else is rejected so a malformed save can't wedge the loop.
+        if not isinstance(v, list) or len(v) not in (0, 4):
+            return jsonify({"status": "error",
+                            "message": "roi_points must be an empty list or exactly 4 [x,y] pairs"}), 400
+        cleaned = []
+        for p in v:
+            if (not isinstance(p, (list, tuple)) or len(p) != 2
+                    or not all(isinstance(c, (int, float)) for c in p)):
+                return jsonify({"status": "error",
+                                "message": "each roi_points entry must be [x,y] of two numbers"}), 400
+            x, y = int(p[0]), int(p[1])
+            if not (0 <= x <= 8192 and 0 <= y <= 8192):
+                return jsonify({"status": "error",
+                                "message": "roi_points coords must be in [0, 8192]"}), 400
+            cleaned.append([x, y])
+        data['roi_points'] = cleaned
     # last_model_type / last_weights are written by the server on a successful
     # start(); reject client attempts to set them so the operator can't put
     # the auto-start path into a wedged state via the Settings UI.
@@ -224,6 +259,7 @@ def settings():
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
+        'roi_enabled', 'roi_points',
     )
     current = _load_settings()
     for k in allowed_keys:

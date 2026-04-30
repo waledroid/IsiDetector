@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
-    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.19-fps">
-    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.19-fps">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.19-fps">
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.20-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.20-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.20-fps">
 
     <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
-    <script src="/static/vendor/chart.min.js?v=2.19-fps"></script>
+    <script src="/static/vendor/chart.min.js?v=2.20-fps"></script>
 </head>
 
 <body>
@@ -148,6 +148,23 @@
                             <i class="material-icons" style="font-size: 24px;">stop</i> <span
                                 data-i18n="stop">Stop</span>
                         </button>
+                        <!-- Set ROI — hidden by default; revealed when settings.roi_enabled is true. -->
+                        <button id="btnSetROI" class="btn"
+                            style="display: none; flex: 1; padding: 14px; font-size: 18px; align-items: center; justify-content: center; gap: 8px; background: #1b9bd8; color: #fff;">
+                            <i class="material-icons" style="font-size: 24px;">crop</i> <span
+                                data-i18n="set_roi_btn">Set ROI</span>
+                        </button>
+                    </div>
+                    <!-- ROI capture status banner — hidden until Set ROI is clicked -->
+                    <div id="roiCaptureBanner"
+                        style="display: none; margin-top: 8px; padding: 10px 14px; background: #e3f2fd; border: 1px solid #1b9bd8; border-radius: 6px; font-size: 14px; color: #0d47a1;">
+                        <span id="roiCaptureStatus" data-i18n="roi_click_corner_1_of_4">Click corner 1 of 4 (any order: top-left, top-right, bottom-right, bottom-left)</span>
+                        <div id="roiCaptureButtons" style="display: none; margin-top: 8px;">
+                            <button id="btnSaveROI" class="btn btn-primary" style="padding: 8px 16px; font-size: 14px;"
+                                data-i18n="roi_save">Save ROI</button>
+                            <button id="btnCancelROI" class="btn" style="padding: 8px 16px; font-size: 14px; background: #6c757d; color: #fff;"
+                                data-i18n="roi_cancel">Cancel</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -326,6 +343,14 @@
                         </label>
                         <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);" data-i18n="set_auto_start_hint">
                             Once enabled, click Start manually one time to record the model selection. After that, the stream comes up by itself every container boot — no operator click needed.
+                        </p>
+                        <label style="margin-top: 12px; display: flex; gap: 8px; align-items: center; font-weight: 500;">
+                            <input type="checkbox" id="set_roi_enabled" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_roi_enabled_label" title="Reveals a 'Set ROI' button on the Live Inference page so the installer can crop the inference area to just the conveyor belt.">Show "Set ROI" button on landing page</span>
+                        </label>
+                        <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);">
+                            <span data-i18n="roi_current">Current ROI:</span>
+                            <span id="disp_roi_current" data-i18n="roi_none" style="font-family: 'Roboto Mono', monospace;">none</span>
                         </p>
                     </div>
                 </div>
@@ -515,7 +540,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.19-fps"></script>
+    <script src="/static/js/main.js?v=2.20-fps"></script>
 </body>
 
 </html>

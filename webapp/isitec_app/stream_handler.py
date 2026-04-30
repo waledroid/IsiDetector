@@ -336,6 +336,7 @@ class StreamHandler:
         self.source_is_image = False
         self.frame_ready = threading.Event()
         self._current_source = None  # track for hot-swap detection
+        self.roi = None              # (x1,y1,x2,y2) bbox or None — loaded per start()
 
         # Cache the STANDBY frame once — 16:9 aspect ratio
         _standby_h = int(self.web_imgsz * 9 / 16)
@@ -401,6 +402,50 @@ class StreamHandler:
                 json.dump(current, f, indent=2)
         except Exception as e:
             logger.warning(f"[auto-start] Could not persist last-used selection: {e}")
+
+    def _load_roi(self):
+        """Read roi_enabled + roi_points from settings.json into self.roi.
+        Always sets self.roi to either a 4-tuple (x1,y1,x2,y2) bbox or None.
+        Any error → None + log; never raises.
+        """
+        self.roi = None
+        try:
+            path = self._settings_path()
+            if not path.exists():
+                return
+            with open(path) as f:
+                ui = json.load(f) or {}
+            if not ui.get('roi_enabled'):
+                return
+            pts = ui.get('roi_points')
+            if not (isinstance(pts, list) and len(pts) == 4):
+                return
+            xs = [int(p[0]) for p in pts]
+            ys = [int(p[1]) for p in pts]
+            x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+            if x2 > x1 and y2 > y1:
+                self.roi = (x1, y1, x2, y2)
+                logger.info(f"[ROI] Active crop: x=[{x1},{x2}] y=[{y1},{y2}] "
+                            f"({x2-x1}×{y2-y1})")
+        except Exception as e:
+            logger.warning(f"[ROI] Could not load — falling back to full frame: {e}")
+            self.roi = None
+
+    def get_raw_snapshot(self):
+        """Return the latest pre-crop, pre-resize, pre-annotation frame as JPEG.
+        Used by the Live-Inference Set-ROI configurator.
+        """
+        if not self.running or self.reader is None:
+            return None
+        try:
+            frame = self.reader.get_frame()
+            if frame is None:
+                return None
+            ok, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            return buf.tobytes() if ok else None
+        except Exception as e:
+            logger.warning(f"[snapshot] failed: {e}")
+            return None
 
     def _maybe_auto_start(self):
         """If auto_start is enabled and we have a saved camera + last-used
@@ -803,6 +848,7 @@ class StreamHandler:
             del old_inferencer
 
             self.monitor.start_session(model_type=model_type)
+            self._load_roi()
             logger.info(f"🔄 Model switched to {mode_text} (hot-swap — counts preserved)")
             self._persist_last_used(model_type, weights)
             return True, f"Model switched to {mode_text}."
@@ -839,6 +885,7 @@ class StreamHandler:
             self.inf_thread = threading.Thread(target=self._inference_loop, daemon=True)
             self.inf_thread.start()
 
+            self._load_roi()
             logger.info(f"✅ Web App: Processing started ({self.mode_text})")
             self._persist_last_used(model_type, weights)
             return True, "Processing started."
@@ -923,6 +970,27 @@ class StreamHandler:
                 consecutive_drops = 0
 
                 try:
+                    # Belt ROI crop — runs BEFORE the pre-engine downscale so
+                    # the resize works on a smaller region and the model sees
+                    # parcels at higher pixel density. Numpy slice = ~zero cost.
+                    # Any failure latches ROI off for the rest of the session
+                    # so a bad config can't spam the log every frame.
+                    if self.roi is not None:
+                        try:
+                            x1, y1, x2, y2 = self.roi
+                            h, w = frame.shape[:2]
+                            x1c = max(0, min(x1, w))
+                            y1c = max(0, min(y1, h))
+                            x2c = max(x1c + 1, min(x2, w))
+                            y2c = max(y1c + 1, min(y2, h))
+                            cropped = frame[y1c:y2c, x1c:x2c]
+                            if cropped.size == 0:
+                                raise ValueError(f"empty crop for {w}×{h} with roi {self.roi}")
+                            frame = cropped
+                        except Exception as roi_err:
+                            logger.warning(f"[ROI] Crop failed — disabling for this session: {roi_err}")
+                            self.roi = None  # latch off; never retry mid-session
+
                     # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz
                     fh, fw = frame.shape[:2]
                     if max(fh, fw) > self.web_imgsz:

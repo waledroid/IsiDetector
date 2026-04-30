@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Depends, Header, Query
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -98,6 +98,23 @@ def video_feed():
         stream_handler.generate_frames(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
+
+
+@app.get("/api/snapshot")
+def api_snapshot():
+    """Return one full-resolution raw camera frame as JPEG.
+
+    Used by the Live-Inference Set-ROI configurator to draw the crop
+    rectangle on a true full-res snapshot. Returns 404 when the stream
+    isn't running (operator must Start first to capture a frame).
+    """
+    payload = stream_handler.get_raw_snapshot()
+    if not payload:
+        return JSONResponse(
+            {"status": "error",
+             "message": "Start the stream first to capture a snapshot."},
+            status_code=404)
+    return Response(content=payload, media_type="image/jpeg")
 
 
 # FastAPI's built-in ``/swagger`` only exposes the OpenAPI interactive UI;
@@ -297,6 +314,31 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             )
     if 'auto_start' in request_body:
         request_body['auto_start'] = bool(request_body['auto_start'])
+    if 'roi_enabled' in request_body:
+        request_body['roi_enabled'] = bool(request_body['roi_enabled'])
+    if 'roi_points' in request_body:
+        v = request_body['roi_points']
+        if not isinstance(v, list) or len(v) not in (0, 4):
+            return JSONResponse(
+                {"status": "error",
+                 "message": "roi_points must be an empty list or exactly 4 [x,y] pairs"},
+                status_code=400)
+        cleaned = []
+        for p in v:
+            if (not isinstance(p, (list, tuple)) or len(p) != 2
+                    or not all(isinstance(c, (int, float)) for c in p)):
+                return JSONResponse(
+                    {"status": "error",
+                     "message": "each roi_points entry must be [x,y] of two numbers"},
+                    status_code=400)
+            x, y = int(p[0]), int(p[1])
+            if not (0 <= x <= 8192 and 0 <= y <= 8192):
+                return JSONResponse(
+                    {"status": "error",
+                     "message": "roi_points coords must be in [0, 8192]"},
+                    status_code=400)
+            cleaned.append([x, y])
+        request_body['roi_points'] = cleaned
     # last_model_type / last_weights are written by the server on a successful
     # start(); reject client attempts to set them so the operator can't put
     # the auto-start path into a wedged state via the Settings UI.
@@ -309,6 +351,7 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
         'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
         'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
+        'roi_enabled', 'roi_points',
     )
     current = _load_settings()
     for k in allowed_keys:

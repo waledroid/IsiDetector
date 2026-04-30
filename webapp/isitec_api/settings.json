@@ -16,5 +16,7 @@
   "udp_port": 9502,
   "auto_start": false,
   "last_model_type": "",
-  "last_weights": ""
+  "last_weights": "",
+  "roi_enabled": false,
+  "roi_points": []
 }

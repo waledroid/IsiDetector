@@ -47,6 +47,20 @@ const translations = {
         "set_rtsp_url_label": "Default RTSP URL",
         "set_auto_start_label": "Auto-start stream on boot",
         "set_auto_start_hint": "Once enabled, click Start manually one time to record the model selection. After that, the stream comes up by itself every container boot — no operator click needed.",
+        "set_roi_btn": "Set ROI",
+        "set_roi_enabled_label": "Show \"Set ROI\" button on landing page",
+        "roi_current": "Current ROI:",
+        "roi_none": "none (full frame)",
+        "roi_click_corner_1_of_4": "Click corner 1 of 4 (any order: top-left, top-right, bottom-right, bottom-left)",
+        "roi_click_corner_2_of_4": "Click corner 2 of 4",
+        "roi_click_corner_3_of_4": "Click corner 3 of 4",
+        "roi_click_corner_4_of_4": "Click corner 4 of 4",
+        "roi_save": "Save ROI",
+        "roi_cancel": "Cancel",
+        "roi_need_stream": "Start the stream first to capture a snapshot.",
+        "roi_saved": "ROI saved. Stop and Start the stream to apply.",
+        "roi_cleared": "ROI cleared (full-frame mode).",
+        "roi_save_failed": "Could not save ROI: ",
         "sorter_settings": "Sorter (UDP target)",
         "sorter_settings_hint": "Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.",
         "set_udp_host_label": "Sorter IP / hostname",
@@ -129,6 +143,20 @@ const translations = {
         "set_rtsp_url_label": "URL RTSP par défaut",
         "set_auto_start_label": "Démarrage auto au boot",
         "set_auto_start_hint": "Une fois activé, cliquez Démarrer une fois manuellement pour mémoriser le modèle. Ensuite, le flux démarre tout seul à chaque redémarrage du conteneur — aucun clic opérateur nécessaire.",
+        "set_roi_btn": "Définir ROI",
+        "set_roi_enabled_label": "Afficher le bouton « Définir ROI » sur la page d'accueil",
+        "roi_current": "ROI actuelle :",
+        "roi_none": "aucune (image complète)",
+        "roi_click_corner_1_of_4": "Cliquez le coin 1 sur 4 (ordre libre : haut-gauche, haut-droit, bas-droit, bas-gauche)",
+        "roi_click_corner_2_of_4": "Cliquez le coin 2 sur 4",
+        "roi_click_corner_3_of_4": "Cliquez le coin 3 sur 4",
+        "roi_click_corner_4_of_4": "Cliquez le coin 4 sur 4",
+        "roi_save": "Enregistrer ROI",
+        "roi_cancel": "Annuler",
+        "roi_need_stream": "Démarrez d'abord le flux pour capturer une image.",
+        "roi_saved": "ROI enregistrée. Arrêter puis Démarrer le flux pour l'appliquer.",
+        "roi_cleared": "ROI effacée (mode plein cadre).",
+        "roi_save_failed": "Échec de l'enregistrement ROI : ",
         "sorter_settings": "Trieur (cible UDP)",
         "sorter_settings_hint": "Chaque franchissement de ligne envoie un datagramme JSON ~60 octets <code>{class, id, ts}</code> à cette adresse. Enregistrer → l'éditeur retargete immédiatement, pas de redémarrage du flux. Tester avec <code>./net.sh test</code>.",
         "set_udp_host_label": "IP / hôte du trieur",
@@ -449,6 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const videoCanvas = document.getElementById('videoCanvas');
     const vCtx = videoCanvas.getContext('2d');
+
+    // ROI capture pauses the WebSocket-to-canvas draw so the snapshot stays
+    // visible while the operator clicks the 4 corners.
+    let roiCaptureActive = false;
     const statCartons = document.getElementById('statCartons');
     const statPolybags = document.getElementById('statPolybags');
     const statLast = document.getElementById('statLast');
@@ -465,6 +497,10 @@ document.addEventListener('DOMContentLoaded', () => {
         videoWs.binaryType = 'blob';
 
         videoWs.onmessage = (event) => {
+            // Skip frame draws while the operator is configuring an ROI —
+            // the snapshot displayed under the click markers must not be
+            // overwritten by incoming live frames.
+            if (roiCaptureActive) return;
             const blob = event.data;
             const url = URL.createObjectURL(blob);
             const img = new Image();
@@ -1207,6 +1243,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
         const autoStartEl = document.getElementById('set_auto_start');
         if (autoStartEl) autoStartEl.checked = !!serverSettings.auto_start;
+        // ROI: toggle reveals the Live-page "Set ROI" button + show current bbox.
+        const roiEnabledEl = document.getElementById('set_roi_enabled');
+        const setRoiBtn = document.getElementById('btnSetROI');
+        const roiCurrentEl = document.getElementById('disp_roi_current');
+        if (roiEnabledEl) roiEnabledEl.checked = !!serverSettings.roi_enabled;
+        if (setRoiBtn) setRoiBtn.style.display = serverSettings.roi_enabled ? 'flex' : 'none';
+        if (roiCurrentEl) {
+            const pts = serverSettings.roi_points;
+            if (Array.isArray(pts) && pts.length === 4) {
+                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                const x1 = Math.min(...xs), x2 = Math.max(...xs);
+                const y1 = Math.min(...ys), y2 = Math.max(...ys);
+                roiCurrentEl.textContent = `x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
+                roiCurrentEl.removeAttribute('data-i18n');
+            } else {
+                roiCurrentEl.setAttribute('data-i18n', 'roi_none');
+                roiCurrentEl.textContent = (translations[currentLang] && translations[currentLang]['roi_none']) || 'none (full frame)';
+            }
+        }
         const udpHostEl = document.getElementById('set_udp_host');
         if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '127.0.0.1';
         const udpPortEl = document.getElementById('set_udp_port');
@@ -1304,6 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 skip_traces:   document.getElementById('set_skip_traces').checked,
                 rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
                 auto_start:    document.getElementById('set_auto_start').checked,
+                roi_enabled:   document.getElementById('set_roi_enabled').checked,
                 udp_host:      document.getElementById('set_udp_host').value.trim(),
                 udp_port:      parseInt(document.getElementById('set_udp_port').value),
             };
@@ -1322,11 +1378,145 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } catch (e) { console.warn('Server settings save failed', e); }
 
+            // Live-reflect the ROI toggle on the landing page without a reload.
+            const setRoiBtnNow = document.getElementById('btnSetROI');
+            if (setRoiBtnNow) setRoiBtnNow.style.display = settings.roi_enabled ? 'flex' : 'none';
+
             const confirmMsg = document.getElementById('saveConfirm');
             confirmMsg.classList.remove('hidden');
             setTimeout(() => confirmMsg.classList.add('hidden'), 3000);
         });
     }
+
+    // ── ROI capture (Live-page Set-ROI button) ─────────────────────────────
+    // 4 clicks on a snapshot → axis-aligned bbox → POST /api/settings.
+    // Pauses the WebSocket-to-canvas draw via roiCaptureActive flag.
+    (function setupRoiCapture() {
+        const btnSetROI = document.getElementById('btnSetROI');
+        const banner = document.getElementById('roiCaptureBanner');
+        const statusEl = document.getElementById('roiCaptureStatus');
+        const buttons = document.getElementById('roiCaptureButtons');
+        const btnSave = document.getElementById('btnSaveROI');
+        const btnCancel = document.getElementById('btnCancelROI');
+        if (!btnSetROI) return;
+
+        let pendingPoints = [];
+        let savedClickHandler = null;
+
+        function statusKey(n) {
+            const k = `roi_click_corner_${n}_of_4`;
+            return (translations[currentLang] && translations[currentLang][k]) || k;
+        }
+
+        function endCapture() {
+            roiCaptureActive = false;
+            banner.style.display = 'none';
+            buttons.style.display = 'none';
+            videoCanvas.onclick = savedClickHandler;
+            pendingPoints = [];
+        }
+
+        async function beginCapture() {
+            try {
+                const res = await fetch('/api/snapshot');
+                if (!res.ok) {
+                    const msg = (translations[currentLang] && translations[currentLang]['roi_need_stream'])
+                                || 'Start the stream first to capture a snapshot.';
+                    alert(msg);
+                    return;
+                }
+                const blob = await res.blob();
+                const img = new Image();
+                img.onload = () => {
+                    roiCaptureActive = true;
+                    videoCanvas.width = img.naturalWidth;
+                    videoCanvas.height = img.naturalHeight;
+                    vCtx.drawImage(img, 0, 0, videoCanvas.width, videoCanvas.height);
+                    pendingPoints = [];
+                    banner.style.display = 'block';
+                    buttons.style.display = 'none';
+                    statusEl.textContent = statusKey(1);
+
+                    savedClickHandler = videoCanvas.onclick;
+                    videoCanvas.onclick = (e) => {
+                        const r = videoCanvas.getBoundingClientRect();
+                        const cssX = e.clientX - r.left;
+                        const cssY = e.clientY - r.top;
+                        const markerScale = videoCanvas.width / r.width;
+                        const nx = Math.round(cssX * markerScale);
+                        const ny = Math.round(cssY * markerScale);
+                        pendingPoints.push([nx, ny]);
+
+                        vCtx.fillStyle = '#00ff00';
+                        vCtx.beginPath();
+                        vCtx.arc(cssX * markerScale, cssY * markerScale, 10, 0, 2 * Math.PI);
+                        vCtx.fill();
+                        vCtx.fillStyle = '#000';
+                        vCtx.font = `${Math.round(16 * markerScale)}px sans-serif`;
+                        vCtx.fillText(String(pendingPoints.length),
+                                      cssX * markerScale - 5, cssY * markerScale + 6);
+
+                        if (pendingPoints.length < 4) {
+                            statusEl.textContent = statusKey(pendingPoints.length + 1);
+                        } else {
+                            const xs = pendingPoints.map(p => p[0]);
+                            const ys = pendingPoints.map(p => p[1]);
+                            const x1 = Math.min(...xs), x2 = Math.max(...xs);
+                            const y1 = Math.min(...ys), y2 = Math.max(...ys);
+                            vCtx.strokeStyle = '#00ff00';
+                            vCtx.lineWidth = Math.max(2, Math.round(3 * markerScale));
+                            vCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                            statusEl.textContent =
+                                `Captured: x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
+                            buttons.style.display = 'block';
+                            videoCanvas.onclick = null;
+                        }
+                    };
+                };
+                img.src = URL.createObjectURL(blob);
+            } catch (e) {
+                console.warn('ROI capture failed', e);
+                alert('Could not start ROI capture: ' + e);
+            }
+        }
+
+        btnSetROI.addEventListener('click', beginCapture);
+        btnCancel.addEventListener('click', endCapture);
+
+        btnSave.addEventListener('click', async () => {
+            if (pendingPoints.length !== 4) { endCapture(); return; }
+            const points = pendingPoints.slice();
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                    body: JSON.stringify({ roi_enabled: true, roi_points: points })
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok || body.status !== 'success') {
+                    const prefix = (translations[currentLang] && translations[currentLang]['roi_save_failed']) || 'Could not save ROI: ';
+                    alert(prefix + (body.message || `HTTP ${res.status}`));
+                    return;
+                }
+                const ok = (translations[currentLang] && translations[currentLang]['roi_saved'])
+                           || 'ROI saved. Stop and Start the stream to apply.';
+                alert(ok);
+                const roiCurrentEl = document.getElementById('disp_roi_current');
+                if (roiCurrentEl) {
+                    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+                    const x1 = Math.min(...xs), x2 = Math.max(...xs);
+                    const y1 = Math.min(...ys), y2 = Math.max(...ys);
+                    roiCurrentEl.removeAttribute('data-i18n');
+                    roiCurrentEl.textContent = `x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
+                }
+            } catch (e) {
+                console.warn('ROI save failed', e);
+                alert('Could not save ROI: ' + e);
+            } finally {
+                endCapture();
+            }
+        });
+    })();
 
     loadSettings();
 
