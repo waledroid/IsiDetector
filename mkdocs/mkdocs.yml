@@ -120,6 +120,7 @@ nav:
   - Deployment (Docker): deployment.md
   - Compression Tool: compression.md
   - Network Setup: network-setup.md
+  - Site Operations: site-operations.md
   - Tutorials:
     - Modular Plug-In Architecture: tutorials/MODULAR.md
     - ONNX Deep-Dive: tutorials/ONNX_TUTORIAL.md
