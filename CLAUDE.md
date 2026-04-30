@@ -107,6 +107,28 @@ docker compose exec web bash
 
 `test`/`apply`/`revert`/`setup` re-exec themselves via `sudo -E` if not already root (preserves flags via `ORIG_ARGS`). Read-only `show` runs as the regular user. Not for WSL2 or Ubuntu Server — gracefully errors with "NetworkManager not installed" if that's the host. The internet-reachability and Docker-egress checks in `test` degrade to yellow `skip` lines when the WAN cable is unplugged or the web container isn't running, so offline runs produce no `[FAIL]` noise.
 
+### Standalone-mode helpers (`autostart.sh`)
+
+Three independent layers turn a fresh site PC into a hands-free kiosk. Each layer can be enabled or reverted on its own — they compose but don't depend on each other.
+
+```bash
+sudo ./autostart.sh enable-autologin USER   # Layer 1 — OS skips login screen (GDM3/LightDM/SDDM)
+sudo ./autostart.sh enable-systemd          # Layer 2 — docker compose up at boot via systemd
+./autostart.sh enable                       # Layer 3 — desktop autostart opens kiosk Chrome on login
+./autostart.sh status                       # print state of all three
+sudo ./autostart.sh disable-autologin       # reverse Layer 1
+sudo ./autostart.sh disable-systemd         # reverse Layer 2
+./autostart.sh disable                      # reverse Layers 2 + 3 (leaves auto-login alone)
+```
+
+- **Layer 1** (`enable-autologin`) auto-detects the display manager and writes `AutomaticLogin=USER` to the right config (`/etc/gdm3/custom.conf`, LightDM `lightdm.conf.d/`, or SDDM `sddm.conf.d/`). Takes effect on next reboot — script does not restart the DM, that would log the operator out mid-setup.
+- **Layer 2** (`enable-systemd`) installs `/etc/systemd/system/isidetector.service` that runs `docker compose up -d` from the install directory, ordered after `docker.service` + `network-online.target`. `User=` is set to the install-dir owner so settings.json file ownership stays consistent across systemd-managed and operator-managed runs.
+- **Layer 3** (`enable`) writes `~/.config/autostart/isidetector.desktop`, which the desktop session runs ~10 s after login. Auto-rewrites itself to use `up.sh --open-only` (skip compose, just wait + open Chrome) when Layer 2 is also installed, so the two layers don't race.
+
+Combined with the in-app **Settings → Camera → Auto-start stream on boot** toggle, the full hands-free path is: power on → ~30–40 s → kiosk Chrome on the dashboard with the stream running, zero clicks.
+
+`up.sh --open-only` is a new flag that skips `docker compose up/down` entirely, waits briefly for `tcp/9501`, then opens the browser. Used by Layer 3 when Layer 2 owns the compose lifecycle.
+
 ---
 
 ## Architecture
@@ -154,7 +176,7 @@ Flask (`webapp/isitec_app/`) and FastAPI (`webapp/isitec_api/`) share `isidet/sr
 
 - `app.py` — routes + session init (Flask has `/video_feed` MJPEG; FastAPI has `/ws/video` WebSocket + `/video_feed` MJPEG fallback).
 - `stream_handler.py` — background inference thread, session state, locale (en/fr/de), UDP publisher.
-- Endpoints: `POST /api/{start,stop,upload,language,dev-auth,dev-logout,udp,line,settings,belt_status}`, `GET /api/{stats,performance,chart?period=…,models,dev-check,settings,udp,line}`.
+- Endpoints: `POST /api/{start,stop,upload,language,dev-auth,dev-logout,udp,line,settings,belt_status}`, `GET /api/{stats,performance,chart?period=…,models,dev-check,settings,udp,line,snapshot}`. `GET /api/snapshot` returns one full-resolution raw camera frame as JPEG (the latest from `LiveReader.get_frame()`); used by the Live-page ROI configurator to draw the crop rectangle on a true full-res frame. Returns 404 when the stream isn't running.
 - FastAPI-only: `/ws/video` (binary JPEG stream), `/ws/stats` (500 ms JSON tick). `/docs` and `/docs/{subpath}` serve the built MkDocs site on both backends (needs the site/ dir volume-mounted in; bare deploy branch doesn't ship pre-built docs).
 
 ## Persistent hot-swap
@@ -251,10 +273,34 @@ POST /api/start → StreamHandler (hot-swap path if same source)
 
 The Docker images pull `torch` + `onnxruntime` separately (CPU or GPU wheels depending on the Dockerfile variant), then install `requirements-deploy.txt` on top.
 
+## Settings keys (`webapp/isitec_*/settings.json`)
+
+Single source of truth for operator-tunable runtime parameters. The Settings UI reads/writes via `GET`/`POST /api/settings`. Backend rejects unknown keys; values are validated server-side before being persisted. Two server-only keys are written by `stream_handler` itself and stripped from any client POST.
+
+| Key | Type | Default | Purpose |
+|---|---|---|---|
+| `yolo_weights` / `rfdetr_weights` | str (path) | per-build | Model file the operator selected; respected on next Start. |
+| `yolo_imgsz` / `detr_imgsz` | int | 320 / 416 | Inference input size hint. **OpenVINO `.xml` ignores this** (input shape is baked in at export); Ultralytics `.pt` and dynamic ONNX honor it. |
+| `yolo_conf` / `detr_conf` | float | 0.55 / 0.35 | Confidence threshold. |
+| `line_orientation` | `vertical`/`horizontal` | vertical | LineZone orientation. |
+| `line_position` | float [0..1] | 0.5 | Fraction of frame width (vertical) or height (horizontal). After ROI crop, fraction is relative to the cropped frame. |
+| `belt_direction` | `left_to_right`/`right_to_left`/`top_to_bottom`/`bottom_to_top` | left_to_right | Picks the bbox leading-edge anchor (see Trigger semantics). |
+| `cpu_threads` | int [1..64] | 8 | OpenVINO `INFERENCE_NUM_THREADS`. |
+| `skip_masks` / `skip_traces` | bool | false / false | Render shortcuts; significant FPS bump on busy belts. |
+| `rtsp_url` | str | per-build | Saved camera URL used by the **📡 Site Camera** landing-page button. |
+| `udp_host` / `udp_port` | str / int | 10.0.0.1 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
+| `auto_start` | bool | false | If true, container boot replays the last successful Start (saved camera + last-used model) — no operator click needed. |
+| `last_model_type` | str | "" | **Server-written.** Recorded after a successful Start; used by `auto_start`. Client POSTs cannot set this. |
+| `last_weights` | str | "" | **Server-written.** Same as above. |
+| `roi_enabled` | bool | false | If true, exposes the **📐 Set ROI** button on the Live Inference page. ROI crop only applies if both `roi_enabled` AND a valid 4-point `roi_points` are set. |
+| `roi_points` | list of 0 or 4 `[x,y]` pairs | [] | Operator-drawn corner points in original camera-frame pixel coords. Backend computes the axis-aligned bounding rectangle and applies it as a numpy-slice crop in `_inference_loop` before the pre-engine resize. Any error → `self.roi = None` latch + log; pipeline never breaks. |
+
 ## Notes
 
 - Pretrained weights tracked in repo: `isidet/models/pretrained/{yolo26n.pt,yolov8m-seg.pt}`. Everything else in `isidet/models/` is gitignored — populate via scp from the office PC.
-- **Line defaults:** `line_position = 0.5` (centred), `belt_direction = "left_to_right"`. Operators change them via the Tracking Line settings panel or `POST /api/line`.
+- **Line defaults:** `line_position = 0.5` (centred), `belt_direction = "left_to_right"`. Operators change them via the Tracking Line settings panel or `POST /api/line`. After ROI crop, "0.5" means middle of the **cropped** frame (i.e. middle of the belt) — no code change needed, the line layer reads `frame.shape[:2]` which is now post-crop.
+- **OpenVINO YOLO preprocess is resize-first.** `openvino_inferencer.preprocess()` runs `_letterbox` + `cv2.dnn.blobFromImage` (fused C++ swapRB + scale + transpose + add-batch) on the model-sized canvas instead of the raw input frame. Saves ~2 ms/frame on i7-10710U at 1080p input vs. the old transpose+astype+`/255` numpy chain.
 - **ONNX session caching was removed** in favour of `preload_onnx()` which warms the CUDNN kernel cache at boot and discards the session. Cross-thread `session.run()` on a shared CUDA session triggered multi-second stream-sync stalls; per-thread rebuild reusing driver-level kernel cache avoids that at ~2 s cost per swap instead of 30–80 s.
 - **Deployment marker** `deploy/.deployment.env` is written by `run_start.sh` (records `COMPOSE_MODE=gpu|cpu`) and consumed by `up.sh` to pick the right compose profile. Gitignored — per-host state.
 - **Site PC workflow is entirely on this branch** — never `git checkout main` on a site PC unless you're explicitly using the office-PC toolchain here.
+- **`settings.json` git-pull conflict avoidance** — operator's edits diverge from upstream every time we add a new key. Set `git update-index --skip-worktree webapp/isitec_app/settings.json webapp/isitec_api/settings.json` once after first clone and `git pull` will leave on-site values alone forever. New upstream keys appear in operator's file the first time they Save the Settings panel.
