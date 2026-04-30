@@ -288,7 +288,7 @@ Single source of truth for operator-tunable runtime parameters. The Settings UI 
 | `cpu_threads` | int [1..64] | 8 | OpenVINO `INFERENCE_NUM_THREADS`. |
 | `skip_masks` / `skip_traces` | bool | false / false | Render shortcuts; significant FPS bump on busy belts. |
 | `rtsp_url` | str | per-build | Saved camera URL used by the **📡 Site Camera** landing-page button. |
-| `udp_host` / `udp_port` | str / int | 10.0.0.1 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
+| `udp_host` / `udp_port` | str / int | 10.0.0.2 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
 | `auto_start` | bool | false | If true, container boot replays the last successful Start (saved camera + last-used model) — no operator click needed. |
 | `last_model_type` | str | "" | **Server-written.** Recorded after a successful Start; used by `auto_start`. Client POSTs cannot set this. |
 | `last_weights` | str | "" | **Server-written.** Same as above. |
