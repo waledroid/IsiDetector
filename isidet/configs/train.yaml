@@ -42,8 +42,14 @@ scale: 0.5
 inference:
   conf_threshold: 0.3      # AI confidence cutoff
   tracker:
-    track_buffer: 60       # Frames to wait before dropping ID
-    match_thresh: 0.9      # Strictness of ID matching
+    track_buffer: 60       # Frames to wait before dropping ID (3.3s at 18 FPS — generous)
+    match_thresh: 0.7      # IoU+similarity threshold for track association.
+                           # 0.9 was too strict at low FPS: legit frame-to-frame matches
+                           # at 70-85% IoU got rejected → new IDs spawn → LineZone misses
+                           # the crossing because per-tracker history started empty.
+                           # 0.7 is the safe sweet spot for 18-25 FPS belts; above 30 FPS,
+                           # raise to 0.8 (upstream default) to be safer against close-together
+                           # parcels merging into one tracker.
   logging:
     enabled: true
     save_interval: 3600    # 3600 = 1 Hour, 60 = 1 Minute # 15 to test
