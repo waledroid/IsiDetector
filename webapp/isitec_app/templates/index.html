@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
-    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.21-fps">
-    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.21-fps">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.21-fps">
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.22-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.22-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.22-fps">
 
     <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
-    <script src="/static/vendor/chart.min.js?v=2.21-fps"></script>
+    <script src="/static/vendor/chart.min.js?v=2.22-fps"></script>
 </head>
 
 <body>
@@ -160,11 +160,14 @@
                     <!-- ROI capture status banner — hidden until Set ROI is clicked -->
                     <div id="roiCaptureBanner"
                         style="display: none; margin-top: 8px; padding: 10px 14px; background: #e3f2fd; border: 1px solid #1b9bd8; border-radius: 6px; font-size: 14px; color: #0d47a1;">
-                        <span id="roiCaptureStatus" data-i18n="roi_click_corner_1_of_4">Click corner 1 of 4 (any order: top-left, top-right, bottom-right, bottom-left)</span>
-                        <div id="roiCaptureButtons" style="display: none; margin-top: 8px;">
-                            <button id="btnSaveROI" class="btn btn-primary" style="padding: 8px 16px; font-size: 14px;"
+                        <span id="roiCaptureStatus" data-i18n="roi_drag_instruction">Click and drag a rectangle over the conveyor belt area.</span>
+                        <div id="roiCaptureButtons"
+                            style="display: none; margin-top: 12px; gap: 12px; align-items: center; justify-content: flex-start;">
+                            <button id="btnSaveROI" class="btn btn-primary"
+                                style="padding: 8px 20px; font-size: 14px; min-width: 130px;"
                                 data-i18n="roi_save">Save ROI</button>
-                            <button id="btnCancelROI" class="btn" style="padding: 8px 16px; font-size: 14px; background: #6c757d; color: #fff;"
+                            <button id="btnCancelROI" class="btn"
+                                style="padding: 8px 20px; font-size: 14px; min-width: 130px; background: #6c757d; color: #fff;"
                                 data-i18n="roi_cancel">Cancel</button>
                         </div>
                     </div>
@@ -527,7 +530,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.21-fps"></script>
+    <script src="/static/js/main.js?v=2.22-fps"></script>
 </body>
 
 </html>

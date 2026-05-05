@@ -49,10 +49,7 @@ const translations = {
         "set_roi_enabled_label": "Show \"Set ROI\" button on landing page",
         "roi_current": "Current ROI:",
         "roi_none": "none (full frame)",
-        "roi_click_corner_1_of_4": "Click corner 1 of 4 (any order: top-left, top-right, bottom-right, bottom-left)",
-        "roi_click_corner_2_of_4": "Click corner 2 of 4",
-        "roi_click_corner_3_of_4": "Click corner 3 of 4",
-        "roi_click_corner_4_of_4": "Click corner 4 of 4",
+        "roi_drag_instruction": "Click and drag a rectangle over the conveyor belt area.",
         "roi_save": "Save ROI",
         "roi_cancel": "Cancel",
         "roi_need_stream": "Start the stream first to capture a snapshot.",
@@ -143,10 +140,7 @@ const translations = {
         "set_roi_enabled_label": "Afficher le bouton « Définir ROI » sur la page d'accueil",
         "roi_current": "ROI actuelle :",
         "roi_none": "aucune (image complète)",
-        "roi_click_corner_1_of_4": "Cliquez le coin 1 sur 4 (ordre libre : haut-gauche, haut-droit, bas-droit, bas-gauche)",
-        "roi_click_corner_2_of_4": "Cliquez le coin 2 sur 4",
-        "roi_click_corner_3_of_4": "Cliquez le coin 3 sur 4",
-        "roi_click_corner_4_of_4": "Cliquez le coin 4 sur 4",
+        "roi_drag_instruction": "Cliquez et glissez pour tracer un rectangle sur la zone du convoyeur.",
         "roi_save": "Enregistrer ROI",
         "roi_cancel": "Annuler",
         "roi_need_stream": "Démarrez d'abord le flux pour capturer une image.",
@@ -1403,20 +1397,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnCancel = document.getElementById('btnCancelROI');
         if (!btnSetROI) return;
 
-        let pendingPoints = [];
-        let savedClickHandler = null;
-
-        function statusKey(n) {
-            const k = `roi_click_corner_${n}_of_4`;
-            return (translations[currentLang] && translations[currentLang][k]) || k;
-        }
+        // Drag-to-rectangle ROI selection. Replaces the prior 4-click corner picker.
+        let dragStart = null;          // {x, y} in native canvas coords
+        let pendingBbox = null;        // [x1, y1, x2, y2] in native canvas coords
+        let snapshotImg = null;
+        let onMouseDown = null, onMouseMove = null, onMouseUp = null, onMouseLeave = null;
 
         function endCapture() {
             roiCaptureActive = false;
             banner.style.display = 'none';
             buttons.style.display = 'none';
-            videoCanvas.onclick = savedClickHandler;
-            pendingPoints = [];
+            if (onMouseDown)  videoCanvas.removeEventListener('mousedown', onMouseDown);
+            if (onMouseMove)  videoCanvas.removeEventListener('mousemove', onMouseMove);
+            if (onMouseUp)    videoCanvas.removeEventListener('mouseup', onMouseUp);
+            if (onMouseLeave) videoCanvas.removeEventListener('mouseleave', onMouseLeave);
+            videoCanvas.style.cursor = '';
+            dragStart = null;
+            pendingBbox = null;
+            snapshotImg = null;
+        }
+
+        function clientToCanvas(e) {
+            const r = videoCanvas.getBoundingClientRect();
+            return {
+                x: Math.round((e.clientX - r.left) * (videoCanvas.width / r.width)),
+                y: Math.round((e.clientY - r.top) * (videoCanvas.height / r.height))
+            };
+        }
+
+        function redrawSnapshot(extra) {
+            if (!snapshotImg) return;
+            vCtx.drawImage(snapshotImg, 0, 0);
+            if (extra) extra();
         }
 
         async function beginCapture() {
@@ -1432,49 +1444,81 @@ document.addEventListener('DOMContentLoaded', () => {
                 const img = new Image();
                 img.onload = () => {
                     roiCaptureActive = true;
+                    snapshotImg = img;
                     videoCanvas.width = img.naturalWidth;
                     videoCanvas.height = img.naturalHeight;
-                    vCtx.drawImage(img, 0, 0, videoCanvas.width, videoCanvas.height);
-                    pendingPoints = [];
+                    vCtx.drawImage(img, 0, 0);
+                    videoCanvas.style.cursor = 'crosshair';
+                    dragStart = null;
+                    pendingBbox = null;
                     banner.style.display = 'block';
                     buttons.style.display = 'none';
-                    statusEl.textContent = statusKey(1);
+                    statusEl.textContent = (translations[currentLang] && translations[currentLang]['roi_drag_instruction'])
+                                           || 'Click and drag a rectangle over the conveyor belt area.';
 
-                    savedClickHandler = videoCanvas.onclick;
-                    videoCanvas.onclick = (e) => {
-                        const r = videoCanvas.getBoundingClientRect();
-                        const cssX = e.clientX - r.left;
-                        const cssY = e.clientY - r.top;
-                        const markerScale = videoCanvas.width / r.width;
-                        const nx = Math.round(cssX * markerScale);
-                        const ny = Math.round(cssY * markerScale);
-                        pendingPoints.push([nx, ny]);
-
-                        vCtx.fillStyle = '#00ff00';
-                        vCtx.beginPath();
-                        vCtx.arc(cssX * markerScale, cssY * markerScale, 10, 0, 2 * Math.PI);
-                        vCtx.fill();
-                        vCtx.fillStyle = '#000';
-                        vCtx.font = `${Math.round(16 * markerScale)}px sans-serif`;
-                        vCtx.fillText(String(pendingPoints.length),
-                                      cssX * markerScale - 5, cssY * markerScale + 6);
-
-                        if (pendingPoints.length < 4) {
-                            statusEl.textContent = statusKey(pendingPoints.length + 1);
-                        } else {
-                            const xs = pendingPoints.map(p => p[0]);
-                            const ys = pendingPoints.map(p => p[1]);
-                            const x1 = Math.min(...xs), x2 = Math.max(...xs);
-                            const y1 = Math.min(...ys), y2 = Math.max(...ys);
-                            vCtx.strokeStyle = '#00ff00';
-                            vCtx.lineWidth = Math.max(2, Math.round(3 * markerScale));
-                            vCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-                            statusEl.textContent =
-                                `Captured: x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
-                            buttons.style.display = 'block';
-                            videoCanvas.onclick = null;
-                        }
+                    onMouseDown = (e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        dragStart = clientToCanvas(e);
+                        pendingBbox = null;
+                        buttons.style.display = 'none';
                     };
+
+                    onMouseMove = (e) => {
+                        if (!dragStart) return;
+                        e.preventDefault();
+                        const cur = clientToCanvas(e);
+                        redrawSnapshot(() => {
+                            const lw = Math.max(2, Math.round(videoCanvas.width / 400));
+                            vCtx.strokeStyle = '#00ff00';
+                            vCtx.lineWidth = lw;
+                            vCtx.setLineDash([Math.max(6, lw * 3), Math.max(4, lw * 2)]);
+                            vCtx.strokeRect(
+                                Math.min(dragStart.x, cur.x),
+                                Math.min(dragStart.y, cur.y),
+                                Math.abs(cur.x - dragStart.x),
+                                Math.abs(cur.y - dragStart.y)
+                            );
+                            vCtx.setLineDash([]);
+                        });
+                    };
+
+                    onMouseUp = (e) => {
+                        if (!dragStart) return;
+                        e.preventDefault();
+                        const end = clientToCanvas(e);
+                        const x1 = Math.min(dragStart.x, end.x);
+                        const y1 = Math.min(dragStart.y, end.y);
+                        const x2 = Math.max(dragStart.x, end.x);
+                        const y2 = Math.max(dragStart.y, end.y);
+                        if (x2 - x1 < 20 || y2 - y1 < 20) {
+                            redrawSnapshot();
+                            dragStart = null;
+                            return;
+                        }
+                        pendingBbox = [x1, y1, x2, y2];
+                        redrawSnapshot(() => {
+                            const lw = Math.max(2, Math.round(videoCanvas.width / 400));
+                            vCtx.strokeStyle = '#00ff00';
+                            vCtx.lineWidth = lw;
+                            vCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                            vCtx.fillStyle = 'rgba(0, 255, 0, 0.18)';
+                            vCtx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                        });
+                        statusEl.textContent =
+                            `Captured: x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1}) — drag again to redraw, or save.`;
+                        buttons.style.display = 'flex';
+                        dragStart = null;
+                    };
+
+                    onMouseLeave = (e) => {
+                        if (dragStart) onMouseUp(e);
+                    };
+
+                    videoCanvas.addEventListener('mousedown', onMouseDown);
+                    videoCanvas.addEventListener('mousemove', onMouseMove);
+                    videoCanvas.addEventListener('mouseup', onMouseUp);
+                    videoCanvas.addEventListener('mouseleave', onMouseLeave);
                 };
                 img.src = URL.createObjectURL(blob);
             } catch (e) {
@@ -1487,8 +1531,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btnCancel.addEventListener('click', endCapture);
 
         btnSave.addEventListener('click', async () => {
-            if (pendingPoints.length !== 4) { endCapture(); return; }
-            const points = pendingPoints.slice();
+            if (!pendingBbox) { endCapture(); return; }
+            const [x1, y1, x2, y2] = pendingBbox;
+            const points = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
             try {
                 const res = await fetch('/api/settings', {
                     method: 'POST',
