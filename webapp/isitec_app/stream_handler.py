@@ -337,6 +337,10 @@ class StreamHandler:
         self.frame_ready = threading.Event()
         self._current_source = None  # track for hot-swap detection
         self.roi = None              # (x1,y1,x2,y2) bbox or None — loaded per start()
+        # 2:1 JPEG-encode throttle so display FPS ≈ inference FPS / 2 (~12 FPS
+        # at 25 FPS inference). Inference, tracking, line crossings, and UDP
+        # publish still run on every frame — only the visualization is throttled.
+        self._encode_skip_idx = 0
 
         # Cache the STANDBY frame once — 16:9 aspect ratio
         _standby_h = int(self.web_imgsz * 9 / 16)
@@ -1105,9 +1109,14 @@ class StreamHandler:
                         self.monitor.track_udp_publish(latency_ns=latency_ns)
                         self.monitor.track_crossing()
 
-                    _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    self.latest_annotated = buffer.tobytes()
-                    self.frame_ready.set()
+                    # Throttle: encode every 2nd inference frame so display CPU
+                    # is halved. Skipped frames re-serve the prior JPEG via the
+                    # MJPEG generator. frame_ready only fires on real encodes.
+                    if self._encode_skip_idx % 2 == 0:
+                        _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                        self.latest_annotated = buffer.tobytes()
+                        self.frame_ready.set()
+                    self._encode_skip_idx += 1
 
                     consecutive_errors = 0
                     frame_count += 1
