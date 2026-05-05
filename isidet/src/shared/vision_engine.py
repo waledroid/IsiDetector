@@ -252,11 +252,16 @@ class VisionEngine:
             logger.info(f"♻️ counted_ids pruned to {len(self.counted_ids)} entries")
 
         # 3. Visual Composition
+        # skip_masks / skip_traces are set by stream_handler._apply_render_settings
+        # from the mode-driven inference config (cpu.yaml: both True; gpu.yaml: both False).
+        # Default to False if the attribute isn't present (defensive — older callers
+        # that don't go through _apply_render_settings get the full render).
         annotated = frame.copy()
-        if detections.mask is not None:
+        if detections.mask is not None and not getattr(self, 'skip_masks', False):
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
-        
-        annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
+
+        if not getattr(self, 'skip_traces', False):
+            annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
         annotated = self.box_annotator.annotate(scene=annotated, detections=detections)
         
         if detections.tracker_id is not None:
