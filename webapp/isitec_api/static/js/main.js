@@ -1418,10 +1418,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function clientToCanvas(e) {
+            // The canvas has `object-fit: contain` in CSS — its drawing surface
+            // is letterboxed inside the CSS box if the aspect ratios differ.
+            // getBoundingClientRect() returns the OUTER CSS box including the
+            // letterbox bars; subtract those to get the true content area.
             const r = videoCanvas.getBoundingClientRect();
+            const cssAspect = r.width / r.height;
+            const canvasAspect = videoCanvas.width / videoCanvas.height;
+            let contentW, contentH, offX, offY;
+            if (canvasAspect > cssAspect) {
+                contentW = r.width;
+                contentH = r.width / canvasAspect;
+                offX = 0;
+                offY = (r.height - contentH) / 2;
+            } else {
+                contentH = r.height;
+                contentW = r.height * canvasAspect;
+                offX = (r.width - contentW) / 2;
+                offY = 0;
+            }
+            const cssX = Math.max(0, Math.min(contentW, e.clientX - r.left - offX));
+            const cssY = Math.max(0, Math.min(contentH, e.clientY - r.top - offY));
             return {
-                x: Math.round((e.clientX - r.left) * (videoCanvas.width / r.width)),
-                y: Math.round((e.clientY - r.top) * (videoCanvas.height / r.height))
+                x: Math.round(cssX * (videoCanvas.width / contentW)),
+                y: Math.round(cssY * (videoCanvas.height / contentH))
             };
         }
 

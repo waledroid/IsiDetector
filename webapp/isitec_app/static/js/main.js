@@ -1468,10 +1468,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function clientToCanvas(e) {
+            // The canvas has `object-fit: contain` in CSS — its drawing surface
+            // is letterboxed inside the CSS box if the aspect ratios differ.
+            // getBoundingClientRect() returns the OUTER CSS box including the
+            // letterbox bars; we have to subtract those to get the true content
+            // area, otherwise clicks register at offset positions on non-matching
+            // aspects (was: clicks "jumped inward" by the bar-thickness).
             const r = videoCanvas.getBoundingClientRect();
+            const cssAspect = r.width / r.height;
+            const canvasAspect = videoCanvas.width / videoCanvas.height;
+            let contentW, contentH, offX, offY;
+            if (canvasAspect > cssAspect) {
+                // Canvas wider than box → fits to width, top/bottom bars
+                contentW = r.width;
+                contentH = r.width / canvasAspect;
+                offX = 0;
+                offY = (r.height - contentH) / 2;
+            } else {
+                // Canvas taller than box → fits to height, left/right bars
+                contentH = r.height;
+                contentW = r.height * canvasAspect;
+                offX = (r.width - contentW) / 2;
+                offY = 0;
+            }
+            // Clamp to content area so a click in a bar lands at the nearest edge
+            const cssX = Math.max(0, Math.min(contentW, e.clientX - r.left - offX));
+            const cssY = Math.max(0, Math.min(contentH, e.clientY - r.top - offY));
             return {
-                x: Math.round((e.clientX - r.left) * (videoCanvas.width / r.width)),
-                y: Math.round((e.clientY - r.top) * (videoCanvas.height / r.height))
+                x: Math.round(cssX * (videoCanvas.width / contentW)),
+                y: Math.round(cssY * (videoCanvas.height / contentH))
             };
         }
 
