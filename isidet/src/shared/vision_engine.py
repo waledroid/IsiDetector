@@ -49,12 +49,16 @@ class VisionEngine:
     def __init__(self, inferencer, config: dict):
         self.inferencer = inferencer
         self.config = config
-        
+
         # 1. Pipeline Config
+        # ByteTrack params now live under config['bytetrack'] (mode-driven, from
+        # isidet/configs/inference/{cpu,gpu}.yaml). Fall back to the legacy
+        # config['inference']['tracker'] location if a caller still uses the
+        # old train.yaml shape.
         inf_cfg = config.get('inference', {})
         conf_thresh = inf_cfg.get('conf_threshold', 0.3)
-        track_cfg = inf_cfg.get('tracker', {})
-        
+        track_cfg = config.get('bytetrack') or inf_cfg.get('tracker', {})
+
         # 2. Tracking & Core Analytics
         self.tracker = sv.ByteTrack(
             track_activation_threshold=conf_thresh,
@@ -100,15 +104,6 @@ class VisionEngine:
         self.belt_direction = 'left_to_right'
         self._frame_w = 0
         self._frame_h = 0
-
-        # 7. Render flags — let the operator skip per-frame work that
-        # scales with detection count for FPS on busy belts. Boxes +
-        # labels always draw so the UI stays informative.
-        # - skip_masks: skip mask alpha-blend (biggest single win).
-        # - skip_traces: skip the motion-trail polylines behind tracker
-        #   IDs (decorative; trail builds up over time so cost grows).
-        self.skip_masks = False
-        self.skip_traces = False
 
     # Belt direction → leading-edge anchor map. The leading edge is the side
     # of the bbox that enters the line zone FIRST given the belt's motion.
@@ -258,17 +253,10 @@ class VisionEngine:
 
         # 3. Visual Composition
         annotated = frame.copy()
-        # Mask alpha-blending is the most expensive supervision call and
-        # scales with detection count. On a CPU-only site PC this is what
-        # makes FPS drop visibly when the belt fills up. The operator can
-        # disable it from the Settings page; boxes + labels still draw.
-        if detections.mask is not None and not self.skip_masks:
+        if detections.mask is not None:
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
-
-        # Trace lines (motion trail) are decorative and grow with track
-        # history; cheap to skip when chasing FPS on a CPU site PC.
-        if not self.skip_traces:
-            annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
+        
+        annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
         annotated = self.box_annotator.annotate(scene=annotated, detections=detections)
         
         if detections.tracker_id is not None:

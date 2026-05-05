@@ -100,6 +100,11 @@ if [[ "$COMPOSE_MODE" == "gpu" && "$FORCE_MODE" != "gpu" ]]; then
     fi
 fi
 
+# Export so `docker compose ${COMPOSE_MODE}` variable substitution in
+# docker-compose.yml's environment block sees the resolved value
+# (sourced shell vars are not auto-exported to subprocesses).
+export COMPOSE_MODE
+
 if [[ "$COMPOSE_MODE" == "cpu" ]]; then
     COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
     # CPU: no ONNX preload is attempted (no CUDA to warm), so the Flask

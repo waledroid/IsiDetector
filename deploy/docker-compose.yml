@@ -19,12 +19,9 @@ services:
       - ../webapp/isitec_app/uploads:/opt/isitec/webapp/isitec_app/uploads
       - ../webapp/isitec_app/settings.json:/opt/isitec/webapp/isitec_app/settings.json
       - ../mkdocs/site:/opt/isitec/webapp/isitec_app/static/docs:ro
-      # NOTE: X11 / WSLG bind mounts intentionally absent. They were
-      # only useful when running `cv2.imshow()` from inside the
-      # container (dev workflow). Production uses the web UI exclusively;
-      # mounting /mnt/wslg breaks startup on native Linux site PCs that
-      # have no /mnt/wslg path. If a developer needs cv2.imshow, add
-      # these back in a local docker-compose.override.yml — never here.
+      # X11 forwarding (for cv2.imshow inside container)
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - /mnt/wslg:/mnt/wslg:ro
     environment:
       - TZ=Europe/Paris
       - DEV_PASSWORD=${DEV_PASSWORD:-change-me}
@@ -32,13 +29,13 @@ services:
       - UDP_HOST=127.0.0.1
       - UDP_PORT=9502
       - CUDA_MODULE_LOADING=LAZY
-      # Default RTSP transport for any code path that doesn't explicitly
-      # set its own. LiveReader (in stream_handler.py) overrides this
-      # per-call with a TCP-first / UDP-fallback dance — but any third-party
-      # code that calls cv2.VideoCapture('rtsp://...') without going
-      # through LiveReader inherits this default. Kept here so RTSP-over-TCP
-      # is the documented out-of-the-box behaviour.
-      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
+      # COMPOSE_MODE = cpu | gpu, sourced from deploy/.deployment.env (written
+      # by run_start.sh / up.sh based on hardware detection). The container's
+      # stream_handler reads this to pick inference/cpu.yaml or gpu.yaml.
+      - COMPOSE_MODE=${COMPOSE_MODE:-cpu}
+      - DISPLAY=${DISPLAY:-:0}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
+      - XDG_RUNTIME_DIR=/mnt/wslg
     # GPU device reservation is added via docker-compose.gpu.yml — the
     # base file stays device-agnostic so CPU hosts don't need any
     # nested-array override gymnastics to drop the nvidia request.

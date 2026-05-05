@@ -3,7 +3,6 @@ OpenVINO Inference Engine — optimized for CPU (Intel) deployment.
 Loads models exported via export_engine.py (.xml + .bin format).
 """
 
-import os
 import cv2
 import numpy as np
 import supervision as sv
@@ -31,6 +30,8 @@ class OpenVINOInferencer(BaseInferencer):
         device: str = None,
         imgsz: int = None,
         cpu_threads: int = None,
+        performance_hint: str = "LATENCY",
+        num_streams: int = 1,
     ):
         super().__init__(model_path, conf_threshold, device, imgsz)
 
@@ -50,31 +51,18 @@ class OpenVINOInferencer(BaseInferencer):
             else:
                 logger.info(f"Intel GPU not available, using CPU. Available: {available}")
 
-        # Tune for single-stream realtime. Default OpenVINO hint is THROUGHPUT
-        # (multi-stream, batch-style), wrong for our single-camera serial pipeline.
-        # LATENCY pours every allowed thread into one frame at a time.
-        # Resolve cpu_threads: explicit ctor arg > auto (cpu_count - 4, Chrome-aware).
-        if cpu_threads is not None:
-            n_threads = max(1, int(cpu_threads))
-        else:
-            cpu = os.cpu_count() or 4
-            n_threads = max(1, cpu - 4)
-        try:
-            core.set_property(ov_device, {
-                "PERFORMANCE_HINT": "LATENCY",
-                "INFERENCE_NUM_THREADS": str(n_threads),
-                "NUM_STREAMS": "1",
-            })
-            logger.info(
-                f"OpenVINO compile: {ov_device} hint=LATENCY threads={n_threads} "
-                f"(host has {os.cpu_count()} logical cores)"
-            )
-        except Exception as e:
-            # Older OpenVINO versions reject some properties — fall back silently
-            # so we never break stream startup over a tuning hint.
-            logger.warning(f"OpenVINO set_property failed (using defaults): {e}")
+        # Build compile-time config from constructor params. PERFORMANCE_HINT
+        # and NUM_STREAMS are sourced from isidet/configs/inference/cpu.yaml
+        # in CPU mode (LATENCY + 1 stream); INFERENCE_NUM_THREADS likewise.
+        # Defaults match the previous hardcoded values when called without args.
+        compile_cfg = {
+            "PERFORMANCE_HINT": str(performance_hint),
+            "NUM_STREAMS": str(num_streams),
+        }
+        if cpu_threads is not None and ov_device == "CPU":
+            compile_cfg["INFERENCE_NUM_THREADS"] = str(int(cpu_threads))
 
-        self.compiled = core.compile_model(model, ov_device)
+        self.compiled = core.compile_model(model, ov_device, compile_cfg)
         self.infer_request = self.compiled.create_infer_request()
 
         # Parse model IO
@@ -168,31 +156,18 @@ class OpenVINOInferencer(BaseInferencer):
         return padded, r, left, top
 
     def preprocess(self, frame: np.ndarray) -> np.ndarray:
-        # Resize-first, math-second. cvtColor and the float/normalize/transpose
-        # chain run on the model-sized canvas (e.g. 320×320), not on the raw
-        # 1080p RTSP frame — saves ~2 ms/frame on i7-10710U at 1080p input.
+        # Ultralytics and RF-DETR train on RGB. OpenCV/RTSP frames are BGR.
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if self.is_rfdetr:
-            # RF-DETR is hard-refused at load time on OpenVINO 2026 (Einsum
-            # bug); this branch is unreachable in practice, kept for parity.
-            resized_bgr = cv2.resize(frame, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
+            resized = cv2.resize(rgb, (self.model_w, self.model_h), interpolation=cv2.INTER_LINEAR)
             self._last_letterbox = None
-            rgb = cv2.cvtColor(resized_bgr, cv2.COLOR_BGR2RGB)
-            img = rgb.transpose((2, 0, 1)).astype(np.float32) / 255.0
+            img = resized.transpose((2, 0, 1)).astype(np.float32) / 255.0
             img = (img - self._IMAGENET_MEAN) / self._IMAGENET_STD
-            return np.ascontiguousarray(img[np.newaxis, ...])
-
-        # YOLO path. Letterbox stays in BGR — neither cv2.resize nor
-        # copyMakeBorder cares about channel order. blobFromImage does
-        # swapRB + scale + HWC→CHW + add batch dim in one fused C++ pass.
-        padded_bgr, ratio, pad_x, pad_y = self._letterbox(frame)
-        self._last_letterbox = (ratio, pad_x, pad_y)
-        return cv2.dnn.blobFromImage(
-            padded_bgr,
-            scalefactor=1.0 / 255.0,
-            size=(self.model_w, self.model_h),
-            swapRB=True,
-            crop=False,
-        )
+        else:
+            padded, ratio, pad_x, pad_y = self._letterbox(rgb)
+            self._last_letterbox = (ratio, pad_x, pad_y)
+            img = padded.transpose((2, 0, 1)).astype(np.float32) / 255.0
+        return np.ascontiguousarray(img[np.newaxis, ...])
 
     # ── Inference ────────────────────────────────────────────────────────────
 

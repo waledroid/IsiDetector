@@ -1,0 +1,33 @@
+# GPU-mode defaults.
+# Auto-applied when COMPOSE_MODE=gpu (set by up.sh / run_start.sh).
+# Deep-merges on top of common.yaml.
+#
+# Preserves the current full feature set: both YOLO and RF-DETR, all
+# backends, masks + traces ON.
+
+mode: gpu
+
+model:
+  allowed_extensions: [".engine", ".pt", ".pth", ".xml", ".onnx"]
+  allowed_families: [yolo, rfdetr]
+  yolo_imgsz: 640
+  detr_imgsz: 416
+
+# GPU has the headroom to render full per-detection masks + per-track traces
+# without affecting FPS budget — operator visual feedback wins.
+render:
+  skip_masks: false
+  skip_traces: false
+
+tensorrt:
+  workspace_gb: 4
+  fp16: true
+
+onnx:
+  providers: [CUDAExecutionProvider, CPUExecutionProvider]
+
+# Stricter matching at high FPS. At 30+ FPS, frame-to-frame IoU on moving
+# parcels is typically > 85 %, so a stricter threshold rejects spurious
+# cross-track confusion when items pass close together.
+bytetrack:
+  match_thresh: 0.85

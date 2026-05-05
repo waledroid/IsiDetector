@@ -1,0 +1,39 @@
+# CPU-mode optimizations.
+# Auto-applied when COMPOSE_MODE=cpu (set by up.sh via .deployment.env).
+# Deep-merges on top of common.yaml.
+
+mode: cpu
+
+# Strict allowlist — model picker filters to these, _build_engine refuses
+# anything else with a clean operator-facing error message.
+# .pt (Ultralytics native) excluded — slower than OpenVINO + drags PyTorch.
+# .pth (RF-DETR PyTorch) excluded — RF-DETR not supported on CPU at all.
+# .engine (TensorRT) excluded — GPU-only by definition.
+model:
+  allowed_extensions: [".xml", ".onnx"]
+  allowed_families: [yolo]
+  yolo_imgsz: 320
+
+# Bbox-only render saves 1-3 ms/frame on busy belts (each detection's mask
+# resize back to frame coords is the typical postprocess hot path).
+render:
+  skip_masks: true
+  skip_traces: true
+
+# OpenVINO core tuning. PERFORMANCE_HINT=LATENCY locks the model into
+# single-stream, low-latency execution (NUM_STREAMS=1, single inference
+# request). Right setting for real-time per-frame inference; the throughput
+# hint is only useful when batching, which we don't do.
+openvino:
+  performance_hint: LATENCY
+  num_streams: 1
+  inference_num_threads: 8
+
+# Lower match threshold for low-FPS streams. At 16-25 FPS, frame-to-frame
+# IoU on moving parcels lands in the 70-85 % range — 0.9 was rejecting
+# legitimate matches and dropping tracker IDs (LineZone history then
+# starts empty for the new ID and the crossing event is missed).
+# 0.7 admits motion up to ~30 % of parcel length per frame; still well
+# above 0 so distinct parcels with even a small gap don't merge.
+bytetrack:
+  match_thresh: 0.7

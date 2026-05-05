@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
-    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.20-fps">
-    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.20-fps">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.20-fps">
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.21-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.21-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.21-fps">
 
     <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
-    <script src="/static/vendor/chart.min.js?v=2.20-fps"></script>
+    <script src="/static/vendor/chart.min.js?v=2.21-fps"></script>
 </head>
 
 <body>
@@ -95,7 +95,7 @@
                         <label data-i18n="modes">Modes</label>
                         <select id="modelSelect">
                             <option value="yolo">Mode 1</option>
-                            <option value="rfdetr">Mode 2</option>
+                            <option value="rfdetr" class="gpu-only">Mode 2</option>
                         </select>
                     </div>
 
@@ -388,6 +388,27 @@
                     </div>
                 </div>
 
+                <!-- MODE BANNER (read-only) — populated by main.js from /api/mode -->
+                <div class="settings-group" id="modeBanner" style="grid-column: 1 / -1; margin-bottom: 24px; background: #fff8e1; border-color: #ffd54f;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#f57c00;">MODE</span>
+                        <h3 id="mode_banner_title" data-i18n="mode_label">Runtime mode</h3>
+                    </div>
+                    <div class="sg-body">
+                        <p style="margin: 0; font-size: 14px; color: var(--text);">
+                            <span id="mode_banner_value" style="font-weight: 600; font-size: 16px;">…</span>
+                            <span id="mode_banner_via" style="margin-left: 8px; color: var(--text-light); font-size: 12px;"></span>
+                        </p>
+                        <p style="margin: 6px 0 0; font-size: 12px; color: var(--text-light);">
+                            <span data-i18n="mode_loaded_from">Loaded:</span>
+                            <span id="mode_banner_files" style="font-family: 'Roboto Mono', monospace;">—</span>
+                        </p>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="mode_banner_hint">
+                            CPU vs GPU is auto-detected at container boot. Optimization defaults (skip-masks, threads, ByteTrack thresholds) live in <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — not in this Settings panel.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="settings-grid">
                     <!-- MODE 1 CONFIG -->
                     <div class="settings-group">
@@ -401,12 +422,6 @@
                                 <option value="">Loading models...</option>
                             </select>
 
-                            <label title="Higher resolution reduces speed but improves small object detection.">Image Size (imgsz)</label>
-                            <div class="slider-wrap">
-                                <input type="range" id="set_yolo_imgsz" min="320" max="1024" step="32" value="640">
-                                <span class="slider-val" id="val_yolo_imgsz">640px</span>
-                            </div>
-
                             <label title="Lower confidence = more detections, higher false positive rate.">Confidence Threshold</label>
                             <div class="slider-wrap">
                                 <input type="range" id="set_yolo_conf" min="0.1" max="0.95" step="0.05" value="0.5">
@@ -415,8 +430,8 @@
                         </div>
                     </div>
 
-                    <!-- MODE 2 CONFIG -->
-                    <div class="settings-group">
+                    <!-- MODE 2 CONFIG (GPU mode only — hidden on CPU via .gpu-only) -->
+                    <div class="settings-group gpu-only">
                         <div class="sg-header">
                             <span class="sg-badge mode-2">MODE 2</span>
                             <h3>RF-DETR Configuration</h3>
@@ -427,50 +442,12 @@
                                 <option value="">Loading models...</option>
                             </select>
 
-                            <label title="Native resolution for RF-DETR is usually 640.">Image Size (imgsz)</label>
-                            <div class="slider-wrap">
-                                <input type="range" id="set_detr_imgsz" min="320" max="1024" step="32" value="640">
-                                <span class="slider-val" id="val_detr_imgsz">640px</span>
-                            </div>
-
                             <label>Confidence Threshold</label>
                             <div class="slider-wrap">
                                 <input type="range" id="set_detr_conf" min="0.1" max="0.95" step="0.05" value="0.35">
                                 <span class="slider-val" id="val_detr_conf">0.35</span>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- PERFORMANCE CONFIG -->
-                <div class="settings-group" style="grid-column: 1 / -1;">
-                    <div class="sg-header">
-                        <span class="sg-badge" style="background:#43a047;">PERF</span>
-                        <h3 data-i18n="perf_settings">Performance (CPU sites)</h3>
-                    </div>
-                    <div class="sg-body">
-                        <label title="OpenVINO inference threads. Default 8 leaves room for the operator's browser; raise on a dedicated host.">
-                            <span data-i18n="set_cpu_threads_label">CPU Threads</span>
-                            (<span id="val_cpu_threads">8</span>)
-                        </label>
-                        <div class="slider-wrap">
-                            <input type="range" id="set_cpu_threads" min="1" max="16" step="1" value="8">
-                            <span class="slider-val" id="val_cpu_threads_unit">threads</span>
-                        </div>
-
-                        <label title="Skip the per-frame mask alpha-blend. Big FPS win on busy belts; boxes + labels still draw.">
-                            <input type="checkbox" id="set_skip_masks" style="margin-right: 8px; vertical-align: middle;">
-                            <span data-i18n="set_skip_masks_label">Skip mask drawing (lightweight render)</span>
-                        </label>
-
-                        <label title="Skip the motion-trail polylines drawn behind each tracked object. Decorative; cheap win.">
-                            <input type="checkbox" id="set_skip_traces" style="margin-right: 8px; vertical-align: middle;">
-                            <span data-i18n="set_skip_traces_label">Skip trace lines (no motion trail)</span>
-                        </label>
-
-                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="perf_settings_hint">
-                            Restart the stream after saving for changes to take effect.
-                        </p>
                     </div>
                 </div>
 
@@ -550,7 +527,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.20-fps"></script>
+    <script src="/static/js/main.js?v=2.21-fps"></script>
 </body>
 
 </html>

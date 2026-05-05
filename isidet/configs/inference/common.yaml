@@ -1,0 +1,30 @@
+# Mode-agnostic runtime defaults.
+# Loaded by stream_handler.py on every start, regardless of mode.
+# Mode-specific files (cpu.yaml / gpu.yaml) deep-merge on top of this.
+# Operator-tunable per-site values live in webapp/isitec_*/settings.json
+# (model picker, line position, camera URL, sorter UDP, ROI, auto_start).
+
+inference:
+  # Engine auto-discovery + dispatch order. _build_engine in stream_handler.py
+  # picks an inferencer class by file extension; this list is informational
+  # for documentation purposes (the actual dispatch is hard-coded).
+  engine_priority: [tensorrt, openvino, onnx, pt, pth]
+
+  # Detection postprocess defaults. Same on CPU and GPU because they're
+  # numerical correctness knobs, not perf knobs.
+  max_det: 300
+  nms_iou: 0.7
+
+  # ByteTrack track_buffer is FPS-independent — same value works on both.
+  # match_thresh IS FPS-dependent so it's mode-specific (see cpu.yaml / gpu.yaml).
+  bytetrack:
+    track_buffer: 60       # 3.3 s at 18 FPS, 2 s at 30 FPS — generous either way
+
+  # UDP publisher always-on; host/port live in settings.json (operator-tunable
+  # per site). The publisher updates target live when settings.json changes.
+  udp:
+    enabled: true
+
+  annotation:
+    line_thickness: 2
+    label_padding: 4

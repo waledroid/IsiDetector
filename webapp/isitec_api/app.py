@@ -100,6 +100,19 @@ def video_feed():
     )
 
 
+@app.get("/api/mode")
+def api_mode():
+    """Report the auto-detected runtime mode and which inference YAMLs are loaded.
+
+    Used by the UI's Mode banner and by `./net.sh` health checks.
+    """
+    return {
+        "mode": getattr(stream_handler, 'mode', 'unknown'),
+        "config_files": getattr(stream_handler, 'inference_config_files', []),
+        "detected_via": getattr(stream_handler, 'mode_detected_via', 'n/a'),
+    }
+
+
 @app.get("/api/snapshot")
 def api_snapshot():
     """Return one full-resolution raw camera frame as JPEG.
@@ -268,21 +281,13 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             status_code=400,
         )
 
-    # Range-validate the perf knobs before they hit settings.json.
-    if 'cpu_threads' in request_body:
-        try:
-            n = int(request_body['cpu_threads'])
-            if not (1 <= n <= 64):
-                raise ValueError("cpu_threads must be between 1 and 64")
-            request_body['cpu_threads'] = n
-        except (ValueError, TypeError) as e:
-            return JSONResponse(
-                {"status": "error", "message": str(e)}, status_code=400
-            )
-    if 'skip_masks' in request_body:
-        request_body['skip_masks'] = bool(request_body['skip_masks'])
-    if 'skip_traces' in request_body:
-        request_body['skip_traces'] = bool(request_body['skip_traces'])
+    # cpu_threads / skip_masks / skip_traces / yolo_imgsz / detr_imgsz
+    # are now controlled by isidet/configs/inference/{cpu,gpu}.yaml (mode-driven).
+    # Silently strip if posted — defends against stale UI caches.
+    for k in ('cpu_threads', 'skip_masks', 'skip_traces', 'yolo_imgsz', 'detr_imgsz'):
+        if k in request_body:
+            del request_body[k]
+
     if 'rtsp_url' in request_body:
         v = request_body['rtsp_url']
         if (not isinstance(v, str) or len(v) > 512
@@ -347,9 +352,8 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             del request_body[k]
 
     allowed_keys = (
-        'yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf',
-        'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position',
-        'belt_direction', 'cpu_threads', 'skip_masks', 'skip_traces',
+        'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
+        'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
         'roi_enabled', 'roi_points',
     )
@@ -669,6 +673,18 @@ def get_models():
 
     yolo_models = sorted(yolo_models, key=lambda x: x["name"])
     rfdetr_models = sorted(rfdetr_models, key=lambda x: x["name"])
+
+    # Mode-driven filtering. CPU mode allows only YOLO + .xml/.onnx; GPU mode
+    # passes everything through.
+    model_cfg = (getattr(stream_handler, 'inference_config', None) or {}).get('model') or {}
+    allowed_exts = set(model_cfg.get('allowed_extensions') or [])
+    allowed_fams = set(model_cfg.get('allowed_families') or [])
+
+    if allowed_exts:
+        yolo_models = [m for m in yolo_models if os.path.splitext(m['name'])[1].lower() in allowed_exts]
+        rfdetr_models = [m for m in rfdetr_models if os.path.splitext(m['name'])[1].lower() in allowed_exts]
+    if 'rfdetr' not in allowed_fams:
+        rfdetr_models = []
 
     return {
         "status": "success",

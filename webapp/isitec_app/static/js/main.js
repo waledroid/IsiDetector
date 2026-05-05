@@ -35,11 +35,9 @@ const translations = {
         "model_management": "Model Management",
         "model_soon": "Model Directory Viewer Coming Soon.",
         "system_settings": "System Settings",
-        "perf_settings": "Performance (CPU sites)",
-        "perf_settings_hint": "Restart the stream after saving for changes to take effect.",
-        "set_cpu_threads_label": "CPU Threads",
-        "set_skip_masks_label": "Skip mask drawing (lightweight render)",
-        "set_skip_traces_label": "Skip trace lines (no motion trail)",
+        "mode_label": "Runtime mode",
+        "mode_loaded_from": "Loaded:",
+        "mode_banner_hint": "CPU vs GPU is auto-detected at container boot. Optimization defaults (skip-masks, threads, ByteTrack thresholds) live in <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — not in this Settings panel.",
         "src_site_camera": "Site Camera",
         "site_camera_caption": "Saved camera (configurable in Settings → Camera)",
         "cam_settings": "Camera",
@@ -131,11 +129,9 @@ const translations = {
         "model_management": "Gestion des modèles",
         "model_soon": "Visionneur de répertoire de modèles à venir.",
         "system_settings": "Paramètres du système",
-        "perf_settings": "Performance (sites CPU)",
-        "perf_settings_hint": "Redémarrer le flux après l'enregistrement pour appliquer les changements.",
-        "set_cpu_threads_label": "Fils CPU",
-        "set_skip_masks_label": "Désactiver les masques (rendu allégé)",
-        "set_skip_traces_label": "Désactiver les traces (pas de traînée)",
+        "mode_label": "Mode d'exécution",
+        "mode_loaded_from": "Chargé :",
+        "mode_banner_hint": "Le mode CPU/GPU est détecté automatiquement au démarrage du conteneur. Les paramètres d'optimisation (masques, threads, seuils ByteTrack) vivent dans <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — pas dans ce panneau.",
         "src_site_camera": "Caméra du site",
         "site_camera_caption": "Caméra enregistrée (configurable dans Paramètres → Caméra)",
         "cam_settings": "Caméra",
@@ -716,14 +712,14 @@ document.addEventListener('DOMContentLoaded', () => {
         let imgsz = null;
         let conf = null;
         
-        // Grab values from localStorage if they've been configured in Settings
+        // Grab values from localStorage if they've been configured in Settings.
+        // imgsz is mode-driven (cpu.yaml / gpu.yaml) so we don't pass it from
+        // the client — backend resolves the right value at engine build time.
         if (model_type === 'yolo') {
             weights = localStorage.getItem('isitec_yolo_weights') || '';
-            imgsz = localStorage.getItem('isitec_yolo_imgsz');
             conf = localStorage.getItem('isitec_yolo_conf');
         } else if (model_type === 'Detr') { // RF-DETR dropdown value
             weights = localStorage.getItem('isitec_detr_weights') || '';
-            imgsz = localStorage.getItem('isitec_detr_imgsz');
             conf = localStorage.getItem('isitec_detr_conf');
         }
 
@@ -1218,15 +1214,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-    // CPU threads slider — plain integer display (no `px` / `.XX` suffix)
-    const cpuThreadsSlider = document.getElementById('set_cpu_threads');
-    const cpuThreadsVal = document.getElementById('val_cpu_threads');
-    if (cpuThreadsSlider && cpuThreadsVal) {
-        cpuThreadsSlider.addEventListener('input', (e) => {
-            cpuThreadsVal.textContent = e.target.value;
-        });
-    }
-
     function applySliderValue(id, val) {
         const slider = document.getElementById(`set_${id}`);
         const valSpan = document.getElementById(`val_${id}`);
@@ -1236,7 +1223,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Mode banner — fetch /api/mode and populate the read-only banner at the top
+    // of the Settings panel. Also hide all .gpu-only elements when the resolved
+    // mode is 'cpu' (RF-DETR / Mode 2 entry / RF-DETR config group).
+    async function applyMode() {
+        try {
+            const res = await fetch('/api/mode');
+            if (!res.ok) return;
+            const data = await res.json();
+            const mode = (data.mode || 'unknown').toLowerCase();
+            const valEl = document.getElementById('mode_banner_value');
+            const viaEl = document.getElementById('mode_banner_via');
+            const filesEl = document.getElementById('mode_banner_files');
+            if (valEl) valEl.textContent = mode === 'cpu' ? '⚡ CPU mode' : (mode === 'gpu' ? '🟢 GPU mode' : `❓ ${mode}`);
+            if (viaEl) viaEl.textContent = data.detected_via ? `(detected via ${data.detected_via})` : '';
+            if (filesEl) filesEl.textContent = (data.config_files || []).join(' + ') || '—';
+
+            // Hide RF-DETR-related UI in CPU mode
+            const gpuOnlyEls = document.querySelectorAll('.gpu-only');
+            gpuOnlyEls.forEach(el => {
+                el.style.display = (mode === 'cpu') ? 'none' : '';
+            });
+        } catch (e) {
+            console.warn('Could not load /api/mode', e);
+        }
+    }
+
     async function loadSettings() {
+        // 0. Apply mode banner + .gpu-only visibility before anything else
+        await applyMode();
+
         // 1. Fetch server-side settings (source of truth)
         let serverSettings = {};
         try {
@@ -1245,22 +1261,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sData.status === 'success') serverSettings = sData.settings || {};
         } catch (e) { console.warn('Could not load server settings', e); }
 
-        // 2. Apply sliders: server → localStorage fallback
-        ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
+        // 2. Apply confidence sliders. Imgsz/cpu_threads/skip_* are mode-driven now,
+        //    not in settings.json — see isidet/configs/inference/{cpu,gpu}.yaml.
+        ['yolo_conf', 'detr_conf'].forEach(id => {
             const val = serverSettings[id] || localStorage.getItem(`isitec_${id}`);
             if (val != null) applySliderValue(id, val);
         });
-
-        // Performance knobs (cpu_threads slider + skip_masks checkbox)
-        const cpuThreads = serverSettings.cpu_threads ?? 8;
-        const cpuThreadsEl = document.getElementById('set_cpu_threads');
-        const cpuThreadsValEl = document.getElementById('val_cpu_threads');
-        if (cpuThreadsEl) cpuThreadsEl.value = cpuThreads;
-        if (cpuThreadsValEl) cpuThreadsValEl.textContent = cpuThreads;
-        const skipMasksEl = document.getElementById('set_skip_masks');
-        if (skipMasksEl) skipMasksEl.checked = !!serverSettings.skip_masks;
-        const skipTracesEl = document.getElementById('set_skip_traces');
-        if (skipTracesEl) skipTracesEl.checked = !!serverSettings.skip_traces;
         const rtspUrlEl = document.getElementById('set_rtsp_url');
         if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
         const autoStartEl = document.getElementById('set_auto_start');
@@ -1370,19 +1376,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSaveSettings = document.getElementById('btnSaveSettings');
     if (btnSaveSettings) {
         btnSaveSettings.addEventListener('click', async () => {
+            // imgsz / cpu_threads / skip_masks / skip_traces are now in
+            // isidet/configs/inference/{cpu,gpu}.yaml — not part of the Settings POST.
+            const detrWeightsEl = document.getElementById('set_detr_weights');
+            const detrConfEl = document.getElementById('set_detr_conf');
             const settings = {
                 yolo_weights:  document.getElementById('set_yolo_weights').value,
-                rfdetr_weights: document.getElementById('set_detr_weights').value,
-                yolo_imgsz:    parseInt(document.getElementById('set_yolo_imgsz').value),
+                rfdetr_weights: detrWeightsEl ? detrWeightsEl.value : '',
                 yolo_conf:     parseFloat(document.getElementById('set_yolo_conf').value),
-                detr_imgsz:    parseInt(document.getElementById('set_detr_imgsz').value),
-                detr_conf:     parseFloat(document.getElementById('set_detr_conf').value),
+                detr_conf:     detrConfEl ? parseFloat(detrConfEl.value) : 0.35,
                 line_orientation: lineOrientation,
                 line_position: parseInt(lineSlider.value) / 100,
                 belt_direction: beltDirection,
-                cpu_threads:   parseInt(document.getElementById('set_cpu_threads').value),
-                skip_masks:    document.getElementById('set_skip_masks').checked,
-                skip_traces:   document.getElementById('set_skip_traces').checked,
                 rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
                 auto_start:    document.getElementById('set_auto_start').checked,
                 roi_enabled:   document.getElementById('set_roi_enabled').checked,
@@ -1416,9 +1421,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Only cache locally once the server has accepted the values.
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
-            localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights);
-            ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
-                localStorage.setItem(`isitec_${id}`, settings[id]);
+            localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights || '');
+            ['yolo_conf', 'detr_conf'].forEach(id => {
+                if (settings[id] != null) localStorage.setItem(`isitec_${id}`, settings[id]);
             });
 
             // Live-reflect the ROI toggle on the landing page without a reload.

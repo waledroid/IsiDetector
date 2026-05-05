@@ -273,20 +273,42 @@ POST /api/start → StreamHandler (hot-swap path if same source)
 
 The Docker images pull `torch` + `onnxruntime` separately (CPU or GPU wheels depending on the Dockerfile variant), then install `requirements-deploy.txt` on top.
 
+## Inference config (mode-driven — `isidet/configs/inference/`)
+
+Hardware-class optimization defaults are **NOT** in `settings.json`. They live in three YAML files that get loaded based on the auto-detected runtime mode:
+
+```
+isidet/configs/inference/
+├── common.yaml      mode-agnostic defaults (engine priority, NMS, ByteTrack track_buffer, UDP enabled)
+├── cpu.yaml         applied when COMPOSE_MODE=cpu — skip_masks, cpu_threads=8, ByteTrack match_thresh=0.7,
+│                    OpenVINO LATENCY hint, allowed_extensions=[.xml,.onnx], allowed_families=[yolo]
+└── gpu.yaml         applied when COMPOSE_MODE=gpu — masks ON, ByteTrack match_thresh=0.85,
+                     allowed_extensions=[.engine,.pt,.pth,.xml,.onnx], allowed_families=[yolo,rfdetr]
+```
+
+**Mode detection** — `StreamHandler._detect_mode()` resolves to `cpu` or `gpu` at container boot via:
+
+1. `COMPOSE_MODE` env var (set by `up.sh` from `deploy/.deployment.env` and passed through in `docker-compose.yml`)
+2. `nvidia-smi` runtime probe if env var is missing
+3. Safe fallback to `cpu` if neither is conclusive
+
+The resolved mode + loaded YAML files are exposed via `GET /api/mode` for the dashboard's Mode banner and for `./net.sh` health checks.
+
+**CPU mode is YOLO-only.** RF-DETR (`.pth`, RF-DETR `.onnx`) and TensorRT engines (`.engine`) are rejected at engine-build time on CPU mode. The Settings UI hides the RF-DETR config group and the Mode 2 dropdown entry via the `.gpu-only` class. The `_preload_default_onnx` thread is also skipped on CPU mode.
+
+**GPU mode** retains the full feature set — both YOLO and RF-DETR, all backends, masks + traces ON.
+
 ## Settings keys (`webapp/isitec_*/settings.json`)
 
-Single source of truth for operator-tunable runtime parameters. The Settings UI reads/writes via `GET`/`POST /api/settings`. Backend rejects unknown keys; values are validated server-side before being persisted. Two server-only keys are written by `stream_handler` itself and stripped from any client POST.
+Operator-tunable per-site state only. Hardware-optimization knobs live in the mode YAML files above. The Settings UI reads/writes via `GET`/`POST /api/settings`. Backend rejects unknown keys; values are validated server-side. Two server-only keys are written by `stream_handler` itself and stripped from any client POST.
 
 | Key | Type | Default | Purpose |
 |---|---|---|---|
 | `yolo_weights` / `rfdetr_weights` | str (path) | per-build | Model file the operator selected; respected on next Start. |
-| `yolo_imgsz` / `detr_imgsz` | int | 320 / 416 | Inference input size hint. **OpenVINO `.xml` ignores this** (input shape is baked in at export); Ultralytics `.pt` and dynamic ONNX honor it. |
-| `yolo_conf` / `detr_conf` | float | 0.55 / 0.35 | Confidence threshold. |
+| `yolo_conf` / `detr_conf` | float | 0.55 / 0.35 | Confidence threshold — operator-tunable per-site sensitivity. |
 | `line_orientation` | `vertical`/`horizontal` | vertical | LineZone orientation. |
 | `line_position` | float [0..1] | 0.5 | Fraction of frame width (vertical) or height (horizontal). After ROI crop, fraction is relative to the cropped frame. |
 | `belt_direction` | `left_to_right`/`right_to_left`/`top_to_bottom`/`bottom_to_top` | left_to_right | Picks the bbox leading-edge anchor (see Trigger semantics). |
-| `cpu_threads` | int [1..64] | 8 | OpenVINO `INFERENCE_NUM_THREADS`. |
-| `skip_masks` / `skip_traces` | bool | false / false | Render shortcuts; significant FPS bump on busy belts. |
 | `rtsp_url` | str | per-build | Saved camera URL used by the **📡 Site Camera** landing-page button. |
 | `udp_host` / `udp_port` | str / int | 10.0.0.2 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
 | `auto_start` | bool | false | If true, container boot replays the last successful Start (saved camera + last-used model) — no operator click needed. |
@@ -294,6 +316,8 @@ Single source of truth for operator-tunable runtime parameters. The Settings UI 
 | `last_weights` | str | "" | **Server-written.** Same as above. |
 | `roi_enabled` | bool | false | If true, exposes the **📐 Set ROI** button on the Live Inference page. ROI crop only applies if both `roi_enabled` AND a valid 4-point `roi_points` are set. |
 | `roi_points` | list of 0 or 4 `[x,y]` pairs | [] | Operator-drawn corner points in original camera-frame pixel coords. Backend computes the axis-aligned bounding rectangle and applies it as a numpy-slice crop in `_inference_loop` before the pre-engine resize. Any error → `self.roi = None` latch + log; pipeline never breaks. |
+
+**Removed in the mode-driven refactor** (now in `isidet/configs/inference/{cpu,gpu}.yaml`): `yolo_imgsz`, `detr_imgsz`, `cpu_threads`, `skip_masks`, `skip_traces`. These were operator-visible toggles in the old Settings UI; they're now invisible system tuning that auto-applies based on detected hardware.
 
 ## Notes
 

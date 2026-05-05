@@ -373,10 +373,27 @@ class StreamHandler:
         # Performance Monitor — collects real-time metrics for /api/performance
         self.monitor = PerformanceMonitor()
 
+        # Mode detection + inference-config loading. Mode is one of "cpu"|"gpu",
+        # determined from COMPOSE_MODE env var (set by up.sh / docker-compose),
+        # falling back to nvidia-smi probe and finally to "cpu" as the safe
+        # default. The mode picks which YAML in isidet/configs/inference/
+        # gets layered on top of common.yaml — render flags, OpenVINO tuning,
+        # ByteTrack thresholds, allowed model extensions / families.
+        mode_info = self._detect_mode()
+        self.mode = mode_info['mode']
+        self.mode_detected_via = mode_info['detected_via']
+        self.inference_config, self.inference_config_files = self._load_inference_config(self.mode)
+        logger.info(
+            f"[mode] {self.mode} (detected_via: {self.mode_detected_via}) — "
+            f"loaded {' + '.join(self.inference_config_files)}"
+        )
+
         # Background preload of the default RF-DETR ONNX. DINOv2 graphs take
         # 3-8s of CUDA kernel compilation on first load; doing it now means
         # the operator's first hot-swap to RF-DETR is near-instant.
-        threading.Thread(target=self._preload_default_onnx, daemon=True).start()
+        # Skipped in CPU mode (RF-DETR isn't supported on CPU at all).
+        if self.mode == "gpu":
+            threading.Thread(target=self._preload_default_onnx, daemon=True).start()
 
         # Boot-time auto-start: if the operator ticked "Auto-start on boot"
         # in Settings → Camera, replay the last successful start() so the
@@ -385,6 +402,58 @@ class StreamHandler:
 
     def _settings_path(self):
         return Path(__file__).parent / 'settings.json'
+
+    def _detect_mode(self):
+        """Resolve the operating mode (cpu | gpu) at container boot.
+
+        Priority: COMPOSE_MODE env > nvidia-smi probe > safe fallback (cpu).
+        Returns a dict {mode, detected_via} for the /api/mode endpoint.
+        """
+        env_mode = os.environ.get('COMPOSE_MODE', '').strip().lower()
+        if env_mode in ('cpu', 'gpu'):
+            return {'mode': env_mode, 'detected_via': 'COMPOSE_MODE env'}
+        try:
+            import subprocess as _sp
+            result = _sp.run(['nvidia-smi'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                return {'mode': 'gpu', 'detected_via': 'nvidia-smi probe'}
+        except Exception:
+            pass
+        return {'mode': 'cpu', 'detected_via': 'fallback (no GPU detected)'}
+
+    def _load_inference_config(self, mode: str):
+        """Load isidet/configs/inference/common.yaml + the mode-specific yaml.
+        Returns (merged_config_dict, list_of_loaded_filenames).
+        On any error, returns ({}, []) — caller must handle empty config gracefully.
+        """
+        # Webapp is at webapp/isitec_app/stream_handler.py → repo root is parent.parent.parent
+        cfg_dir = Path(__file__).resolve().parent.parent.parent / 'isidet' / 'configs' / 'inference'
+        common_path = cfg_dir / 'common.yaml'
+        mode_path = cfg_dir / f'{mode}.yaml'
+
+        merged = {}
+        loaded = []
+
+        def deep_merge(base, overlay):
+            for k, v in overlay.items():
+                if isinstance(v, dict) and isinstance(base.get(k), dict):
+                    deep_merge(base[k], v)
+                else:
+                    base[k] = v
+
+        for label, path in [('common.yaml', common_path), (f'{mode}.yaml', mode_path)]:
+            try:
+                if path.exists():
+                    with open(path) as f:
+                        data = yaml.safe_load(f) or {}
+                    deep_merge(merged, data)
+                    loaded.append(label)
+                else:
+                    logger.warning(f"[mode] inference config not found: {path}")
+            except Exception as e:
+                logger.warning(f"[mode] failed to load {path}: {e}")
+
+        return merged, loaded
 
     def _persist_last_used(self, model_type: str, weights: str):
         """Write the last successful (model_type, weights) back to settings.json
@@ -561,28 +630,26 @@ class StreamHandler:
             pass
 
     def _apply_render_settings(self, engine):
-        """Load render-perf settings from settings.json and apply to engine.
+        """Apply render-perf flags from the mode-driven inference config.
 
         Two toggles, both target detection-count-scaling annotation work:
         - skip_masks: skip mask alpha-blending (biggest single CPU win)
         - skip_traces: skip motion-trail polylines (decorative; cheap win)
 
-        Read here so the operator can toggle from the Settings page without
-        restarting Docker.
+        Sourced from inference_config['render'] (cpu.yaml sets both true,
+        gpu.yaml sets both false). Not operator-tunable — these are
+        hardware-class optimization knobs, not per-site preferences.
         """
-        settings_path = Path(__file__).parent / 'settings.json'
         try:
-            if settings_path.exists():
-                with open(settings_path) as f:
-                    settings = json.load(f)
-                engine.skip_masks = bool(settings.get('skip_masks', False))
-                engine.skip_traces = bool(settings.get('skip_traces', False))
-                logger.info(
-                    f"VisionEngine render: skip_masks={engine.skip_masks} "
-                    f"skip_traces={engine.skip_traces}"
-                )
-        except Exception:
-            pass
+            render_cfg = (self.inference_config or {}).get('render') or {}
+            engine.skip_masks = bool(render_cfg.get('skip_masks', False))
+            engine.skip_traces = bool(render_cfg.get('skip_traces', False))
+            logger.info(
+                f"VisionEngine render: skip_masks={engine.skip_masks} "
+                f"skip_traces={engine.skip_traces}"
+            )
+        except Exception as e:
+            logger.warning(f"[render] could not apply render settings: {e}")
 
     def get_stats(self):
         with self.lock:
@@ -712,18 +779,11 @@ class StreamHandler:
         has_gpu = self.monitor.has_gpu
         device_label = "GPU" if has_gpu else "CPU"
 
-        # Read perf knobs from settings.json (Settings UI is source of truth).
-        # cpu_threads: int (1-64) | None — None means inferencer auto-picks.
-        try:
-            from pathlib import Path as _P
-            settings_path = _P(__file__).parent / 'settings.json'
-            if settings_path.exists():
-                ui_settings = json.loads(settings_path.read_text())
-            else:
-                ui_settings = {}
-        except Exception:
-            ui_settings = {}
-        cpu_threads = ui_settings.get('cpu_threads')
+        # OpenVINO + ByteTrack tunables come from the mode-driven inference config
+        # (isidet/configs/inference/{common,cpu,gpu}.yaml), NOT from settings.json.
+        # cpu_threads is CPU-mode-specific and lives in cpu.yaml.
+        ov_cfg = (self.inference_config or {}).get('openvino') or {}
+        cpu_threads = ov_cfg.get('inference_num_threads')  # may be None on GPU mode
 
         model_path = weights
         if not model_path:
@@ -733,6 +793,24 @@ class StreamHandler:
 
         ext = Path(model_path).suffix.lower()
         in_docker = Path('/.dockerenv').exists()
+
+        # Mode-driven model allowlist. CPU mode rejects anything that isn't
+        # an OpenVINO IR or ONNX (no .pt / .pth / .engine on CPU). GPU mode
+        # accepts everything.
+        model_cfg = (self.inference_config or {}).get('model') or {}
+        allowed_exts = model_cfg.get('allowed_extensions')
+        if allowed_exts and ext not in allowed_exts:
+            raise ValueError(
+                f"Model extension '{ext}' is not supported in {self.mode.upper()} mode. "
+                f"Allowed in this mode: {', '.join(allowed_exts)}. "
+                f"On CPU mode, use OpenVINO (.xml) or ONNX (.onnx) — re-export via the office workstation's compress.sh if needed."
+            )
+        allowed_families = model_cfg.get('allowed_families') or []
+        if 'rfdetr' not in allowed_families and model_type == 'rfdetr':
+            raise ValueError(
+                f"RF-DETR is not supported in {self.mode.upper()} mode. "
+                f"Switch to a YOLO model in Settings → Model 1."
+            )
 
         if ext == '.engine' and not has_gpu:
             raise ValueError("TensorRT engines require an NVIDIA GPU. Use an OpenVINO (.xml) or ONNX (.onnx) model instead.")
@@ -746,6 +824,8 @@ class StreamHandler:
             base_engine = OpenVINOInferencer(
                 model_path=model_path, conf_threshold=final_conf,
                 device=device, imgsz=imgsz, cpu_threads=cpu_threads,
+                performance_hint=ov_cfg.get('performance_hint', 'LATENCY'),
+                num_streams=ov_cfg.get('num_streams', 1),
             )
             mode_text = f"OpenVINO • CPU"
         elif ext == '.onnx':
@@ -864,7 +944,11 @@ class StreamHandler:
             try:
                 self.web_imgsz = imgsz or self.config.get('image_size', 416)
                 base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
-                self.engine = VisionEngine(inferencer=base_engine, config=self.config)
+                # Merge mode-driven inference_config (bytetrack thresholds etc.)
+                # under self.config so VisionEngine sees both the train.yaml
+                # bits (logging) and the runtime mode bits.
+                ve_config = {**self.config, **(self.inference_config or {})}
+                self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._apply_line_settings(self.engine)
                 self._apply_render_settings(self.engine)
                 self.mode_text = mode_text
