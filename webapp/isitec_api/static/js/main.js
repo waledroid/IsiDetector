@@ -1401,16 +1401,18 @@ document.addEventListener('DOMContentLoaded', () => {
         let dragStart = null;          // {x, y} in native canvas coords
         let pendingBbox = null;        // [x1, y1, x2, y2] in native canvas coords
         let snapshotImg = null;
-        let onMouseDown = null, onMouseMove = null, onMouseUp = null, onMouseLeave = null;
+        let onMouseDown = null, onMouseMove = null, onMouseUp = null;
 
         function endCapture() {
             roiCaptureActive = false;
             banner.style.display = 'none';
             buttons.style.display = 'none';
-            if (onMouseDown)  videoCanvas.removeEventListener('mousedown', onMouseDown);
-            if (onMouseMove)  videoCanvas.removeEventListener('mousemove', onMouseMove);
-            if (onMouseUp)    videoCanvas.removeEventListener('mouseup', onMouseUp);
-            if (onMouseLeave) videoCanvas.removeEventListener('mouseleave', onMouseLeave);
+            if (onMouseDown) videoCanvas.removeEventListener('pointerdown', onMouseDown);
+            if (onMouseMove) videoCanvas.removeEventListener('pointermove', onMouseMove);
+            if (onMouseUp)   {
+                videoCanvas.removeEventListener('pointerup', onMouseUp);
+                videoCanvas.removeEventListener('pointercancel', onMouseUp);
+            }
             videoCanvas.style.cursor = '';
             dragStart = null;
             pendingBbox = null;
@@ -1476,9 +1478,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusEl.textContent = (translations[currentLang] && translations[currentLang]['roi_drag_instruction'])
                                            || 'Click and drag a rectangle over the conveyor belt area.';
 
+                    // Use pointer events with setPointerCapture so the drag keeps
+                    // updating even when the cursor leaves the canvas — only ends
+                    // when the button is actually released.
                     onMouseDown = (e) => {
                         if (e.button !== 0) return;
                         e.preventDefault();
+                        try { videoCanvas.setPointerCapture(e.pointerId); } catch (_) {}
                         dragStart = clientToCanvas(e);
                         pendingBbox = null;
                         buttons.style.display = 'none';
@@ -1506,6 +1512,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     onMouseUp = (e) => {
                         if (!dragStart) return;
                         e.preventDefault();
+                        try { videoCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
                         const end = clientToCanvas(e);
                         const x1 = Math.min(dragStart.x, end.x);
                         const y1 = Math.min(dragStart.y, end.y);
@@ -1531,14 +1538,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         dragStart = null;
                     };
 
-                    onMouseLeave = (e) => {
-                        if (dragStart) onMouseUp(e);
-                    };
-
-                    videoCanvas.addEventListener('mousedown', onMouseDown);
-                    videoCanvas.addEventListener('mousemove', onMouseMove);
-                    videoCanvas.addEventListener('mouseup', onMouseUp);
-                    videoCanvas.addEventListener('mouseleave', onMouseLeave);
+                    videoCanvas.addEventListener('pointerdown', onMouseDown);
+                    videoCanvas.addEventListener('pointermove', onMouseMove);
+                    videoCanvas.addEventListener('pointerup', onMouseUp);
+                    videoCanvas.addEventListener('pointercancel', onMouseUp);
                 };
                 img.src = URL.createObjectURL(blob);
             } catch (e) {
