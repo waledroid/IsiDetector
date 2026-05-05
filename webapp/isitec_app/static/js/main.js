@@ -46,6 +46,7 @@ const translations = {
         "set_auto_start_label": "Auto-start stream on boot",
         "set_auto_start_hint": "Once enabled, click Start manually one time to record the model selection. After that, the stream comes up by itself every container boot — no operator click needed.",
         "set_roi_btn": "Set ROI",
+        "roi_clear_btn": "Clear ROI",
         "set_roi_enabled_label": "Show \"Set ROI\" button on landing page",
         "roi_current": "Current ROI:",
         "roi_none": "none (full frame)",
@@ -55,7 +56,9 @@ const translations = {
         "roi_need_stream": "Start the stream first to capture a snapshot.",
         "roi_saved": "ROI saved. Stop and Start the stream to apply.",
         "roi_cleared": "ROI cleared (full-frame mode).",
+        "roi_cleared_alert": "ROI cleared. Stop and Start the stream to apply.",
         "roi_save_failed": "Could not save ROI: ",
+        "roi_clear_failed": "Could not clear ROI: ",
         "sorter_settings": "Sorter (UDP target)",
         "sorter_settings_hint": "Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.",
         "set_udp_host_label": "Sorter IP / hostname",
@@ -137,6 +140,7 @@ const translations = {
         "set_auto_start_label": "Démarrage auto au boot",
         "set_auto_start_hint": "Une fois activé, cliquez Démarrer une fois manuellement pour mémoriser le modèle. Ensuite, le flux démarre tout seul à chaque redémarrage du conteneur — aucun clic opérateur nécessaire.",
         "set_roi_btn": "Définir ROI",
+        "roi_clear_btn": "Effacer ROI",
         "set_roi_enabled_label": "Afficher le bouton « Définir ROI » sur la page d'accueil",
         "roi_current": "ROI actuelle :",
         "roi_none": "aucune (image complète)",
@@ -146,7 +150,9 @@ const translations = {
         "roi_need_stream": "Démarrez d'abord le flux pour capturer une image.",
         "roi_saved": "ROI enregistrée. Arrêter puis Démarrer le flux pour l'appliquer.",
         "roi_cleared": "ROI effacée (mode plein cadre).",
+        "roi_cleared_alert": "ROI effacée. Arrêter puis Démarrer le flux pour l'appliquer.",
         "roi_save_failed": "Échec de l'enregistrement ROI : ",
+        "roi_clear_failed": "Échec de l'effacement ROI : ",
         "sorter_settings": "Trieur (cible UDP)",
         "sorter_settings_hint": "Chaque franchissement de ligne envoie un datagramme JSON ~60 octets <code>{class, id, ts}</code> à cette adresse. Enregistrer → l'éditeur retargete immédiatement, pas de redémarrage du flux. Tester avec <code>./net.sh test</code>.",
         "set_udp_host_label": "IP / hôte du trieur",
@@ -1265,12 +1271,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
         const autoStartEl = document.getElementById('set_auto_start');
         if (autoStartEl) autoStartEl.checked = !!serverSettings.auto_start;
-        // ROI: toggle reveals the Live-page "Set ROI" button + show current bbox.
+        // ROI: toggle reveals the Live-page "Set ROI" + "Clear ROI" buttons + show current bbox.
         const roiEnabledEl = document.getElementById('set_roi_enabled');
         const setRoiBtn = document.getElementById('btnSetROI');
+        const clearRoiBtn = document.getElementById('btnClearROI');
         const roiCurrentEl = document.getElementById('disp_roi_current');
         if (roiEnabledEl) roiEnabledEl.checked = !!serverSettings.roi_enabled;
         if (setRoiBtn) setRoiBtn.style.display = serverSettings.roi_enabled ? 'flex' : 'none';
+        if (clearRoiBtn) clearRoiBtn.style.display = serverSettings.roi_enabled ? 'flex' : 'none';
         if (roiCurrentEl) {
             const pts = serverSettings.roi_points;
             if (Array.isArray(pts) && pts.length === 4) {
@@ -1423,6 +1431,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Live-reflect the ROI toggle on the landing page without a reload.
             const setRoiBtnNow = document.getElementById('btnSetROI');
             if (setRoiBtnNow) setRoiBtnNow.style.display = settings.roi_enabled ? 'flex' : 'none';
+            const clearRoiBtnNow = document.getElementById('btnClearROI');
+            if (clearRoiBtnNow) clearRoiBtnNow.style.display = settings.roi_enabled ? 'flex' : 'none';
 
             const confirmMsg = document.getElementById('saveConfirm');
             confirmMsg.classList.remove('hidden');
@@ -1610,6 +1620,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
         btnSetROI.addEventListener('click', beginCapture);
         btnCancel.addEventListener('click', endCapture);
+
+        // Clear ROI: wipes the saved bbox so the next stream session starts in
+        // full-frame mode. Operator can then re-draw with Set ROI. Sends an
+        // empty `roi_points: []` (the backend treats <4 points as no ROI) and
+        // keeps `roi_enabled: true` so the Set/Clear buttons stay visible.
+        const btnClearROI = document.getElementById('btnClearROI');
+        if (btnClearROI) {
+            btnClearROI.addEventListener('click', async () => {
+                try {
+                    const res = await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                        body: JSON.stringify({ roi_enabled: true, roi_points: [] })
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok || body.status !== 'success') {
+                        const prefix = (translations[currentLang] && translations[currentLang]['roi_clear_failed']) || 'Could not clear ROI: ';
+                        alert(prefix + (body.message || `HTTP ${res.status}`));
+                        return;
+                    }
+                    const ok = (translations[currentLang] && translations[currentLang]['roi_cleared_alert'])
+                               || 'ROI cleared. Stop and Start the stream to apply.';
+                    alert(ok);
+                    // Reflect the cleared state in the Settings → Camera readout.
+                    const roiCurrentEl = document.getElementById('disp_roi_current');
+                    if (roiCurrentEl) {
+                        roiCurrentEl.setAttribute('data-i18n', 'roi_none');
+                        roiCurrentEl.textContent = (translations[currentLang] && translations[currentLang]['roi_none']) || 'none (full frame)';
+                    }
+                } catch (e) {
+                    console.warn('ROI clear failed', e);
+                    alert('Could not clear ROI: ' + e);
+                }
+            });
+        }
 
         btnSave.addEventListener('click', async () => {
             if (!pendingBbox) { endCapture(); return; }
