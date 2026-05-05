@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
-    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.25-fps">
-    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.25-fps">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.25-fps">
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.26-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.26-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.26-fps">
 
     <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
-    <script src="/static/vendor/chart.min.js?v=2.25-fps"></script>
+    <script src="/static/vendor/chart.min.js?v=2.26-fps"></script>
 </head>
 
 <body>
@@ -139,25 +139,25 @@
                     <div class="button-group"
                         style="margin-top: 16px; justify-content: center; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #dadce0;">
                         <button id="btnStart" class="btn btn-primary"
-                            style="flex: 1; padding: 9px 12px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                            <i class="material-icons" style="font-size: 18px;">play_arrow</i> <span
+                            style="flex: 1; min-height: 0; padding: 3px 6px; font-size: 13px; line-height: 1.15; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; text-align: center;">
+                            <i class="material-icons" style="font-size: 16px;">play_arrow</i> <span
                                 data-i18n="start_tracking">Start</span>
                         </button>
                         <button id="btnStop" class="btn btn-danger"
-                            style="flex: 1; padding: 9px 12px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                            <i class="material-icons" style="font-size: 18px;">stop</i> <span
+                            style="flex: 1; min-height: 0; padding: 3px 6px; font-size: 13px; line-height: 1.15; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; text-align: center;">
+                            <i class="material-icons" style="font-size: 16px;">stop</i> <span
                                 data-i18n="stop">Stop</span>
                         </button>
                         <!-- Set ROI / Clear ROI — hidden by default; revealed when settings.roi_enabled is true. -->
                         <button id="btnSetROI" class="btn"
-                            style="display: none; flex: 1; padding: 9px 12px; font-size: 14px; align-items: center; justify-content: center; gap: 6px; background: #1b9bd8; color: #fff;">
-                            <i class="material-icons" style="font-size: 18px;">crop</i> <span
+                            style="display: none; flex: 1; min-height: 0; padding: 3px 6px; font-size: 13px; line-height: 1.15; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; text-align: center; background: #1b9bd8; color: #fff;">
+                            <i class="material-icons" style="font-size: 16px;">crop</i> <span
                                 data-i18n="set_roi_btn">Set ROI</span>
                         </button>
                         <button id="btnClearROI" class="btn"
-                            style="display: none; flex: 1; padding: 9px 12px; font-size: 14px; align-items: center; justify-content: center; gap: 6px; background: #f57c00; color: #fff;"
+                            style="display: none; flex: 1; min-height: 0; padding: 3px 6px; font-size: 13px; line-height: 1.15; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px; text-align: center; background: #f57c00; color: #fff;"
                             title="Clear the saved ROI bbox so the next stream starts in full-frame mode (Set ROI to redraw)">
-                            <i class="material-icons" style="font-size: 18px;">crop_free</i> <span
+                            <i class="material-icons" style="font-size: 16px;">crop_free</i> <span
                                 data-i18n="roi_clear_btn">Clear ROI</span>
                         </button>
                     </div>
@@ -526,7 +526,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.25-fps"></script>
+    <script src="/static/js/main.js?v=2.26-fps"></script>
 </body>
 
 </html>
