@@ -248,6 +248,13 @@ class PerformanceMonitor:
             Every group includes a ``"status"`` key: ``"green"``,
             ``"yellow"``, or ``"red"``.
         """
+        # Slow OS queries and Disk I/O MUST happen outside the lock!
+        # Otherwise, the inference thread blocks every time the UI polls this endpoint.
+        gpu = self._get_gpu()
+        ram = self._get_ram_usage()
+        cpu = self._get_cpu_info()
+        sessions = self._load_sessions()
+
         with self.lock:
             now = time.time()
 
@@ -303,9 +310,6 @@ class PerformanceMonitor:
             tracking['status'] = self._status_tracking(tracking)
 
             # ── Hardware ─────────────────────────────────────────────────────
-            gpu   = self._get_gpu()
-            ram   = self._get_ram_usage()
-            cpu   = self._get_cpu_info()
             hardware = {
                 'has_gpu':       gpu is not None,
                 # GPU fields (None if no GPU)
@@ -348,7 +352,7 @@ class PerformanceMonitor:
             }
             udp['status'] = self._status_udp(udp)
 
-            sessions = self._load_sessions()
+            udp['status'] = self._status_udp(udp)
 
         return {
             'session':    session,
