@@ -33,6 +33,11 @@ services:
       # by run_start.sh / up.sh based on hardware detection). The container's
       # stream_handler reads this to pick inference/cpu.yaml or gpu.yaml.
       - COMPOSE_MODE=${COMPOSE_MODE:-cpu}
+      # Force OpenCV's FFmpeg backend to negotiate RTSP-over-UDP instead of
+      # the default TCP. UDP skips TCP's reorder/retransmit buffering and
+      # often delivers 1–2 FPS more on a clean LAN. Trades reliability for
+      # latency — revert this line if a noisy network produces packet loss.
+      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;udp
       - DISPLAY=${DISPLAY:-:0}
       - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
       - XDG_RUNTIME_DIR=/mnt/wslg
