@@ -126,10 +126,11 @@ internet_ok() {
 
 write_state() {
     # JSON state file: Tailscale IP, RustDesk ID + plaintext password,
-    # install timestamp, service states. The plaintext password lets the
-    # admin read it directly on the next visit without re-running setup;
-    # mode 0640 + a root-owned dir keeps it off world view. Site PCs are
-    # single-admin boxes — full plaintext recovery is the right tradeoff.
+    # direct-IP connection details, install timestamp, service states.
+    # The plaintext password lets the admin read it directly on the next
+    # visit without re-running setup; mode 0640 + a root-owned dir keeps
+    # it off world view. Site PCs are single-admin boxes — full plaintext
+    # recovery is the right tradeoff.
     mkdir -p "$STATE_DIR"
     chmod 0750 "$STATE_DIR"
 
@@ -138,6 +139,13 @@ write_state() {
     local rd_pw="${3:-}"
     local ts_status="${4:-}"
     local rd_status="${5:-}"
+    local lan_ip="${6:-}"
+
+    # Build the direct-IP connect strings. Empty if either component
+    # is missing so the JSON stays valid.
+    local direct_ts="" direct_lan=""
+    [ -n "$ts_ip" ]  && direct_ts="${ts_ip}:${RD_DIRECT_PORT:-21118}"
+    [ -n "$lan_ip" ] && direct_lan="${lan_ip}:${RD_DIRECT_PORT:-21118}"
 
     cat > "$STATE_FILE" <<EOF
 {
@@ -149,7 +157,10 @@ write_state() {
   "rustdesk": {
     "id": "${rd_id}",
     "password": "${rd_pw}",
-    "service_status": "${rd_status}"
+    "service_status": "${rd_status}",
+    "direct_ip_via_tailscale": "${direct_ts}",
+    "direct_ip_via_lan": "${direct_lan}",
+    "verification_method": "use-permanent-password"
   }
 }
 EOF
@@ -535,11 +546,15 @@ rd_install() {
     success "RustDesk installed ($(rustdesk --version 2>/dev/null | head -1 || echo ok))"
 }
 
+#: Default port RustDesk listens on for direct IP connections (when
+#: `direct-server = Y`). Standard across all RustDesk versions ≥1.2.
+RD_DIRECT_PORT="21118"
+
 rd_configure() {
-    # Enable + start the systemd service so RustDesk runs at boot, before
-    # any user logs in. Lets the admin connect even if the kiosk hasn't
-    # auto-logged-in yet.
-    if systemctl list-unit-files | grep -q '^rustdesk\.service'; then
+    # Enable + start the systemd service first so RustDesk has time to
+    # generate its initial config (RustDesk2.toml) with an assigned ID.
+    # We then layer our options on top.
+    if systemctl list-unit-files 2>/dev/null | grep -q '^rustdesk\.service'; then
         systemctl enable --now rustdesk.service 2>/dev/null \
             && success "rustdesk.service enabled + started" \
             || warn "could not enable rustdesk.service — RustDesk will only run when GUI launches it"
@@ -547,51 +562,73 @@ rd_configure() {
         warn "rustdesk.service unit not found — package may not ship one on this distro"
     fi
 
-    # Optional: point at a self-hosted relay server.
+    # Wait for the daemon to write its initial config file. Without this,
+    # the rustdesk CLI calls below race against config creation and the
+    # options sometimes don't stick. 5 s is the empirical sweet spot.
+    sleep 5
+
+    local du; du=$(desktop_user)
+
+    # Optional: point at a self-hosted relay server. Written before other
+    # options so the daemon picks it up on the upcoming restart.
     if [ -n "$ARG_RD_SERVER" ]; then
         info "configuring RustDesk to use custom server: $ARG_RD_SERVER"
-        # RustDesk reads server config from ~/.config/rustdesk/RustDesk2.toml.
-        # This is per-user. We write it for the desktop user.
-        local du; du=$(desktop_user)
         local cfg_dir="/home/${du}/.config/rustdesk"
         mkdir -p "$cfg_dir"
-        cat > "${cfg_dir}/RustDesk2.toml" <<EOF
-rendezvous_server = '${ARG_RD_SERVER}'
-nat_type = 1
-serial = 0
-
-[options]
-custom-rendezvous-server = '${ARG_RD_SERVER}'
-EOF
-        chown -R "$du:$du" "$cfg_dir"
-        success "rustdesk server config written for ${du}"
+        chown -R "$du:$du" "$cfg_dir" 2>/dev/null
+        su - "$du" -c "rustdesk --option custom-rendezvous-server '$ARG_RD_SERVER'" >/dev/null 2>&1 \
+            && success "rustdesk relay set to ${ARG_RD_SERVER}" \
+            || warn "could not set custom rendezvous server"
     fi
 
     # Permanent password — required for unattended access. Either provided
     # via --rd-password or randomly generated.
     local pw="$ARG_RD_PASSWORD"
     if [ -z "$pw" ]; then
-        pw=$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 12)
+        # 12 chars of A-Z/a-z/0-9 — strong enough for a Tailscale-protected
+        # service, short enough to read off the screen and copy by hand.
+        pw=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 12)
         info "generated random permanent password (12 chars)"
     fi
 
-    # Set it via the rustdesk CLI. This must run as the desktop user
-    # because RustDesk stores the password in the user's config dir.
-    local du; du=$(desktop_user)
-    if su - "$du" -c "command -v rustdesk" >/dev/null 2>&1; then
-        # The --password CLI option exists in 1.2+. Run via the desktop
-        # user's environment so DISPLAY and config dir resolve correctly.
-        if su - "$du" -c "rustdesk --password '$pw'" 2>/dev/null; then
-            success "rustdesk permanent password set"
-        else
-            warn "could not set RustDesk password automatically — run 'rustdesk --password YOUR_PW' as ${du} after first GUI launch"
-        fi
+    # CRITICAL: switch verification mode FIRST. Without this, the password
+    # we set below is silently ignored — RustDesk's default is
+    # `use-temporary-password` (a fresh random shown in the GUI per
+    # session), so an admin entering OUR password gets rejected even
+    # though it's stored in the config. This was the "is the password the
+    # permanent password?" bug.
+    if su - "$du" -c "rustdesk --option verification-method use-permanent-password" >/dev/null 2>&1; then
+        success "verification mode = permanent password (script-set password is now active)"
     else
-        warn "rustdesk CLI not in user's PATH — set password manually after first GUI launch"
+        warn "could not set verification mode — admin may see an auto-generated password instead of yours"
     fi
 
-    # Echo the password for the admin (printed once, in plaintext, in the summary).
-    # Also stash a SHA-256 in the state file so the admin can verify which password was set.
+    # Direct IP access — listen on TCP $RD_DIRECT_PORT so connections of
+    # the form 'IP:21118' work alongside the 9-digit ID. Huge win on a
+    # Tailscale setup: connect via the 100.x IP + port, completely
+    # bypassing RustDesk's public coordination server.
+    if su - "$du" -c "rustdesk --option direct-server Y" >/dev/null 2>&1; then
+        success "direct IP access ENABLED (TCP port ${RD_DIRECT_PORT})"
+    else
+        warn "could not enable direct IP access — admin must connect via the 9-digit ID only"
+    fi
+
+    # Permanent password — written last so it lands under the verification
+    # mode we just established.
+    if su - "$du" -c "rustdesk --password '$pw'" >/dev/null 2>&1; then
+        success "rustdesk permanent password set"
+    else
+        warn "could not set RustDesk password automatically — run 'rustdesk --password YOUR_PW' as ${du} after first GUI launch"
+    fi
+
+    # Restart the service so all the options take effect. The CLI writes
+    # to RustDesk2.toml on disk, but a running daemon doesn't re-read it
+    # until it restarts.
+    if systemctl restart rustdesk.service 2>/dev/null; then
+        info "rustdesk service restarted — config now active"
+    fi
+
+    # Stash for the summary print + state file.
     REMOTE_RD_PW="$pw"
 }
 
@@ -669,27 +706,48 @@ cmd_setup() {
         rd_id="(pending — launch RustDesk GUI once)"
     fi
 
-    # 5. State recording
-    write_state "$ts_ip" "$rd_id" "${REMOTE_RD_PW:-}" "$(ts_status)" "$(rd_status)"
+    # 5. Discover the LAN IP (first non-loopback, non-tailscale, non-docker IPv4).
+    # Used for direct on-site connections that don't need Tailscale at all.
+    local lan_ip
+    lan_ip=$(ip -4 -o addr show 2>/dev/null \
+        | awk '{print $2, $4}' \
+        | awk -F'[ /]' '$1 !~ /^(lo|docker|br-|veth|tailscale)/ {print $2; exit}')
 
-    # 6. Summary — plain text, no terminal escapes. The earlier bug where
-    # \033[1m showed up literally was because `echo` (no -e) prints the
-    # raw backslash sequences. Dropping the BOLD/NC wrappers entirely
-    # also makes the password trivially copy-paste-able.
+    # 6. State recording
+    write_state "$ts_ip" "$rd_id" "${REMOTE_RD_PW:-}" "$(ts_status)" "$(rd_status)" "$lan_ip"
+
+    # 7. Summary — plain text, no terminal escapes. Shows BOTH connection
+    # methods (ID via public relay, and direct IP+port over Tailscale/LAN)
+    # so the admin can pick the best path from their laptop.
     header "Setup complete"
     echo ""
     echo "  Tailscale IP (private mesh):  ${ts_ip:-(not connected — see warnings above)}"
+    echo "  LAN IP (on-site only):        ${lan_ip:-(not detected)}"
+    echo ""
     echo "  RustDesk ID:                  ${rd_id:-(pending — launch RustDesk GUI once)}"
     echo "  RustDesk password:            ${REMOTE_RD_PW:-(unchanged)}"
+    echo "  Verification mode:            permanent password (script-set, not auto-rotating)"
     echo ""
-    echo "  From your laptop, on the same Tailscale tailnet:"
+    echo "  Connection options from your laptop's RustDesk client:"
+    echo "    A) ID + password (works anywhere with internet):"
+    echo "       Enter:   ${rd_id:-<id>}"
+    echo "       Then password:  ${REMOTE_RD_PW:-<password>}"
     if [ -n "$ts_ip" ]; then
-        echo "    SSH:      tailscale ssh ${SUDO_USER:-$USER}@${ts_ip}"
+        echo "    B) Direct IP via Tailscale (preferred — fast, no public relay):"
+        echo "       Enter:   ${ts_ip}:${RD_DIRECT_PORT}"
+        echo "       Then password:  ${REMOTE_RD_PW:-<password>}"
     fi
-    echo "    Desktop:  open RustDesk on your laptop → enter the ID + password above"
+    if [ -n "$lan_ip" ]; then
+        echo "    C) Direct IP via LAN (when on-site, no Tailscale needed):"
+        echo "       Enter:   ${lan_ip}:${RD_DIRECT_PORT}"
+        echo "       Then password:  ${REMOTE_RD_PW:-<password>}"
+    fi
+    if [ -n "$ts_ip" ]; then
+        echo "    D) SSH over Tailscale:  tailscale ssh ${SUDO_USER:-$USER}@${ts_ip}"
+    fi
     echo ""
-    echo "  These details are also persisted in:  ${STATE_FILE}"
-    echo "  (root-readable; cat the file on next visit to recover them)"
+    echo "  These details are persisted in:  ${STATE_FILE}"
+    echo "  (root-readable; on next visit run:  sudo cat ${STATE_FILE})"
     if [ "${REMOTE_NEED_REBOOT:-0}" = "1" ]; then
         echo ""
         warn "REBOOT REQUIRED: Wayland was disabled in /etc/gdm3/custom.conf."
