@@ -172,39 +172,93 @@ ts_install() {
 
 ts_up() {
     # Already authenticated? Skip.
-    if tailscale status >/dev/null 2>&1; then
-        local cur_ip
-        cur_ip=$(tailscale ip -4 2>/dev/null | head -1)
-        if [ -n "$cur_ip" ]; then
-            success "tailscale already up — IP ${cur_ip}"
-            return 0
-        fi
+    local cur_ip
+    cur_ip=$(tailscale ip -4 2>/dev/null | head -1)
+    if [ -n "$cur_ip" ]; then
+        success "tailscale already up — IP ${cur_ip}"
+        echo "$cur_ip"
+        return 0
     fi
 
     if [ -n "$ARG_TS_KEY" ]; then
-        info "bringing tailscale up via auth key..."
-        if ! tailscale up --auth-key="$ARG_TS_KEY" --ssh --accept-routes; then
+        # Auth-key path: synchronous, no human in the loop. Doesn't hang.
+        info "bringing tailscale up via auth key (unattended)..."
+        if ! tailscale up --auth-key="$ARG_TS_KEY"; then
             fail "tailscale up (auth-key path) failed"
             return 1
         fi
     else
+        # Interactive SSO path. CRITICAL: don't pass --ssh or --accept-routes
+        # to `tailscale up` — both can cause the CLI to hang indefinitely
+        # waiting for tailnet ACL / subnet-route approval that never comes,
+        # *even though the daemon has already authenticated*. Apply those
+        # extras separately via `tailscale set` after auth completes, where
+        # a failure can be reported and skipped without blocking the script.
+        #
+        # Strategy: launch `tailscale up` in the background so we can poll
+        # `tailscale status` independently. The auth URL still prints to
+        # the terminal (the operator clicks it on the kiosk's Chrome).
+        # Once the daemon assigns an IP, we know auth completed — kill the
+        # backgrounded `up` and continue.
         info "bringing tailscale up via interactive SSO..."
-        warn "the script will print a URL — open it in the kiosk's Chrome and"
-        warn "sign in with the Gmail/email account that owns this Tailscale"
-        warn "tailnet. The browser must run on this machine, not your laptop."
-        # --ssh enables Tailscale SSH server (admin can `tailscale ssh user@site-pc`)
-        # --accept-routes lets the site PC reach other tailnet subnets if any
-        if ! tailscale up --ssh --accept-routes; then
-            fail "tailscale up (interactive path) failed"
+        warn "the script will print a URL — open it in the kiosk's Chrome"
+        warn "and sign in with the Gmail/email account that owns this"
+        warn "Tailscale tailnet."
+
+        tailscale up &
+        local up_pid=$!
+
+        local timeout=180   # 3 minutes for the operator to click the URL + sign in
+        local waited=0
+        local poll_ip=""
+        while [ $waited -lt $timeout ]; do
+            poll_ip=$(tailscale ip -4 2>/dev/null | head -1)
+            if [ -n "$poll_ip" ]; then
+                break
+            fi
+            # If the up process exited on its own (success or fail), stop waiting.
+            if ! kill -0 "$up_pid" 2>/dev/null; then
+                # Wait a moment for daemon state to settle, then re-check
+                sleep 2
+                poll_ip=$(tailscale ip -4 2>/dev/null | head -1)
+                break
+            fi
+            sleep 2
+            waited=$((waited + 2))
+        done
+
+        # Reap the backgrounded process. Auth either completed (we have an
+        # IP) or timed out — either way the foreground `up` is no longer
+        # useful since the daemon has the auth state.
+        kill "$up_pid" 2>/dev/null
+        wait "$up_pid" 2>/dev/null
+
+        if [ -z "$poll_ip" ]; then
+            fail "tailscale auth did not complete within ${timeout}s."
+            warn "Verify: 'tailscale status' in another terminal. If you see"
+            warn "an IP, auth IS complete and you can re-run ./remote.sh setup"
+            warn "(it will skip Tailscale and proceed to RustDesk)."
             return 1
         fi
     fi
 
-    sleep 1
+    # Apply the optional extras (Tailscale SSH server, route acceptance) AFTER
+    # auth completes so they can fail without blocking the install.
+    if tailscale set --ssh=true 2>/dev/null; then
+        success "Tailscale SSH server enabled (tailscale ssh user@${poll_ip:-this-host} works)"
+    else
+        warn "Tailscale SSH not enabled — admin must allow it on the tailnet ACL."
+        warn "Not fatal; RustDesk will still work for remote desktop access."
+    fi
+
+    if tailscale set --accept-routes=true 2>/dev/null; then
+        info "subnet route acceptance enabled"
+    fi
+
     local ip
     ip=$(tailscale ip -4 2>/dev/null | head -1)
     if [ -z "$ip" ]; then
-        fail "tailscale up succeeded but no IPv4 was assigned — check the dashboard"
+        fail "tailscale daemon ran but no IPv4 was assigned — check the admin dashboard"
         return 1
     fi
     success "tailscale connected — site PC IP on the tailnet: ${ip}"
