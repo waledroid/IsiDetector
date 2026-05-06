@@ -52,7 +52,7 @@ logistic/
     └── _impl/*.sh           # real bodies — up / run_start / install / net
 ```
 
-Plus root thin wrappers (`up.sh` / `run_start.sh` / `install.sh` / `net.sh`) that `exec` into `deploy/_impl/`, a `compose.yaml` re-export for repo-root `docker compose` commands, and `start.md` / `README.md` / `CLAUDE.md` (this file).
+Plus root thin wrappers (`up.sh` / `run_start.sh` / `install.sh` / `net.sh` / `remote.sh`) that `exec` into `deploy/_impl/`, a `compose.yaml` re-export for repo-root `docker compose` commands, and `start.md` / `README.md` / `CLAUDE.md` (this file).
 
 **Runtime conventions** that let the restructure be seamless:
 
@@ -106,6 +106,23 @@ docker compose exec web bash
 `apply` is the older single-NIC flow that freezes whatever the active DHCP profile picked up; useful on a normal LAN with a real default gateway.
 
 `test`/`apply`/`revert`/`setup` re-exec themselves via `sudo -E` if not already root (preserves flags via `ORIG_ARGS`). Read-only `show` runs as the regular user. Not for WSL2 or Ubuntu Server — gracefully errors with "NetworkManager not installed" if that's the host. The internet-reachability and Docker-egress checks in `test` degrade to yellow `skip` lines when the WAN cable is unplugged or the web container isn't running, so offline runs produce no `[FAIL]` noise.
+
+### Remote access (`remote.sh`)
+
+Installs and configures Tailscale + RustDesk on a site PC so an admin can reach the kiosk from anywhere — no port-forward, no public IP, no TeamViewer license needed. Closes the "no remote access" gap from the May 2026 site debrief.
+
+```bash
+sudo ./remote.sh setup                    # install both, start services (auto-sudo)
+sudo ./remote.sh setup --ts-key tskey-... # tailscale unattended via auth key
+./remote.sh status                        # tailscale IP + rustdesk ID + service health (no sudo)
+./remote.sh test                          # internet + tailnet + rustdesk probes (no sudo)
+sudo ./remote.sh remove                   # uninstall both, leave system clean
+```
+
+- **Tailscale** — installed via the official `tailscale.com/install.sh` script. Default auth flow is interactive Gmail SSO: the script prints a URL, the operator clicks it once on the kiosk's Chrome and signs in with the Gmail account that owns the tailnet. Optional `--ts-key` flag for unattended install via a pre-generated auth key. `--ssh` is enabled so admins can `tailscale ssh user@site-pc` directly. Captures the assigned `100.x.x.x` IP.
+- **RustDesk** — installed via the official GitHub-released `.deb` (auto-detects amd64/arm64; falls back to a pinned version if the GitHub API isn't reachable). The systemd service is enabled so RustDesk runs at boot before any user logs in. A 12-character permanent password is generated (or supplied via `--rd-password`) so the admin can connect unattended. The 9-digit RustDesk ID is read from `~/.config/rustdesk/RustDesk2.toml` after first launch and surfaced in the summary.
+- **State persistence** — Tailscale IP, RustDesk ID, password SHA-256, and install timestamp are written to `/var/log/isidetector/remote-state.json` (mode 0640) so the admin can read the connection details on the next visit without re-running `setup`.
+- **Idempotent** — re-running `setup` detects existing installs and skips them. Internet check at the top fails fast with a clear "connect a cable and re-run" message.
 
 ### Standalone-mode helpers (`autostart.sh`)
 

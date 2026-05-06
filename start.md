@@ -278,6 +278,33 @@ No `net.ps1` yet — set the static IP via the GUI (**Settings → Network → E
 
 ---
 
+## 🌐 Remote access — Tailscale + RustDesk (`remote.sh`)
+
+Once-per-site setup so you can reach the kiosk from anywhere — no port-forward, no public IP, no TeamViewer license.
+
+```bash
+sudo ./remote.sh setup            # interactive: tailscale via Gmail SSO
+                                  # + rustdesk service + permanent password
+./remote.sh status                # show tailscale IP + rustdesk ID
+./remote.sh test                  # connectivity probes (read-only)
+sudo ./remote.sh remove           # uninstall both
+```
+
+**What you get:**
+- **Tailscale** — site PC joins your private mesh at a `100.x.x.x` IP. SSH and HTTPS from your laptop just work, no DNS or NAT shenanigans. Free for personal/small-team use; sign in with the Gmail account that owns the tailnet.
+- **RustDesk** — full GUI of the kiosk Chrome dashboard. The script enables the systemd service so RustDesk runs even when no operator is logged in.
+
+The script prints the Tailscale IP, RustDesk ID, and a generated permanent password at the end of `setup` — write them down. They're also saved to `/var/log/isidetector/remote-state.json` for the next visit. Idempotent; safe to re-run.
+
+**Optional flags:**
+- `--ts-key tskey-auth-...` — pre-generated Tailscale auth key (hands-off install, no SSO click).
+- `--rd-password XYZ` — set a specific RustDesk password instead of a random one.
+- `--rd-server self.example.com` — point RustDesk at a self-hosted relay instead of the public RustDesk service.
+
+**Site PC must be online** (HTTPS to `pkgs.tailscale.com` and `github.com`) when running `setup`. The script bails with a clear message if not.
+
+---
+
 ## 6️⃣ Update
 
 | Platform | Update flow |
