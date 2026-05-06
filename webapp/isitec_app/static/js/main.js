@@ -947,6 +947,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pct = Math.round(d.cpu_pct);
                 html += buildProgressBar('CPU Util', pct, `${pct}%`, [80, 95]);
             }
+            if (d.cpu_model) {
+                // Truncate verbose Intel model strings ("Intel(R) Core(TM) i7-..." → readable).
+                const model = String(d.cpu_model).replace(/\(R\)|\(TM\)/g, '').replace(/\s+/g, ' ').trim();
+                html += pmRow('CPU Model', `<span style="font-size: 12px;">${model}</span>`);
+            }
             if (d.cpu_freq_mhz != null) {
                 html += pmRow('CPU Freq', fmt(d.cpu_freq_mhz, ' MHz', 0));
             }
@@ -954,6 +959,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += pmRow('CPU Cores', fmt(d.cpu_cores, '', 0));
             }
             html += pmRow('CPU Temp', d.cpu_temp_c != null ? fmt(d.cpu_temp_c, '°C', 0) : '<span class="pm-na">—</span>');
+            // ML feature flags — answers "is INT8 quantization worth it on this box?"
+            // Highlight VNNI / AMX in green (big INT8 wins), AVX-512 in yellow (modest),
+            // AVX2-only in grey (minimal). Used by the optimization-decision flow.
+            if (Array.isArray(d.cpu_flags) && d.cpu_flags.length) {
+                const flags = d.cpu_flags;
+                const tag = (f, color) => `<span style="display:inline-block; padding:1px 6px; margin-right:4px; border-radius:3px; background:${color}; color:#fff; font-size:11px; font-family:monospace;">${f}</span>`;
+                const colored = flags.map(f => {
+                    if (f === 'avx512_vnni' || f.startsWith('amx_')) return tag(f, '#1b8a3a');  // green — INT8 fast paths
+                    if (f.startsWith('avx512')) return tag(f, '#c4831f');                       // amber — wide vectors
+                    return tag(f, '#5c6370');                                                    // grey — baseline
+                }).join('');
+                html += pmRow('ML Features', `<div style="line-height:1.8;">${colored}</div>`);
+            }
         }
 
         // RAM — always shown

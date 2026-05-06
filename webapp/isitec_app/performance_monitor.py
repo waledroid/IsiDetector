@@ -324,6 +324,8 @@ class PerformanceMonitor:
                 'cpu_freq_mhz':  cpu['cpu_freq_mhz']  if cpu else None,
                 'cpu_temp_c':    cpu['cpu_temp_c']    if cpu else None,
                 'cpu_cores':     cpu['cpu_cores']     if cpu else None,
+                'cpu_model':     cpu.get('cpu_model') if cpu else None,
+                'cpu_flags':     cpu.get('cpu_flags', []) if cpu else [],
                 # RAM
                 'ram_used_mb':   ram['used_mb']       if ram else None,
                 'ram_total_mb':  ram['total_mb']      if ram else None,
@@ -489,9 +491,21 @@ class PerformanceMonitor:
         except Exception:
             return None
 
-    @staticmethod
-    def _get_cpu_info() -> dict | None:
-        """CPU utilization, frequency, and temperature (Linux/Windows)."""
+    #: CPU instruction-set flags relevant to ML inference. Only these are
+    #: surfaced from /proc/cpuinfo (full flag list is hundreds of items).
+    #: avx512_vnni is the killer feature for INT8 inference on Intel —
+    #: presence ⇒ INT8 is 2-3× faster than FP32. amx_int8 is even better
+    #: (~10× on Sapphire Rapids). Without any AVX-512, INT8 falls back to
+    #: AVX2 paths: ~1.3× over FP32.
+    _ML_FLAGS = (
+        'avx', 'avx2', 'fma', 'f16c',
+        'avx512f', 'avx512_vnni', 'avx512_bf16', 'avx512_fp16',
+        'amx_int8', 'amx_bf16',
+    )
+
+    @classmethod
+    def _get_cpu_info(cls) -> dict | None:
+        """CPU utilization, frequency, temperature, model, and ML-relevant flags."""
         try:
             import psutil
             cpu_pct = psutil.cpu_percent(interval=None)
@@ -515,11 +529,37 @@ class PerformanceMonitor:
                                 cpu_temp = round(entries[0].current, 1)
                                 break
 
+            # Model name + ML-relevant flag subset from /proc/cpuinfo (Linux).
+            # Lets the dashboard answer "is this site CPU INT8-VNNI-capable?"
+            # without SSH access — the next person to lay hands on the box
+            # can read the answer straight off the Performance tab.
+            cpu_model = None
+            cpu_flags: list[str] = []
+            try:
+                wanted = set(cls._ML_FLAGS)
+                with open('/proc/cpuinfo', 'r') as f:
+                    seen_model = False
+                    seen_flags = False
+                    for line in f:
+                        if not seen_model and line.startswith('model name'):
+                            cpu_model = line.split(':', 1)[1].strip()
+                            seen_model = True
+                        elif not seen_flags and line.startswith('flags'):
+                            all_flags = set(line.split(':', 1)[1].strip().split())
+                            cpu_flags = sorted(wanted & all_flags)
+                            seen_flags = True
+                        if seen_model and seen_flags:
+                            break
+            except Exception:
+                pass
+
             return {
                 'cpu_pct': cpu_pct,
                 'cpu_freq_mhz': cpu_freq_mhz,
                 'cpu_temp_c': cpu_temp,
                 'cpu_cores': psutil.cpu_count(logical=True),
+                'cpu_model': cpu_model,
+                'cpu_flags': cpu_flags,
             }
         except Exception:
             return None

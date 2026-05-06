@@ -955,6 +955,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pct = Math.round(d.cpu_pct);
                 html += buildProgressBar('CPU Util', pct, `${pct}%`, [80, 95]);
             }
+            if (d.cpu_model) {
+                const model = String(d.cpu_model).replace(/\(R\)|\(TM\)/g, '').replace(/\s+/g, ' ').trim();
+                html += pmRow('CPU Model', `<span style="font-size: 12px;">${model}</span>`);
+            }
             if (d.cpu_freq_mhz != null) {
                 html += pmRow('CPU Freq', fmt(d.cpu_freq_mhz, ' MHz', 0));
             }
@@ -962,6 +966,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += pmRow('CPU Cores', fmt(d.cpu_cores, '', 0));
             }
             html += pmRow('CPU Temp', d.cpu_temp_c != null ? fmt(d.cpu_temp_c, '\u00b0C', 0) : '<span class="pm-na">\u2014</span>');
+            // ML feature flags \u2014 answers "is INT8 quantization worth it on this box?"
+            // VNNI / AMX = green (INT8 2-3\u00d7 wins). AVX-512 = amber. AVX2-only = grey.
+            if (Array.isArray(d.cpu_flags) && d.cpu_flags.length) {
+                const flags = d.cpu_flags;
+                const tag = (f, color) => `<span style="display:inline-block; padding:1px 6px; margin-right:4px; border-radius:3px; background:${color}; color:#fff; font-size:11px; font-family:monospace;">${f}</span>`;
+                const colored = flags.map(f => {
+                    if (f === 'avx512_vnni' || f.startsWith('amx_')) return tag(f, '#1b8a3a');
+                    if (f.startsWith('avx512')) return tag(f, '#c4831f');
+                    return tag(f, '#5c6370');
+                }).join('');
+                html += pmRow('ML Features', `<div style="line-height:1.8;">${colored}</div>`);
+            }
         }
 
         if (d.ram_used_mb != null && d.ram_total_mb != null) {
