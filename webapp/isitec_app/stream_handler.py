@@ -836,7 +836,11 @@ class StreamHandler:
             from src.inference.onnx_inferencer import ONNXInferencer
             onnx_device = device if device else ("cuda" if has_gpu else "cpu")
             base_engine = ONNXInferencer(model_path=model_path, conf_threshold=final_conf, device=onnx_device, imgsz=imgsz)
-            mode_text = f"ONNX • {device_label}"
+            # Surface the precision tag in the dashboard footer so the operator
+            # gets visible confirmation that the INT8 model they expected is
+            # actually loaded — silent FP32 fallback would otherwise be invisible.
+            precision_tag = " INT8" if getattr(base_engine, 'is_int8', False) else ""
+            mode_text = f"ONNX{precision_tag} • {device_label}"
         elif ext == '.pth':
             if in_docker:
                 from src.inference.remote_rfdetr_inferencer import RemoteRFDETRInferencer

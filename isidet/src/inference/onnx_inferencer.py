@@ -142,6 +142,12 @@ class OptimizedONNXInferencer(BaseInferencer):
 
         self.session = self._create_session(str(model_path))
         self._parse_model_metadata()
+        # QDQ / INT8 detection by byte-scanning the ONNX protobuf for op_type
+        # strings. Avoids importing the `onnx` package (not in deploy image)
+        # and adds ~5 ms one-time at load. Surfaces in mode_text + logs so the
+        # operator can confirm "this is the INT8 model I expected" rather than
+        # silently running FP32 by accident.
+        self.is_int8 = self._detect_int8(str(model_path))
 
         # Match RF-DETR .pth convention: class_names 1-indexed (carton=1,
         # polybag=2). sv.MaskAnnotator/BoxAnnotator index the colour palette
@@ -154,8 +160,10 @@ class OptimizedONNXInferencer(BaseInferencer):
 
         self._warmup()
 
+        precision = "INT8 QDQ" if self.is_int8 else "FP32"
         logger.info(f"ONNX model loaded: {model_path}")
         logger.info(f"  Type: {'RF-DETR' if self.is_rfdetr else 'YOLO'} | "
+                     f"Precision: {precision} | "
                      f"Input: {self.model_w}x{self.model_h} | "
                      f"Classes: {self.nc} | "
                      f"Provider: {self.session.get_providers()[0]}")
@@ -185,6 +193,40 @@ class OptimizedONNXInferencer(BaseInferencer):
         # Always build a fresh session in the caller's thread. See comment
         # at `preload_onnx` above for why we don't share session objects.
         return ort.InferenceSession(model_path, sess_options=self.sess_options, providers=providers)
+
+    @staticmethod
+    def _detect_int8(model_path: str) -> bool:
+        """Detect QDQ-format INT8 quantization by byte-scanning op_type strings.
+
+        ONNX is protobuf-encoded; op_type names appear inline as ASCII bytes.
+        Compress.sh produces QDQ ONNX with QuantizeLinear/DequantizeLinear
+        wrapping every Conv/MatMul/Gemm. Operator-level (ConvInteger,
+        MatMulInteger) is also valid INT8. Either marker → INT8.
+
+        Avoids importing the `onnx` package (not in the deploy runtime image)
+        by reading raw bytes; works for files of any size.
+        """
+        markers = (b'QuantizeLinear', b'QLinearConv', b'ConvInteger',
+                   b'MatMulInteger', b'QLinearMatMul')
+        try:
+            with open(model_path, 'rb') as f:
+                # Read in chunks; bail on first match. Most quantised graphs
+                # have markers in the first MB; worst case is a full read.
+                CHUNK = 1024 * 1024
+                tail = b''
+                while True:
+                    blob = f.read(CHUNK)
+                    if not blob:
+                        break
+                    haystack = tail + blob
+                    if any(m in haystack for m in markers):
+                        return True
+                    # Carry over the last len(longest_marker)-1 bytes so a
+                    # marker spanning a chunk boundary still matches.
+                    tail = blob[-15:]
+            return False
+        except Exception:
+            return False
 
     # ── Model Metadata ───────────────────────────────────────────────────────
 
