@@ -172,13 +172,19 @@ ts_install() {
     success "Tailscale installed ($(tailscale version | head -1))"
 }
 
+# TS_IP is the global the rest of the script reads after ts_up succeeds.
+# Using a global avoids the stdout-capture-vs-log-output mess of
+# `ts_ip=$(ts_up | tail -1)` — info/warn lines from inside ts_up
+# can't pollute the captured value.
+TS_IP=""
+
 ts_up() {
-    # Already authenticated? Skip.
+    # Already authenticated? Skip the whole interactive flow.
     local cur_ip
     cur_ip=$(tailscale ip -4 2>/dev/null | head -1)
     if [ -n "$cur_ip" ]; then
         success "tailscale already up — IP ${cur_ip}"
-        echo "$cur_ip"
+        TS_IP="$cur_ip"
         return 0
     fi
 
@@ -190,77 +196,112 @@ ts_up() {
             return 1
         fi
     else
-        # Interactive SSO path. CRITICAL: don't pass --ssh or --accept-routes
-        # to `tailscale up` — both can cause the CLI to hang indefinitely
-        # waiting for tailnet ACL / subnet-route approval that never comes,
-        # *even though the daemon has already authenticated*. Apply those
-        # extras separately via `tailscale set` after auth completes, where
-        # a failure can be reported and skipped without blocking the script.
-        #
-        # Strategy: launch `tailscale up` in the background so we can poll
-        # `tailscale status` independently. The auth URL still prints to
-        # the terminal (the operator clicks it on the kiosk's Chrome).
-        # Once the daemon assigns an IP, we know auth completed — kill the
-        # backgrounded `up` and continue.
+        # Interactive SSO path with explicit operator confirmation.
+        # Earlier we tried polling `tailscale ip -4` to detect auth
+        # completion automatically. That fails too often:
+        #   - tailnet device-approval is async (admin clicks Approve at
+        #     login.tailscale.com/admin/machines — no fixed timeout)
+        #   - the daemon sometimes lags 10–30 s after browser auth before
+        #     assigning an IP
+        #   - ACL / subnet-route policy can defer the IP grant indefinitely
+        # The robust UX is to let the operator tell us when they're done.
         info "bringing tailscale up via interactive SSO..."
-        warn "the script will print a URL — open it in the kiosk's Chrome"
-        warn "and sign in with the Gmail/email account that owns this"
-        warn "Tailscale tailnet."
+        echo ""
+        warn "ACTION REQUIRED — please follow these steps:"
+        warn "  1. The script will print a URL below in a few seconds."
+        warn "  2. Click it on the kiosk's Chrome (or copy + paste it)."
+        warn "  3. Sign in with the Gmail/email that owns this tailnet."
+        warn "  4. If your tailnet requires device approval, click 'Approve'"
+        warn "     at https://login.tailscale.com/admin/machines"
+        warn "  5. Come back to this terminal and press Enter."
+        echo ""
 
-        tailscale up &
+        # CRITICAL: don't pass --ssh or --accept-routes to `tailscale up`.
+        # Both can cause the CLI to hang indefinitely waiting for ACL or
+        # subnet-route approval. We apply them separately via `tailscale
+        # set` after auth completes, with error tolerance.
+        #
+        # `tailscale up --reset` clears any prior partial state from a
+        # previous failed run, so re-running setup after a hang doesn't
+        # confuse the daemon.
+        tailscale up --reset &
         local up_pid=$!
 
-        local timeout=180   # 3 minutes for the operator to click the URL + sign in
-        local waited=0
+        # Give the URL a couple of seconds to print to the terminal before
+        # we obscure it with our own prompt.
+        sleep 3
+        echo ""
+
+        # Retry loop: if first attempt didn't yield an IP, give the operator
+        # another chance (e.g., they noticed approval is pending and went
+        # to fix it). Cap at 3 tries so a misconfigured tailnet doesn't
+        # trap the script forever.
+        local attempt=0
         local poll_ip=""
-        while [ $waited -lt $timeout ]; do
+        while [ $attempt -lt 3 ]; do
+            attempt=$((attempt + 1))
+            local prompt_msg
+            if [ $attempt -eq 1 ]; then
+                prompt_msg="Press Enter once you have completed sign-in (or Ctrl+C to abort): "
+            else
+                prompt_msg="Press Enter to re-check tailscale status (or Ctrl+C to abort): "
+            fi
+            # Read from /dev/tty so the prompt works even if the script's
+            # stdin is being piped in (e.g., curl | bash invocations).
+            read -r -p "$prompt_msg" _ < /dev/tty || true
+            echo ""
+
+            # Kill the backgrounded `tailscale up` if still running — its
+            # job (printing the URL + handling the auth callback) is done.
+            if kill -0 "$up_pid" 2>/dev/null; then
+                kill "$up_pid" 2>/dev/null
+                wait "$up_pid" 2>/dev/null
+            fi
+
+            sleep 1
             poll_ip=$(tailscale ip -4 2>/dev/null | head -1)
             if [ -n "$poll_ip" ]; then
                 break
             fi
-            # If the up process exited on its own (success or fail), stop waiting.
-            if ! kill -0 "$up_pid" 2>/dev/null; then
-                # Wait a moment for daemon state to settle, then re-check
+
+            # No IP yet — show diagnostic + offer retry.
+            warn "no Tailscale IPv4 assigned yet (attempt ${attempt}/3)."
+            warn "Current 'tailscale status':"
+            tailscale status 2>&1 | head -6 | sed 's/^/    /' || true
+            echo ""
+
+            if [ $attempt -lt 3 ]; then
+                warn "Common reasons:"
+                warn "  • Browser auth not completed → finish sign-in, then press Enter."
+                warn "  • Device awaiting admin approval → approve at"
+                warn "    https://login.tailscale.com/admin/machines, then press Enter."
+                warn "  • Wrong Gmail account → 'tailscale logout' first, then re-run setup."
+                echo ""
+                # Re-launch tailscale up so a fresh URL appears if the
+                # daemon let go of the previous auth handle.
+                tailscale up --reset &
+                up_pid=$!
                 sleep 2
-                poll_ip=$(tailscale ip -4 2>/dev/null | head -1)
-                break
             fi
-            sleep 2
-            waited=$((waited + 2))
         done
 
-        # Reap the backgrounded process. Auth either completed (we have an
-        # IP) or timed out — either way the foreground `up` is no longer
-        # useful since the daemon has the auth state.
-        kill "$up_pid" 2>/dev/null
-        wait "$up_pid" 2>/dev/null
-
         if [ -z "$poll_ip" ]; then
-            fail "tailscale auth did not complete within ${timeout}s."
-            warn "Diagnosing — current 'tailscale status':"
-            tailscale status 2>&1 | head -8 | sed 's/^/    /' || true
-            echo ""
-            warn "Common causes:"
-            warn "  1. Browser auth didn't complete — operator closed the tab or"
-            warn "     signed into a Gmail account that doesn't own this tailnet."
-            warn "  2. Your tailnet has device-approval enabled. The device is"
-            warn "     authenticated but in 'Awaiting approval' state — visit"
-            warn "     https://login.tailscale.com/admin/machines and click 'Approve'."
-            warn "  3. The Tailscale coordination server was unreachable mid-auth."
-            warn ""
-            warn "If 'tailscale status' above shows a 100.x.x.x IP, auth IS"
-            warn "complete — just re-run ./remote.sh setup (skips this step)."
+            fail "tailscale never received an IPv4 after 3 attempts."
+            warn "The Tailscale coordination flow appears blocked."
+            warn "Final 'tailscale status':"
+            tailscale status 2>&1 | head -10 | sed 's/^/    /' || true
+            warn "Recover later with: sudo tailscale up   (after fixing the cause)."
             return 1
         fi
     fi
 
-    # Apply the optional extras (Tailscale SSH server, route acceptance) AFTER
-    # auth completes so they can fail without blocking the install.
+    # Auth confirmed. Apply optional extras with error tolerance — none of
+    # these are essential to remote access, so failures degrade gracefully.
     if tailscale set --ssh=true 2>/dev/null; then
-        success "Tailscale SSH server enabled (tailscale ssh user@${poll_ip:-this-host} works)"
+        success "Tailscale SSH server enabled (run 'tailscale ssh ${SUDO_USER:-$USER}@<this-host>' from your laptop)"
     else
-        warn "Tailscale SSH not enabled — admin must allow it on the tailnet ACL."
-        warn "Not fatal; RustDesk will still work for remote desktop access."
+        warn "Tailscale SSH not enabled — your tailnet ACL must allow it on this user."
+        warn "Not fatal; RustDesk handles remote desktop access independently."
     fi
 
     if tailscale set --accept-routes=true 2>/dev/null; then
@@ -270,11 +311,11 @@ ts_up() {
     local ip
     ip=$(tailscale ip -4 2>/dev/null | head -1)
     if [ -z "$ip" ]; then
-        fail "tailscale daemon ran but no IPv4 was assigned — check the admin dashboard"
+        fail "tailscale daemon ran but no IPv4 was assigned"
         return 1
     fi
     success "tailscale connected — site PC IP on the tailnet: ${ip}"
-    echo "$ip"
+    TS_IP="$ip"
 }
 
 ts_status() {
@@ -597,19 +638,16 @@ cmd_setup() {
     fi
     success "internet reachable, apt-based distro detected"
 
-    # 2. Tailscale (non-fatal — RustDesk still useful via direct LAN if this fails)
+    # 2. Tailscale (non-fatal — RustDesk still useful on local LAN if this fails)
     header "Tailscale"
     local ts_ip=""
     if ts_install; then
-        # ts_up echoes the IP on success; capture last line only.
-        local ts_out
-        if ts_out=$(ts_up); then
-            ts_ip=$(echo "$ts_out" | tail -1 | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
-            [ -z "$ts_ip" ] && ts_ip=$(tailscale ip -4 2>/dev/null | head -1)
+        if ts_up; then
+            ts_ip="$TS_IP"
         else
             warn "tailscale step failed — continuing with RustDesk install."
-            warn "remote-only access via Tailscale won't work, but RustDesk on"
-            warn "the local LAN will still let you connect when on-site."
+            warn "Remote-via-Tailscale won't work, but RustDesk on the local"
+            warn "LAN will still let you connect when on-site."
         fi
     else
         warn "tailscale install failed — continuing with RustDesk install."
