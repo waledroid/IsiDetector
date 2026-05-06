@@ -252,72 +252,60 @@ ts_up() {
         tailscale up --reset &
         local up_pid=$!
 
-        # Give the URL a couple of seconds to print to the terminal before
-        # we obscure it with our own prompt.
-        sleep 3
-        echo ""
-
-        # Retry loop: if first attempt didn't yield an IP, give the operator
-        # another chance (e.g., they noticed approval is pending and went
-        # to fix it). Cap at 3 tries so a misconfigured tailnet doesn't
-        # trap the script forever.
-        local attempt=0
+        # Polling loop: check for IP automatically every 5 seconds.
+        # This makes the flow "hands-off" once the user clicks the URL.
+        # Cap at 60 polls (~5 minutes) to avoid hanging forever.
+        local poll_count=0
         local poll_ip=""
-        while [ $attempt -lt 3 ]; do
-            attempt=$((attempt + 1))
-            local prompt_msg
-            if [ $attempt -eq 1 ]; then
-                prompt_msg="Press Enter once you have completed sign-in (or Ctrl+C to abort): "
-            else
-                prompt_msg="Press Enter to re-check tailscale status (or Ctrl+C to abort): "
-            fi
-            # Read from /dev/tty so the prompt works even if the script's
-            # stdin is being piped in (e.g., curl | bash invocations).
-            read -r -p "$prompt_msg" _ < /dev/tty || true
-            echo ""
-
-            # Kill the backgrounded `tailscale up` if still running — its
-            # job (printing the URL + handling the auth callback) is done.
+        while [ $poll_count -lt 60 ]; do
+            poll_count=$((poll_count + 1))
+            
+            # 1. Kill background `tailscale up` if it's already done its job.
             if kill -0 "$up_pid" 2>/dev/null; then
-                kill "$up_pid" 2>/dev/null
-                wait "$up_pid" 2>/dev/null
+                # Only kill if it's been running for a while or we found an IP.
+                # Actually, it's safer to just let it run until we get an IP.
+                :
             fi
 
-            sleep 1
+            # 2. Check for assigned IP.
             poll_ip=$(tailscale ip -4 2>/dev/null | head -1)
             if [ -n "$poll_ip" ]; then
+                echo -e "\n"
+                success "Tailscale authentication detected!"
                 break
             fi
 
-            # No IP yet — show diagnostic + offer retry.
-            warn "no Tailscale IPv4 assigned yet (attempt ${attempt}/3)."
-            warn "Current 'tailscale status':"
-            tailscale status 2>&1 | head -6 | sed 's/^/    /' || true
-            echo ""
+            # 3. Print a status line every few polls so the user knows we're alive.
+            if [ $((poll_count % 3)) -eq 1 ]; then
+                local remaining=$(( (60 - poll_count) * 5 ))
+                info "Waiting for browser sign-in... (${remaining}s timeout, or press Enter to check now)"
+            fi
 
-            if [ $attempt -lt 3 ]; then
-                warn "Common reasons:"
-                warn "  • Browser auth not completed → finish sign-in, then press Enter."
-                warn "  • Device awaiting admin approval → approve at"
-                warn "    https://login.tailscale.com/admin/machines, then press Enter."
-                warn "  • Wrong Gmail account → 'tailscale logout' first, then re-run setup."
-                echo ""
-                # Re-launch tailscale up so a fresh URL appears if the
-                # daemon let go of the previous auth handle.
-                tailscale up --reset &
-                up_pid=$!
-                sleep 2
+            # 4. Use `read -t` to wait 5s while allowing manual "Enter" to skip the wait.
+            # Read from /dev/tty so the prompt works even if stdin is piped.
+            if read -t 5 -r _ < /dev/tty 2>/dev/null; then
+                info "Checking status manually..."
+            fi
+            
+            # 5. If we still don't have an IP after 30s, re-print the help info.
+            if [ $poll_count -eq 6 ]; then
+                warn "Still waiting... ensure you signed in and approved the device if required."
+                warn "Check: https://login.tailscale.com/admin/machines"
             fi
         done
 
         if [ -z "$poll_ip" ]; then
-            fail "tailscale never received an IPv4 after 3 attempts."
+            fail "Tailscale never received an IPv4 after timeout."
             warn "The Tailscale coordination flow appears blocked."
             warn "Final 'tailscale status':"
             tailscale status 2>&1 | head -10 | sed 's/^/    /' || true
             warn "Recover later with: sudo tailscale up   (after fixing the cause)."
             return 1
         fi
+
+        # Cleanup background process if still there.
+        kill "$up_pid" 2>/dev/null || true
+        wait "$up_pid" 2>/dev/null || true
     fi
 
     # Auth confirmed. Apply optional extras with error tolerance — none of
@@ -729,15 +717,33 @@ rd_configure() {
 
 rd_get_id() {
     # The 9-digit RustDesk ID is generated at first start and stored in the
-    # user's config. Read it after the service has had a moment to come up.
-    local du; du=$(desktop_user)
-    local cfg="/home/${du}/.config/rustdesk/RustDesk2.toml"
+    # service or user's config. 
+    local svc_info svc_user svc_home svc_cfg_dir
+    svc_info=$(rd_service_user_and_home)
+    svc_user="${svc_info%|*}"
+    svc_home="${svc_info#*|}"
+    svc_cfg_dir="${svc_home}/.config/rustdesk"
+
+    local cfg="${svc_cfg_dir}/RustDesk2.toml"
     if [ -r "$cfg" ]; then
         grep -E "^id\s*=\s*'" "$cfg" | head -1 | sed -E "s/^id\s*=\s*'([^']+)'.*/\1/"
         return
     fi
-    # Fallback: ask the binary directly.
-    su - "$du" -c "rustdesk --get-id" 2>/dev/null | head -1
+
+    # Fallback: check desktop user if service doesn't have it (unlikely but safe)
+    local du; du=$(desktop_user)
+    cfg="/home/${du}/.config/rustdesk/RustDesk2.toml"
+    if [ -r "$cfg" ]; then
+        grep -E "^id\s*=\s*'" "$cfg" | head -1 | sed -E "s/^id\s*=\s*'([^']+)'.*/\1/"
+        return
+    fi
+
+    # Final fallback: ask the binary directly.
+    if [ "$svc_user" = "root" ]; then
+        rustdesk --get-id 2>/dev/null | head -1
+    else
+        su - "$svc_user" -c "rustdesk --get-id" 2>/dev/null | head -1
+    fi
 }
 
 rd_status() {
@@ -758,6 +764,13 @@ cmd_setup() {
 
     # 1. Pre-flight
     info "pre-flight checks..."
+    for tool in curl dpkg awk grep sed; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            fail "missing required tool: ${tool}"
+            exit 2
+        fi
+    done
+
     if ! is_apt_distro; then
         fail "this script targets Debian/Ubuntu (apt). Detected:"
         cat /etc/os-release 2>/dev/null | head -3
@@ -793,9 +806,17 @@ cmd_setup() {
     header "RustDesk"
     rd_install || exit 5
     rd_configure
-    sleep 2  # let the service initialise so RustDesk2.toml exists with an ID
-    local rd_id
-    rd_id=$(rd_get_id)
+    
+    # Let the service initialise so RustDesk2.toml exists with an ID.
+    # Try a few times as the file creation is async.
+    local rd_id=""
+    for i in {1..8}; do
+        rd_id=$(rd_get_id)
+        [ -n "$rd_id" ] && break
+        info "Waiting for RustDesk ID to be generated... ($i/8)"
+        sleep 2
+    done
+
     if [ -z "$rd_id" ]; then
         warn "could not read RustDesk ID yet — will appear after first GUI launch"
         rd_id="(pending — launch RustDesk GUI once)"
