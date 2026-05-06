@@ -61,6 +61,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="/var/log/isidetector"
 STATE_FILE="${STATE_DIR}/remote-state.json"
 
+# Fleet-wide default RustDesk permanent password. One password to remember
+# across every Isitec site PC — the admin team types it from muscle memory
+# rather than fishing the per-host random one out of the state file. Tailscale
+# is the access perimeter; the RustDesk password is the second factor at the
+# session level.
+#
+# Override per-host with:  sudo ./remote.sh setup --rd-password 'OTHER_PW'
+#
+# CHANGING THIS VALUE: the new default only applies to fresh installs. To
+# rotate on already-deployed site PCs, run there:
+#   su - <desktop_user> -c "rustdesk --password 'NEW_PW'"
+#   sudo systemctl restart rustdesk
+RD_DEFAULT_PASSWORD="Isitec69+"
+
 # ── Argument parsing ────────────────────────────────────────────────────────
 CMD=""
 ARG_TS_KEY=""
@@ -582,13 +596,12 @@ rd_configure() {
     fi
 
     # Permanent password — required for unattended access. Either provided
-    # via --rd-password or randomly generated.
+    # via --rd-password (per-host override) or the fleet-wide default
+    # defined at the top of this script.
     local pw="$ARG_RD_PASSWORD"
     if [ -z "$pw" ]; then
-        # 12 chars of A-Z/a-z/0-9 — strong enough for a Tailscale-protected
-        # service, short enough to read off the screen and copy by hand.
-        pw=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 12)
-        info "generated random permanent password (12 chars)"
+        pw="$RD_DEFAULT_PASSWORD"
+        info "using fleet default permanent password (override with --rd-password)"
     fi
 
     # CRITICAL: switch verification mode FIRST. Without this, the password
