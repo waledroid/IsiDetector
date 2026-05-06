@@ -622,8 +622,12 @@ rd_configure() {
         warn "RustDesk hasn't written ${main_cfg} after 15 s — proceeding anyway"
     fi
 
-    # 4. Stop the service so our edits land cleanly.
+    # 4. Stop the service and kill any running GUI instances so our edits land cleanly.
+    # The daemon and GUI cache the config in memory; editing while they run
+    # races with their flush.
+    info "stopping rustdesk service and closing GUI..."
     systemctl stop rustdesk.service 2>/dev/null
+    pkill -f rustdesk 2>/dev/null || true
     sleep 2
 
     # 5. Resolve the password — fleet default unless --rd-password override.
@@ -642,21 +646,38 @@ rd_configure() {
         configs+=("/home/${du}/.config/rustdesk/RustDesk_local.toml")
     fi
 
-    for cfg in "${configs[@]}"; do
-        info "applying settings to: ${cfg}"
-        rd_set_option "$cfg" "verification-method" "use-permanent-password"
-        rd_set_option "$cfg" "direct-server"        "Y"
-        rd_set_option "$cfg" "direct-access-port"   "${RD_DIRECT_PORT}"
-        if [ -n "$ARG_RD_SERVER" ]; then
-            rd_set_option "$cfg" "custom-rendezvous-server" "$ARG_RD_SERVER"
-        fi
+    for cfg_local in "${configs[@]}"; do
+        local cfg_dir="$(dirname "$cfg_local")"
+        local cfg_main="${cfg_dir}/RustDesk2.toml"
         
-        # Fix ownership
-        if [[ "$cfg" == /home/* ]]; then
-            local u; u=$(echo "$cfg" | cut -d/ -f3)
-            chown -R "${u}:${u}" "$(dirname "$cfg")" 2>/dev/null || true
+        # Apply to BOTH local and main config files for maximum compatibility
+        for f in "$cfg_local" "$cfg_main"; do
+            [ ! -f "$f" ] && [ "$f" != "$cfg_local" ] && continue
+            info "applying settings to: ${f}"
+            
+            # Security / Verification
+            rd_set_option "$f" "verification-method" "use-permanent-password"
+            rd_set_option "$f" "verification_method" "use-permanent-password"
+            
+            # Direct IP Access (tried multiple known keys)
+            rd_set_option "$f" "direct-server"        "Y"
+            rd_set_option "$f" "direct-access-port"   "${RD_DIRECT_PORT}"
+            rd_set_option "$f" "allow-direct-ip"      "Y"
+            
+            # Bypasses / Behavior
+            rd_set_option "$f" "stop-service-on-user-logout" "N"
+            
+            if [ -n "$ARG_RD_SERVER" ]; then
+                rd_set_option "$f" "custom-rendezvous-server" "$ARG_RD_SERVER"
+            fi
+        done
+        
+        # Fix ownership of the whole directory
+        if [[ "$cfg_dir" == /home/* ]]; then
+            local u; u=$(echo "$cfg_dir" | cut -d/ -f3)
+            chown -R "${u}:${u}" "$cfg_dir" 2>/dev/null || true
         else
-            chown -R "${svc_user}:${svc_user}" "$(dirname "$cfg")" 2>/dev/null || true
+            chown -R "${svc_user}:${svc_user}" "$cfg_dir" 2>/dev/null || true
         fi
     done
 
