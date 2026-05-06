@@ -235,9 +235,19 @@ ts_up() {
 
         if [ -z "$poll_ip" ]; then
             fail "tailscale auth did not complete within ${timeout}s."
-            warn "Verify: 'tailscale status' in another terminal. If you see"
-            warn "an IP, auth IS complete and you can re-run ./remote.sh setup"
-            warn "(it will skip Tailscale and proceed to RustDesk)."
+            warn "Diagnosing — current 'tailscale status':"
+            tailscale status 2>&1 | head -8 | sed 's/^/    /' || true
+            echo ""
+            warn "Common causes:"
+            warn "  1. Browser auth didn't complete — operator closed the tab or"
+            warn "     signed into a Gmail account that doesn't own this tailnet."
+            warn "  2. Your tailnet has device-approval enabled. The device is"
+            warn "     authenticated but in 'Awaiting approval' state — visit"
+            warn "     https://login.tailscale.com/admin/machines and click 'Approve'."
+            warn "  3. The Tailscale coordination server was unreachable mid-auth."
+            warn ""
+            warn "If 'tailscale status' above shows a 100.x.x.x IP, auth IS"
+            warn "complete — just re-run ./remote.sh setup (skips this step)."
             return 1
         fi
     fi
@@ -408,28 +418,48 @@ EOF
 RD_RELEASE_API="https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
 
 rd_latest_deb_url() {
-    # Pick the Linux x86_64 .deb from the latest GitHub release.
-    # Falls back to a known-good version if the API isn't reachable.
+    # Pick the Linux x86_64 / aarch64 .deb URL via a multi-strategy lookup,
+    # HEAD-checking each candidate so we never commit to a download that
+    # won't resolve on the site PC's network.
     local arch
     arch=$(dpkg --print-architecture 2>/dev/null || echo amd64)
     case "$arch" in
-        amd64|x86_64) arch=x86_64 ;;
-        arm64|aarch64) arch=aarch64 ;;
+        amd64|x86_64)   arch=x86_64 ;;
+        arm64|aarch64)  arch=aarch64 ;;
         *) fail "unsupported architecture: $arch"; return 1 ;;
     esac
 
-    # `_$arch.deb` not `-$arch.deb` — RustDesk artefact name uses underscore.
+    # Strategy 1: query GitHub API for latest release. Tolerate either
+    # hyphen or underscore separator (RustDesk has used both across
+    # versions); only require that the asset filename ends with the
+    # arch + `.deb`.
     local url
     url=$(curl -sS -m 8 "$RD_RELEASE_API" 2>/dev/null \
             | grep -oE '"browser_download_url":[^"]*"[^"]*"' \
-            | grep -E "_${arch}\.deb\"$" \
+            | grep -E "[-_]${arch}\.deb\"$" \
             | head -1 \
             | sed -E 's/.*"(https:[^"]*)"/\1/')
-    if [ -z "$url" ]; then
-        warn "could not query GitHub API — using known-good fallback"
-        url="https://github.com/rustdesk/rustdesk/releases/download/1.3.8/rustdesk-1.3.8-${arch}.deb"
+    if [ -n "$url" ] && curl -fsSL -I -o /dev/null -m 6 "$url"; then
+        echo "$url"
+        return 0
     fi
-    echo "$url"
+
+    # Strategy 2: walk a list of known-good versions, newest first. HEAD-
+    # check each so we don't pick a URL the site PC's network can't fetch
+    # (e.g., a corporate proxy that allows api.github.com but blocks
+    # objects.githubusercontent.com — we'd rather find one that works).
+    warn "GitHub API didn't yield a usable URL — trying known-good versions"
+    for v in 1.4.6 1.4.2 1.4.1 1.4.0 1.3.9 1.3.8; do
+        local fb="https://github.com/rustdesk/rustdesk/releases/download/${v}/rustdesk-${v}-${arch}.deb"
+        if curl -fsSL -I -o /dev/null -m 6 "$fb"; then
+            info "using fallback: rustdesk ${v}"
+            echo "$fb"
+            return 0
+        fi
+    done
+
+    fail "no RustDesk .deb URL is reachable — site PC may block github.com asset CDN"
+    return 1
 }
 
 rd_install() {
@@ -446,13 +476,16 @@ rd_install() {
         libayatana-appindicator3-1 libdbus-1-3 || warn "some deps optional — continuing"
 
     local url
-    url=$(rd_latest_deb_url)
+    url=$(rd_latest_deb_url) || return 1
     info "downloading RustDesk: $url"
     local deb="/tmp/rustdesk.deb"
-    if ! curl -fsSL --retry 3 -o "$deb" "$url"; then
-        fail "RustDesk .deb download failed"
+    local http_code
+    http_code=$(curl -fsSL --retry 3 -m 60 -o "$deb" -w "%{http_code}" "$url" 2>&1) || {
+        fail "RustDesk .deb download failed (curl exit / http: ${http_code})"
+        warn "URL was: $url"
+        warn "Try manually: curl -fsSL -o /tmp/rustdesk.deb '$url'"
         return 1
-    fi
+    }
     info "installing RustDesk..."
     apt-get install -y "$deb"
     rm -f "$deb"
@@ -562,11 +595,23 @@ cmd_setup() {
     fi
     success "internet reachable, apt-based distro detected"
 
-    # 2. Tailscale
+    # 2. Tailscale (non-fatal — RustDesk still useful via direct LAN if this fails)
     header "Tailscale"
-    ts_install || exit 4
-    local ts_ip
-    ts_ip=$(ts_up | tail -1)
+    local ts_ip=""
+    if ts_install; then
+        # ts_up echoes the IP on success; capture last line only.
+        local ts_out
+        if ts_out=$(ts_up); then
+            ts_ip=$(echo "$ts_out" | tail -1 | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+            [ -z "$ts_ip" ] && ts_ip=$(tailscale ip -4 2>/dev/null | head -1)
+        else
+            warn "tailscale step failed — continuing with RustDesk install."
+            warn "remote-only access via Tailscale won't work, but RustDesk on"
+            warn "the local LAN will still let you connect when on-site."
+        fi
+    else
+        warn "tailscale install failed — continuing with RustDesk install."
+    fi
 
     # 3. Display server (RustDesk requires X11)
     header "Display server (X11 for RustDesk)"
