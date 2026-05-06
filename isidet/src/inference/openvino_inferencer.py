@@ -117,10 +117,32 @@ class OpenVINOInferencer(BaseInferencer):
                 if inferred > 0:
                     self.nc = inferred
 
+        # INT8 detection. NNCF / POT-quantised IRs carry per-port `precision="I8"`
+        # or `precision="U8"` annotations on quantised layers. The .xml is text;
+        # cheapest reliable check is a substring scan. Sets `is_int8` so the
+        # mode footer can render "OpenVINO INT8 • CPU" instead of just "OpenVINO • CPU".
+        self.is_int8 = self._detect_int8(xml_path)
+
+        precision = "INT8" if self.is_int8 else "FP32"
         logger.info(f"OpenVINO model loaded: {xml_path}")
         logger.info(f"  Type: {'RF-DETR' if self.is_rfdetr else 'YOLO'} | "
+                     f"Precision: {precision} | "
                      f"Input: {self.model_w}x{self.model_h} | "
                      f"Classes: {self.nc} | Device: {ov_device}")
+
+    @staticmethod
+    def _detect_int8(xml_path: str) -> bool:
+        """Heuristic INT8 detection by scanning the OpenVINO .xml for I8/U8
+        precision annotations. NNCF / POT post-training quantisation leaves
+        explicit `precision="I8"` / `precision="U8"` strings on quantised
+        FakeQuantize / Convert layer ports. FP32 IRs only carry FP32/FP16.
+        """
+        try:
+            with open(xml_path, 'rb') as f:
+                blob = f.read()
+            return b'precision="I8"' in blob or b'precision="U8"' in blob
+        except Exception:
+            return False
 
     def _load_model(self):
         return self.compiled if hasattr(self, 'compiled') else None

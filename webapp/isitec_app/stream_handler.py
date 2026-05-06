@@ -861,7 +861,8 @@ class StreamHandler:
                 performance_hint=ov_cfg.get('performance_hint', 'LATENCY'),
                 num_streams=ov_cfg.get('num_streams', 1),
             )
-            mode_text = f"OpenVINO • CPU"
+            precision_tag = " INT8" if getattr(base_engine, 'is_int8', False) else ""
+            mode_text = f"OpenVINO{precision_tag} • CPU"
         elif ext == '.onnx':
             from src.inference.onnx_inferencer import ONNXInferencer
             onnx_device = device if device else ("cuda" if has_gpu else "cpu")
