@@ -543,7 +543,21 @@ rd_install() {
         return 1
     }
     info "installing RustDesk..."
-    apt-get install -y "$deb"
+    # Filter the known-benign "Failed to stop rustdesk.service: Unit ... not
+    # loaded" warning that RustDesk's .deb postinst prints on every fresh
+    # install (it tries to stop the service before unpacking, designed for
+    # upgrades where the service is already running). On a clean install
+    # there's nothing to stop — confusing the operator with an apparent
+    # error during a successful install. PIPESTATUS preserves apt's real
+    # exit code so genuine failures still surface.
+    apt-get install -y "$deb" 2>&1 \
+        | grep -vE 'Failed to stop rustdesk\.service.*not loaded' \
+        || true
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+        fail "RustDesk apt install failed"
+        rm -f "$deb"
+        return 1
+    fi
     rm -f "$deb"
     success "RustDesk installed ($(rustdesk --version 2>/dev/null | head -1 || echo ok))"
 }
