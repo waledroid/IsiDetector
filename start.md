@@ -293,6 +293,7 @@ sudo ./remote.sh remove           # uninstall both
 **What you get:**
 - **Tailscale** — site PC joins your private mesh at a `100.x.x.x` IP. SSH and HTTPS from your laptop just work, no DNS or NAT shenanigans. Free for personal/small-team use; sign in with the Gmail account that owns the tailnet.
 - **RustDesk** — full GUI of the kiosk Chrome dashboard. The script enables the systemd service so RustDesk runs even when no operator is logged in.
+- **X11 forced** — on Ubuntu 22.04+ (GDM3) the default session is Wayland, which blocks RustDesk's screen capture and input. The script writes `WaylandEnable=false` into `/etc/gdm3/custom.conf` (idempotent; backs up the original). **Reboot required** for the change to take effect — the script prints a reminder when this happens. LightDM/SDDM hosts already default to X11 so they're skipped.
 
 The script prints the Tailscale IP, RustDesk ID, and a generated permanent password at the end of `setup` — write them down. They're also saved to `/var/log/isidetector/remote-state.json` for the next visit. Idempotent; safe to re-run.
 

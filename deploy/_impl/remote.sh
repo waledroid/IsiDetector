@@ -223,6 +223,133 @@ ts_status() {
     fi
 }
 
+# ── Display server: force X11 (RustDesk requirement) ───────────────────────
+# RustDesk's screen-capture pipeline works on X11 but is broken on Wayland —
+# the Wayland security model blocks the keystroke / framebuffer access RustDesk
+# needs for unattended remote control. Ubuntu 22.04+ ships GDM3 with Wayland
+# as the default session, so on a fresh install the operator would see "no
+# screen" or "input rejected" errors after RustDesk connects.
+#
+# Fix: write `WaylandEnable=false` into /etc/gdm3/custom.conf. Takes effect
+# on next reboot — we DO NOT restart GDM here, that would kick the operator
+# out of the desktop session mid-setup. The script flags the reboot need
+# in the final summary instead.
+#
+# LightDM / SDDM aren't Wayland by default, so we skip the rewrite there
+# (still warn if the *current* session happens to be Wayland for any reason).
+
+current_session_type() {
+    # `loginctl show-session ... -p Type` is most reliable, but needs a session
+    # ID. $XDG_SESSION_TYPE is set in interactive shells but not always under sudo.
+    local stype="${XDG_SESSION_TYPE:-}"
+    if [ -z "$stype" ] && command -v loginctl >/dev/null 2>&1; then
+        local sid
+        sid=$(loginctl show-user "$(desktop_user)" -p Display 2>/dev/null | cut -d= -f2)
+        if [ -n "$sid" ]; then
+            stype=$(loginctl show-session "$sid" -p Type --value 2>/dev/null)
+        fi
+    fi
+    if [ -z "$stype" ]; then
+        # Last resort: presence of the Xwayland or Xorg process.
+        if pgrep -x Xwayland >/dev/null 2>&1; then stype=wayland
+        elif pgrep -x Xorg     >/dev/null 2>&1; then stype=x11
+        else                                        stype=unknown
+        fi
+    fi
+    echo "$stype"
+}
+
+active_dm() {
+    # Echo gdm3 / lightdm / sddm / unknown.
+    local dm=""
+    for d in gdm3 gdm lightdm sddm; do
+        if systemctl is-active --quiet "${d}.service" 2>/dev/null; then
+            dm="$d"; break
+        fi
+    done
+    if [ -z "$dm" ] && [ -r /etc/X11/default-display-manager ]; then
+        dm=$(basename "$(cat /etc/X11/default-display-manager 2>/dev/null)" 2>/dev/null)
+    fi
+    echo "${dm:-unknown}"
+}
+
+ensure_x11_session() {
+    local dm sess
+    dm=$(active_dm)
+    sess=$(current_session_type)
+
+    info "display manager: ${dm} | current session: ${sess}"
+
+    # Already X11 in config and runtime? Nothing to do.
+    case "$dm" in
+        gdm3|gdm)
+            local conf="/etc/gdm3/custom.conf"
+            if [ ! -f "$conf" ]; then
+                # GDM running but no custom.conf — write a fresh one.
+                info "creating ${conf}"
+                cat > "$conf" <<'EOF'
+[daemon]
+WaylandEnable=false
+EOF
+                REMOTE_NEED_REBOOT=1
+                success "Wayland disabled (fresh ${conf} written)"
+                return
+            fi
+
+            # Existing custom.conf — three states:
+            #   1. Has commented-out `#WaylandEnable=false` (Ubuntu default)
+            #   2. Has uncommented `WaylandEnable=false` already (we ran before)
+            #   3. Has `WaylandEnable=true` or no entry at all
+            if grep -qE '^\s*WaylandEnable\s*=\s*false' "$conf"; then
+                success "Wayland already disabled in ${conf}"
+                # If the current session is still Wayland, the config change
+                # hasn't taken effect yet — needs a reboot.
+                if [ "$sess" = "wayland" ]; then
+                    warn "current session is still Wayland — reboot to apply"
+                    REMOTE_NEED_REBOOT=1
+                fi
+                return
+            fi
+
+            # Backup once so the operator can restore if anything goes sideways.
+            local backup="${conf}.pre-remote-$(date +%Y%m%d-%H%M%S)"
+            cp -a "$conf" "$backup" 2>/dev/null && info "backup: ${backup}"
+
+            # If the line exists commented-out, uncomment it. Otherwise add it
+            # under the [daemon] section (creating that section if missing).
+            if grep -qE '^\s*#\s*WaylandEnable\s*=' "$conf"; then
+                sed -i -E 's/^\s*#\s*WaylandEnable\s*=.*/WaylandEnable=false/' "$conf"
+                success "uncommented WaylandEnable=false in ${conf}"
+            elif grep -qE '^\s*\[daemon\]' "$conf"; then
+                sed -i -E '/^\s*\[daemon\]/a WaylandEnable=false' "$conf"
+                success "added WaylandEnable=false under [daemon] in ${conf}"
+            else
+                printf '\n[daemon]\nWaylandEnable=false\n' >> "$conf"
+                success "appended [daemon] WaylandEnable=false to ${conf}"
+            fi
+            REMOTE_NEED_REBOOT=1
+            warn "REBOOT REQUIRED for the X11 switch to take effect"
+            ;;
+
+        lightdm|sddm)
+            # These DMs default to X11; only warn if Wayland is somehow active.
+            if [ "$sess" = "wayland" ]; then
+                warn "${dm} is the active DM but the current session is Wayland."
+                warn "This is unusual — check the user's session selection at login."
+                warn "RustDesk capture/input may not work until logged into an X11 session."
+            else
+                success "${dm} runs X11 by default — no display-manager change needed"
+            fi
+            ;;
+
+        *)
+            warn "could not detect a known display manager — skipping Wayland-disable step."
+            warn "If RustDesk shows a black screen or rejects input after connect, manually"
+            warn "switch the desktop session to X11 (logout → gear icon → 'Ubuntu on Xorg')."
+            ;;
+    esac
+}
+
 # ── RustDesk ────────────────────────────────────────────────────────────────
 RD_RELEASE_API="https://api.github.com/repos/rustdesk/rustdesk/releases/latest"
 
@@ -387,7 +514,11 @@ cmd_setup() {
     local ts_ip
     ts_ip=$(ts_up | tail -1)
 
-    # 3. RustDesk
+    # 3. Display server (RustDesk requires X11)
+    header "Display server (X11 for RustDesk)"
+    ensure_x11_session
+
+    # 4. RustDesk
     header "RustDesk"
     rd_install || exit 5
     rd_configure
@@ -399,14 +530,14 @@ cmd_setup() {
         rd_id="(pending — launch RustDesk GUI once)"
     fi
 
-    # 4. State recording
+    # 5. State recording
     local pw_hash="(unknown)"
     if [ -n "${REMOTE_RD_PW:-}" ]; then
         pw_hash=$(printf '%s' "$REMOTE_RD_PW" | sha256sum | awk '{print $1}')
     fi
     write_state "$ts_ip" "$rd_id" "$pw_hash" "$(ts_status)" "$(rd_status)"
 
-    # 5. Summary
+    # 6. Summary
     header "Setup complete"
     echo "Tailscale IP (private mesh):  ${BOLD}${ts_ip}${NC}"
     echo "RustDesk ID:                  ${BOLD}${rd_id}${NC}"
@@ -417,15 +548,30 @@ cmd_setup() {
     echo "  • Desktop:    open RustDesk → enter ID ${rd_id} + password above"
     echo ""
     echo "State for next visit: ${STATE_FILE}"
+    if [ "${REMOTE_NEED_REBOOT:-0}" = "1" ]; then
+        echo ""
+        warn "REBOOT REQUIRED: Wayland was disabled in /etc/gdm3/custom.conf."
+        warn "Reboot the site PC now so RustDesk lands in an X11 session;"
+        warn "otherwise screen capture and input will be blocked by the Wayland"
+        warn "compositor's security model. Run:  sudo reboot"
+    fi
     echo ""
 }
 
 cmd_status() {
     header "Remote-access status"
 
-    local ts_state rd_state ts_ip rd_id
+    local ts_state rd_state ts_ip rd_id sess dm
     ts_state=$(ts_status)
     rd_state=$(rd_status)
+    sess=$(current_session_type)
+    dm=$(active_dm)
+
+    echo "Display:   ${dm} | session: ${sess}"
+    if [ "$sess" = "wayland" ]; then
+        warn "Wayland active — RustDesk capture/input will be broken until session is X11"
+    fi
+    echo ""
 
     echo "Tailscale: ${ts_state}"
     if [ "$ts_state" = "connected" ]; then
@@ -455,6 +601,13 @@ cmd_test() {
     if internet_ok; then success "internet reachable"
     else                  warn   "no internet — Tailscale/RustDesk install would fail"
     fi
+
+    local sess; sess=$(current_session_type)
+    case "$sess" in
+        x11)     success "session: X11 (RustDesk capture/input will work)" ;;
+        wayland) warn    "session: Wayland — RustDesk will see a black screen / reject input. Run setup or reboot to apply X11." ;;
+        *)       info    "session type: ${sess}" ;;
+    esac
 
     if require_cmd tailscale; then
         if tailscale status >/dev/null 2>&1; then
