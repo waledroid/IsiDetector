@@ -138,6 +138,50 @@ internet_ok() {
       || ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1
 }
 
+# Reliable package removal that survives:
+#   1. The package being apt-installed cleanly (apt purge handles it).
+#   2. dpkg in a 'rc' (removed-but-not-purged) state from a prior abort
+#      → the binary is already gone but apt purge -y silently no-ops.
+#   3. The package being curl-installed via tailscale.com/install.sh's
+#      tarball fallback path on distros without a perfect apt repo —
+#      these binaries aren't dpkg-tracked, so apt purge can't reach them.
+#
+# Strategy: capture apt output (don't swallow stderr, surface real errors),
+# then sweep the listed binary paths and rm any that survived.
+#
+# Args: $1 = package name, $2..$N = full paths of binaries that must be gone
+# at the end. Logs each step so the operator can see exactly what happened.
+purge_or_force_remove() {
+    local pkg="$1"; shift
+    local bins=("$@")
+
+    # 1. Try apt purge with full output captured.
+    info "purging package: ${pkg}"
+    local out rc
+    out=$(apt-get purge -y "$pkg" 2>&1); rc=$?
+    if [ $rc -ne 0 ]; then
+        warn "apt-get purge ${pkg} returned non-zero (rc=${rc}). Output:"
+        echo "$out" | sed 's/^/      /'
+        warn "trying dpkg --remove --force-all as a fallback..."
+        dpkg --remove --force-all "$pkg" 2>&1 | sed 's/^/      /' || true
+        # Mark for manual purge in case dpkg also failed
+        warn "if this persists: sudo dpkg --configure -a && sudo apt-get -f install"
+    fi
+
+    # 2. Sweep for leftover binaries that apt couldn't see (curl-installed
+    # binaries, files left by interrupted apt runs, etc.).
+    local removed=0
+    for bin in "${bins[@]}"; do
+        if [ -e "$bin" ]; then
+            warn "binary persists after apt purge: ${bin} — removing directly"
+            rm -f "$bin" && removed=$((removed + 1))
+        fi
+    done
+    if [ $removed -gt 0 ]; then
+        info "removed ${removed} leftover ${pkg} binary file(s) directly"
+    fi
+}
+
 write_state() {
     # JSON state file: Tailscale IP, RustDesk ID + plaintext password,
     # direct-IP connection details, install timestamp, service states.
@@ -1006,29 +1050,27 @@ cmd_remove() {
         info "stopping tailscaled..."
         systemctl stop tailscaled 2>/dev/null || true
         systemctl disable tailscaled 2>/dev/null || true
-        info "purging tailscale package..."
-        apt-get purge -y tailscale 2>/dev/null || true
-        info "wiping tailscale state + apt repo + keyring..."
-        rm -rf /var/lib/tailscale 2>/dev/null
-        rm -f /etc/apt/sources.list.d/tailscale.list 2>/dev/null
-        rm -f /etc/apt/keyrings/tailscale*.gpg 2>/dev/null
-        rm -f /usr/share/keyrings/tailscale*.gpg 2>/dev/null
-        apt-get update >/dev/null 2>&1 || true
-        success "tailscale fully removed"
-    else
-        info "tailscale not installed — nothing to remove"
     fi
+    purge_or_force_remove tailscale \
+        /usr/bin/tailscale /usr/sbin/tailscale \
+        /usr/bin/tailscaled /usr/sbin/tailscaled
+    info "wiping tailscale state + apt repo + keyring..."
+    rm -rf /var/lib/tailscale 2>/dev/null
+    rm -f /etc/apt/sources.list.d/tailscale.list 2>/dev/null
+    rm -f /etc/apt/keyrings/tailscale*.gpg 2>/dev/null
+    rm -f /usr/share/keyrings/tailscale*.gpg 2>/dev/null
+    rm -f /etc/systemd/system/tailscaled.service 2>/dev/null
+    rm -f /lib/systemd/system/tailscaled.service 2>/dev/null
+    apt-get update >/dev/null 2>&1 || true
+    success "tailscale removal complete"
 
     # ── RustDesk ────────────────────────────────────────────────────────
     info "stopping rustdesk service + killing any GUI instances..."
     systemctl disable --now rustdesk.service 2>/dev/null || true
     pkill -f rustdesk 2>/dev/null || true
     sleep 1
-
-    if require_cmd rustdesk; then
-        info "purging rustdesk package..."
-        apt-get purge -y rustdesk 2>/dev/null || true
-    fi
+    purge_or_force_remove rustdesk \
+        /usr/bin/rustdesk /usr/sbin/rustdesk
 
     info "wiping rustdesk config dirs (so next setup gets a fresh ID)..."
     rm -rf /root/.config/rustdesk 2>/dev/null
@@ -1037,7 +1079,9 @@ cmd_remove() {
     for h in /home/*; do
         [ -d "${h}/.config/rustdesk" ] && rm -rf "${h}/.config/rustdesk"
     done
-    success "rustdesk fully removed (binary + per-user config)"
+    rm -f /etc/systemd/system/rustdesk.service 2>/dev/null
+    rm -f /lib/systemd/system/rustdesk.service 2>/dev/null
+    success "rustdesk removal complete (binary + per-user config)"
 
     # ── X11/Wayland — restore from the most recent backup if present ────
     local gdm_conf="/etc/gdm3/custom.conf"
