@@ -74,9 +74,19 @@ class OpenVINOInferencer(BaseInferencer):
         # Detect model type from output names/shapes. Store the output_names
         # list so RF-DETR postprocess can pick by name rather than position
         # (different RF-DETR exporters emit pred_boxes/pred_logits/pred_masks
-        # vs dets/labels/masks).
-        self.output_names = [self.compiled.output(i).get_any_name()
-                             for i in range(len(self.compiled.outputs))]
+        # vs dets/labels/masks). NNCF / POT post-training quantisation can
+        # strip names from output ports, in which case `get_any_name()`
+        # raises "Attempt to get a name for a Tensor without names" — fall
+        # back to a positional name. The RF-DETR check is a string-match
+        # against well-known output names, so a positional placeholder
+        # correctly leaves is_rfdetr=False (which is what we want for any
+        # quantised YOLO IR — RF-DETR via OpenVINO is unsupported anyway).
+        self.output_names = []
+        for i in range(len(self.compiled.outputs)):
+            try:
+                self.output_names.append(self.compiled.output(i).get_any_name())
+            except Exception:
+                self.output_names.append(f"output_{i}")
         self.is_rfdetr = any(n in self.output_names
                               for n in ('dets', 'pred_logits', 'bboxes', 'labels'))
 
