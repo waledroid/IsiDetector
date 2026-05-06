@@ -969,31 +969,106 @@ cmd_test() {
 }
 
 cmd_remove() {
-    header "Removing Tailscale + RustDesk"
-    warn "this will uninstall both packages and revoke the Tailscale device."
+    header "Removing Tailscale + RustDesk (full wipe)"
+    warn "This will:"
+    warn "  • Revoke this device on the tailnet (tailscale logout)"
+    warn "  • Purge tailscale + rustdesk packages (apt purge, not remove)"
+    warn "  • Delete /var/lib/tailscale and the tailscale apt repo files"
+    warn "  • Delete /root/.config/rustdesk + /home/*/.config/rustdesk"
+    warn "    (so the next setup gets a fresh RustDesk ID, not the stale one)"
+    warn "  • Restore /etc/gdm3/custom.conf from the script's .pre-remote-* backup"
+    warn "  • Delete the state file ${STATE_FILE}"
+    echo ""
     read -p "Type 'remove' to confirm: " confirm
     if [ "$confirm" != "remove" ]; then
         info "cancelled."
         exit 0
     fi
 
+    # ── Tailscale ───────────────────────────────────────────────────────
     if require_cmd tailscale; then
-        info "logging out of Tailscale + uninstalling..."
+        info "logging out of Tailscale (revokes device on tailnet)..."
         tailscale logout 2>/dev/null || true
-        apt-get remove -y tailscale 2>/dev/null || true
-        rm -f /etc/apt/sources.list.d/tailscale.list /etc/apt/keyrings/tailscale*.gpg 2>/dev/null
-        success "tailscale removed"
+        info "stopping tailscaled..."
+        systemctl stop tailscaled 2>/dev/null || true
+        systemctl disable tailscaled 2>/dev/null || true
+        info "purging tailscale package..."
+        apt-get purge -y tailscale 2>/dev/null || true
+        info "wiping tailscale state + apt repo + keyring..."
+        rm -rf /var/lib/tailscale 2>/dev/null
+        rm -f /etc/apt/sources.list.d/tailscale.list 2>/dev/null
+        rm -f /etc/apt/keyrings/tailscale*.gpg 2>/dev/null
+        rm -f /usr/share/keyrings/tailscale*.gpg 2>/dev/null
+        apt-get update >/dev/null 2>&1 || true
+        success "tailscale fully removed"
+    else
+        info "tailscale not installed — nothing to remove"
     fi
+
+    # ── RustDesk ────────────────────────────────────────────────────────
+    info "stopping rustdesk service + killing any GUI instances..."
+    systemctl disable --now rustdesk.service 2>/dev/null || true
+    pkill -f rustdesk 2>/dev/null || true
+    sleep 1
 
     if require_cmd rustdesk; then
-        info "stopping + uninstalling RustDesk..."
-        systemctl disable --now rustdesk.service 2>/dev/null || true
-        apt-get remove -y rustdesk 2>/dev/null || true
-        success "rustdesk removed"
+        info "purging rustdesk package..."
+        apt-get purge -y rustdesk 2>/dev/null || true
     fi
 
-    rm -f "$STATE_FILE" 2>/dev/null
-    success "state file cleared"
+    info "wiping rustdesk config dirs (so next setup gets a fresh ID)..."
+    rm -rf /root/.config/rustdesk 2>/dev/null
+    # Catch every /home/*/.config/rustdesk. Only nukes the rustdesk
+    # subdir; the user's home itself is never touched.
+    for h in /home/*; do
+        [ -d "${h}/.config/rustdesk" ] && rm -rf "${h}/.config/rustdesk"
+    done
+    success "rustdesk fully removed (binary + per-user config)"
+
+    # ── X11/Wayland — restore from the most recent backup if present ────
+    local gdm_conf="/etc/gdm3/custom.conf"
+    local newest_backup
+    newest_backup=$(ls -t "${gdm_conf}".pre-remote-* 2>/dev/null | head -1)
+    if [ -n "$newest_backup" ] && [ -r "$newest_backup" ]; then
+        info "restoring GDM3 config from backup: $newest_backup"
+        cp -a "$newest_backup" "$gdm_conf"
+        success "GDM3 config restored (reboot returns the kiosk to its prior session type)"
+    else
+        info "no GDM3 backup found — /etc/gdm3/custom.conf left as-is"
+    fi
+
+    # ── State file ──────────────────────────────────────────────────────
+    if [ -e "$STATE_FILE" ]; then
+        rm -f "$STATE_FILE"
+        success "state file cleared (${STATE_FILE})"
+    fi
+
+    systemctl daemon-reload 2>/dev/null || true
+
+    # ── Post-removal verification ───────────────────────────────────────
+    header "Verification — system clean?"
+    local clean=1
+    if require_cmd tailscale; then
+        warn "tailscale binary still present at $(command -v tailscale)"; clean=0
+    fi
+    if require_cmd rustdesk; then
+        warn "rustdesk binary still present at $(command -v rustdesk)"; clean=0
+    fi
+    [ -d "/var/lib/tailscale" ]      && { warn "/var/lib/tailscale still present"; clean=0; }
+    [ -d "/root/.config/rustdesk" ]  && { warn "/root/.config/rustdesk still present"; clean=0; }
+    for h in /home/*; do
+        [ -d "${h}/.config/rustdesk" ] && { warn "${h}/.config/rustdesk still present"; clean=0; }
+    done
+    [ -e "$STATE_FILE" ] && { warn "$STATE_FILE still present"; clean=0; }
+
+    echo ""
+    if [ $clean -eq 1 ]; then
+        success "system is CLEAN — ready for a fresh:"
+        echo "    sudo ./remote.sh setup"
+    else
+        warn "Some components remain — investigate the warnings above."
+        warn "If apt held back something:  sudo apt purge -y tailscale rustdesk && sudo apt autoremove -y"
+    fi
 }
 
 cmd_help() {
