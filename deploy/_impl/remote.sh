@@ -564,84 +564,166 @@ rd_install() {
 #: `direct-server = Y`). Standard across all RustDesk versions ≥1.2.
 RD_DIRECT_PORT="21118"
 
+# Determine which user the rustdesk systemd service runs as, and where its
+# config dir lives. CRITICAL: on most distros the service runs as root and
+# reads /root/.config/rustdesk/, NOT the desktop user's $HOME/.config/rustdesk/.
+# Writing options to the wrong dir = settings never reach the running service.
+rd_service_user_and_home() {
+    local svc_user svc_home
+    svc_user=$(systemctl show -p User --value rustdesk.service 2>/dev/null)
+    [ -z "$svc_user" ] && svc_user=root
+    svc_home=$(getent passwd "$svc_user" 2>/dev/null | cut -d: -f6)
+    [ -z "$svc_home" ] && svc_home="/root"
+    echo "${svc_user}|${svc_home}"
+}
+
+# Set a key=value pair under the [options] section of a RustDesk TOML config,
+# creating/updating the section as needed. Idempotent. RustDesk uses single-
+# quoted strings in its TOML, so we match that format.
+rd_set_option() {
+    local file="$1" key="$2" val="$3"
+    mkdir -p "$(dirname "$file")"
+    if [ ! -f "$file" ]; then
+        cat > "$file" <<EOF
+[options]
+${key} = '${val}'
+EOF
+        return
+    fi
+    if grep -qE "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+        # Replace existing line (any value, any whitespace).
+        sed -i -E "s|^[[:space:]]*${key}[[:space:]]*=.*|${key} = '${val}'|" "$file"
+    elif grep -qE "^[[:space:]]*\[options\]" "$file"; then
+        # Insert under the existing [options] section header.
+        sed -i -E "/^[[:space:]]*\[options\]/a ${key} = '${val}'" "$file"
+    else
+        # No [options] section yet — append one.
+        printf '\n[options]\n%s = %s\n' "$key" "'${val}'" >> "$file"
+    fi
+}
+
 rd_configure() {
-    # Enable + start the systemd service first so RustDesk has time to
-    # generate its initial config (RustDesk2.toml) with an assigned ID.
-    # We then layer our options on top.
+    # 1. Enable + start the systemd service. RustDesk writes its initial
+    # config (with the unique device ID) on first start. We need that ID
+    # before we can layer our options on top.
     if systemctl list-unit-files 2>/dev/null | grep -q '^rustdesk\.service'; then
         systemctl enable --now rustdesk.service 2>/dev/null \
             && success "rustdesk.service enabled + started" \
-            || warn "could not enable rustdesk.service — RustDesk will only run when GUI launches it"
+            || warn "could not enable rustdesk.service"
     else
         warn "rustdesk.service unit not found — package may not ship one on this distro"
     fi
 
-    # Wait for the daemon to write its initial config file. Without this,
-    # the rustdesk CLI calls below race against config creation and the
-    # options sometimes don't stick. 5 s is the empirical sweet spot.
-    sleep 5
+    # 2. Discover the service's identity. This is the bug from the prior
+    # version: rustdesk-server runs as root by default, so its config lives
+    # in /root/.config/rustdesk/, NOT in the desktop user's home. The CLI
+    # commands `rustdesk --option / --password` invoked as the desktop
+    # user wrote to /home/$user/.config/rustdesk/ — a directory the running
+    # service never reads. Result: settings appeared to succeed (CLI exit
+    # 0) but had zero effect on the actual service behaviour.
+    local svc_info svc_user svc_home svc_cfg_dir
+    svc_info=$(rd_service_user_and_home)
+    svc_user="${svc_info%|*}"
+    svc_home="${svc_info#*|}"
+    svc_cfg_dir="${svc_home}/.config/rustdesk"
+    info "rustdesk service runs as: ${svc_user} (config dir: ${svc_cfg_dir})"
 
-    local du; du=$(desktop_user)
-
-    # Optional: point at a self-hosted relay server. Written before other
-    # options so the daemon picks it up on the upcoming restart.
-    if [ -n "$ARG_RD_SERVER" ]; then
-        info "configuring RustDesk to use custom server: $ARG_RD_SERVER"
-        local cfg_dir="/home/${du}/.config/rustdesk"
-        mkdir -p "$cfg_dir"
-        chown -R "$du:$du" "$cfg_dir" 2>/dev/null
-        su - "$du" -c "rustdesk --option custom-rendezvous-server '$ARG_RD_SERVER'" >/dev/null 2>&1 \
-            && success "rustdesk relay set to ${ARG_RD_SERVER}" \
-            || warn "could not set custom rendezvous server"
+    # 3. Wait for the service to write its initial config + ID. Without
+    # this we'd race with config creation and our edits could be clobbered
+    # when the daemon writes its first generated config.
+    local main_cfg="${svc_cfg_dir}/RustDesk2.toml"
+    local local_cfg="${svc_cfg_dir}/RustDesk_local.toml"
+    local waited=0
+    while [ ! -r "$main_cfg" ] && [ $waited -lt 15 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ ! -r "$main_cfg" ]; then
+        warn "RustDesk hasn't written ${main_cfg} after 15 s — proceeding anyway"
     fi
 
-    # Permanent password — required for unattended access. Either provided
-    # via --rd-password (per-host override) or the fleet-wide default
-    # defined at the top of this script.
+    # 4. Stop the service so our edits land cleanly. The daemon caches the
+    # config in memory and rewrites it on shutdown; editing while it runs
+    # races with that flush.
+    systemctl stop rustdesk.service 2>/dev/null
+    sleep 2
+
+    # 5. Resolve the password — fleet default unless --rd-password override.
     local pw="$ARG_RD_PASSWORD"
     if [ -z "$pw" ]; then
         pw="$RD_DEFAULT_PASSWORD"
         info "using fleet default permanent password (override with --rd-password)"
     fi
 
-    # CRITICAL: switch verification mode FIRST. Without this, the password
-    # we set below is silently ignored — RustDesk's default is
-    # `use-temporary-password` (a fresh random shown in the GUI per
-    # session), so an admin entering OUR password gets rejected even
-    # though it's stored in the config. This was the "is the password the
-    # permanent password?" bug.
-    if su - "$du" -c "rustdesk --option verification-method use-permanent-password" >/dev/null 2>&1; then
-        success "verification mode = permanent password (script-set password is now active)"
-    else
-        warn "could not set verification mode — admin may see an auto-generated password instead of yours"
+    # 6. Write the options DIRECTLY to RustDesk_local.toml in the service's
+    # config dir. Bypasses the rustdesk CLI entirely — we control the
+    # exact bytes. The local TOML is where RustDesk persists per-machine
+    # options like verification-method, direct-server, etc.
+    rd_set_option "$local_cfg" "verification-method" "use-permanent-password"
+    rd_set_option "$local_cfg" "direct-server"        "Y"
+    rd_set_option "$local_cfg" "direct-access-port"   "${RD_DIRECT_PORT}"
+    if [ -n "$ARG_RD_SERVER" ]; then
+        rd_set_option "$local_cfg" "custom-rendezvous-server" "$ARG_RD_SERVER"
     fi
 
-    # Direct IP access — listen on TCP $RD_DIRECT_PORT so connections of
-    # the form 'IP:21118' work alongside the 9-digit ID. Huge win on a
-    # Tailscale setup: connect via the 100.x IP + port, completely
-    # bypassing RustDesk's public coordination server.
-    if su - "$du" -c "rustdesk --option direct-server Y" >/dev/null 2>&1; then
-        success "direct IP access ENABLED (TCP port ${RD_DIRECT_PORT})"
+    # Ensure the directory + files are owned by the service user so the
+    # running service can read/write them.
+    if [ "$svc_user" != "root" ]; then
+        chown -R "${svc_user}:${svc_user}" "$svc_cfg_dir" 2>/dev/null || true
     else
-        warn "could not enable direct IP access — admin must connect via the 9-digit ID only"
+        chown -R root:root "$svc_cfg_dir" 2>/dev/null || true
     fi
 
-    # Permanent password — written last so it lands under the verification
-    # mode we just established.
-    if su - "$du" -c "rustdesk --password '$pw'" >/dev/null 2>&1; then
+    # 7. Set the password via rustdesk CLI AS THE SERVICE USER. RustDesk
+    # hashes the password before storing it (we can't write the hash
+    # ourselves without replicating their algorithm), so the CLI is still
+    # the right tool — we just have to invoke it with the same identity
+    # the service uses.
+    local pw_set=0
+    if [ "$svc_user" = "root" ]; then
+        if rustdesk --password "$pw" >/dev/null 2>&1; then
+            pw_set=1
+        fi
+    else
+        if su - "$svc_user" -c "rustdesk --password '$pw'" >/dev/null 2>&1; then
+            pw_set=1
+        fi
+    fi
+    if [ $pw_set -eq 1 ]; then
         success "rustdesk permanent password set"
     else
-        warn "could not set RustDesk password automatically — run 'rustdesk --password YOUR_PW' as ${du} after first GUI launch"
+        warn "rustdesk --password CLI failed — falling back to direct TOML write"
+        # Fallback: many RustDesk versions also accept a plaintext
+        # 'password' field under [options]. Not all do; this is best-effort.
+        rd_set_option "$local_cfg" "password" "$pw"
     fi
 
-    # Restart the service so all the options take effect. The CLI writes
-    # to RustDesk2.toml on disk, but a running daemon doesn't re-read it
-    # until it restarts.
-    if systemctl restart rustdesk.service 2>/dev/null; then
-        info "rustdesk service restarted — config now active"
+    # 8. Restart the service so it picks up the new config from disk.
+    if systemctl start rustdesk.service 2>/dev/null; then
+        sleep 2
+        success "rustdesk.service restarted — new config is now active"
+    else
+        warn "could not restart rustdesk.service"
     fi
 
-    # Stash for the summary print + state file.
+    # 9. Read back the local config and confirm our settings actually
+    # landed. If they didn't, the operator gets specific instructions to
+    # fix it manually rather than a silent success.
+    if grep -qE "^[[:space:]]*verification-method[[:space:]]*=[[:space:]]*'use-permanent-password'" "$local_cfg" 2>/dev/null; then
+        success "verification mode confirmed: use-permanent-password (in ${local_cfg})"
+    else
+        warn "verification-method NOT confirmed in ${local_cfg}"
+        warn "Manual fix: open the RustDesk GUI → Settings → Security → set"
+        warn "  'Use permanent password' and re-enter the password."
+    fi
+    if grep -qE "^[[:space:]]*direct-server[[:space:]]*=[[:space:]]*'Y'" "$local_cfg" 2>/dev/null; then
+        success "direct IP access confirmed (TCP port ${RD_DIRECT_PORT}) in ${local_cfg}"
+    else
+        warn "direct-server NOT confirmed in ${local_cfg}"
+        warn "Manual fix: open the RustDesk GUI → Settings → Network → tick"
+        warn "  'Enable direct IP access'."
+    fi
+
     REMOTE_RD_PW="$pw"
 }
 
