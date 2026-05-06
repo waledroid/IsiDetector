@@ -48,6 +48,8 @@ const translations = {
         "set_roi_btn": "Set ROI",
         "roi_clear_btn": "Clear ROI",
         "set_roi_enabled_label": "Show \"Set ROI\" button on landing page",
+        "set_clahe_enabled_label": "Apply CLAHE preprocess (glare / low-light correction)",
+        "set_clahe_enabled_hint": "Boosts contrast in shadowed and reflective regions before the model sees the frame. Re-Start the stream after toggling.",
         "roi_current": "Current ROI:",
         "roi_none": "none (full frame)",
         "roi_drag_instruction": "Click and drag a rectangle over the conveyor belt area.",
@@ -142,6 +144,8 @@ const translations = {
         "set_roi_btn": "Définir ROI",
         "roi_clear_btn": "Effacer ROI",
         "set_roi_enabled_label": "Afficher le bouton « Définir ROI » sur la page d'accueil",
+        "set_clahe_enabled_label": "Appliquer le prétraitement CLAHE (correction d'éblouissement / faible lumière)",
+        "set_clahe_enabled_hint": "Renforce le contraste dans les zones d'ombre et de reflet avant que le modèle ne voie l'image. Redémarrez le flux après avoir basculé.",
         "roi_current": "ROI actuelle :",
         "roi_none": "aucune (image complète)",
         "roi_drag_instruction": "Cliquez et glissez pour tracer un rectangle sur la zone du convoyeur.",
@@ -1264,6 +1268,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
         const autoStartEl = document.getElementById('set_auto_start');
         if (autoStartEl) autoStartEl.checked = !!serverSettings.auto_start;
+        // CLAHE: glare/low-light preprocess. Stop+Start stream to apply.
+        const claheEl = document.getElementById('set_clahe_enabled');
+        if (claheEl) claheEl.checked = !!serverSettings.clahe_enabled;
         // ROI: toggle reveals the Live-page "Set ROI" + "Clear ROI" buttons + show current bbox.
         const roiEnabledEl = document.getElementById('set_roi_enabled');
         const setRoiBtn = document.getElementById('btnSetROI');
@@ -1381,6 +1388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
                 auto_start:    document.getElementById('set_auto_start').checked,
                 roi_enabled:   document.getElementById('set_roi_enabled').checked,
+                clahe_enabled: document.getElementById('set_clahe_enabled').checked,
                 udp_host:      document.getElementById('set_udp_host').value.trim(),
                 udp_port:      parseInt(document.getElementById('set_udp_port').value),
             };

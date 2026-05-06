@@ -233,6 +233,8 @@ def settings():
         data['auto_start'] = bool(data['auto_start'])
     if 'roi_enabled' in data:
         data['roi_enabled'] = bool(data['roi_enabled'])
+    if 'clahe_enabled' in data:
+        data['clahe_enabled'] = bool(data['clahe_enabled'])
     if 'roi_points' in data:
         v = data['roi_points']
         # Accept only an empty list (= clear) or exactly 4 [int,int] pairs.
@@ -264,6 +266,7 @@ def settings():
         'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
         'roi_enabled', 'roi_points',
+        'clahe_enabled',
     )
     current = _load_settings()
     for k in allowed_keys:

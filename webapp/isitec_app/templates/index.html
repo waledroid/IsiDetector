@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
-    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.27-fps">
-    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.27-fps">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.27-fps">
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.28-fps">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.28-fps">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.28-fps">
 
     <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
-    <script src="/static/vendor/chart.min.js?v=2.27-fps"></script>
+    <script src="/static/vendor/chart.min.js?v=2.28-fps"></script>
 </head>
 
 <body>
@@ -371,6 +371,13 @@
                             <span data-i18n="roi_current">Current ROI:</span>
                             <span id="disp_roi_current" data-i18n="roi_none" style="font-family: 'Roboto Mono', monospace;">none</span>
                         </p>
+                        <label style="margin-top: 12px; display: flex; gap: 8px; align-items: center; font-weight: 500;">
+                            <input type="checkbox" id="set_clahe_enabled" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_clahe_enabled_label" title="Applies CLAHE on the LAB lightness channel (SpecularGuard) before inference. Helps with industrial polybag glare and uneven lighting. Costs ~0.5 ms/frame at 320×N. Stop and Start the stream to apply.">Apply CLAHE preprocess (glare / low-light correction)</span>
+                        </label>
+                        <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);" data-i18n="set_clahe_enabled_hint">
+                            Boosts contrast in shadowed and reflective regions before the model sees the frame. Re-Start the stream after toggling.
+                        </p>
                     </div>
                 </div>
 
@@ -536,7 +543,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.27-fps"></script>
+    <script src="/static/js/main.js?v=2.28-fps"></script>
 </body>
 
 </html>

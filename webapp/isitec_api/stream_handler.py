@@ -326,6 +326,11 @@ class StreamHandler:
         # at 25 FPS inference). Inference, tracking, line crossings, and UDP
         # publish still run on every frame — only the visualization is throttled.
         self._encode_skip_idx = 0
+        # Optional preprocess pipeline applied between ROI/downscale and
+        # engine.process_frame. Built from settings.json on each start().
+        # Currently supports SpecularGuard (CLAHE on LAB L-channel) for
+        # industrial glare. Empty list = passthrough.
+        self._preprocess_chain: list = []
 
         # Cache the STANDBY frame once — 16:9 aspect ratio
         _standby_h = int(self.web_imgsz * 9 / 16)
@@ -630,6 +635,31 @@ class StreamHandler:
             )
         except Exception as e:
             logger.warning(f"[render] could not apply render settings: {e}")
+
+    def _build_preprocess_chain(self, ui_settings: dict) -> list:
+        """Build the per-session preprocess chain from settings.json toggles.
+
+        Applied in `_inference_loop` between the pre-engine downscale and
+        ``engine.process_frame()``. Each element exposes a single
+        ``.process(frame: BGR ndarray) -> BGR ndarray`` method. Failures of
+        any single stage are caught at apply-time so a bad preprocess never
+        kills the inference loop — it logs a warning and drops the stage
+        for the rest of the session.
+
+        Currently honors:
+        - ``clahe_enabled``: SpecularGuard (CLAHE on LAB L-channel for
+          industrial polybag glare). Defaults from train.yaml's preprocess
+          config: clip_limit=2.5, tile_grid=8x8.
+        """
+        chain: list = []
+        if ui_settings.get('clahe_enabled', False):
+            try:
+                from src.preprocess.clahe_engine import SpecularGuard
+                chain.append(SpecularGuard(clip_limit=2.5, tile_grid=[8, 8]))
+                logger.info("🛡️ CLAHE preprocess enabled (SpecularGuard, clip=2.5, grid=8x8)")
+            except Exception as e:
+                logger.warning(f"[preprocess] CLAHE enable failed: {e} — running without preprocess")
+        return chain
 
     def get_stats(self):
         with self.lock:
@@ -984,6 +1014,18 @@ class StreamHandler:
             self._current_source = src_val
             self.reader = LiveReader(src_val)
 
+            # Build per-session preprocess chain (CLAHE etc.) from settings.json.
+            try:
+                settings_path = Path(__file__).parent / 'settings.json'
+                ui_settings = {}
+                if settings_path.exists():
+                    with open(settings_path) as f:
+                        ui_settings = json.load(f)
+                self._preprocess_chain = self._build_preprocess_chain(ui_settings)
+            except Exception as e:
+                logger.warning(f"[preprocess] chain build failed: {e}")
+                self._preprocess_chain = []
+
             self.running = True
             self.inf_thread = threading.Thread(target=self._inference_loop, daemon=True)
             self.inf_thread.start()
@@ -1099,6 +1141,21 @@ class StreamHandler:
                     if max(fh, fw) > self.web_imgsz:
                         scale = self.web_imgsz / max(fh, fw)
                         frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)))
+
+                    # Optional preprocess chain (CLAHE etc.) — applied on the
+                    # already-downscaled frame to keep the cost low. Each stage
+                    # is failure-tolerant: a bad preprocess gets dropped from
+                    # the chain, the loop continues.
+                    if self._preprocess_chain:
+                        for proc in list(self._preprocess_chain):
+                            try:
+                                frame = proc.process(frame)
+                            except Exception as preproc_err:
+                                logger.warning(
+                                    f"[preprocess] {type(proc).__name__} failed — "
+                                    f"dropping for remainder of session: {preproc_err}"
+                                )
+                                self._preprocess_chain.remove(proc)
 
                     _t_start = time.perf_counter()
                     annotated, detections, new_events = engine.process_frame(frame, self.class_totals)

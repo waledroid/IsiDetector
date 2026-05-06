@@ -321,6 +321,8 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
         request_body['auto_start'] = bool(request_body['auto_start'])
     if 'roi_enabled' in request_body:
         request_body['roi_enabled'] = bool(request_body['roi_enabled'])
+    if 'clahe_enabled' in request_body:
+        request_body['clahe_enabled'] = bool(request_body['clahe_enabled'])
     if 'roi_points' in request_body:
         v = request_body['roi_points']
         if not isinstance(v, list) or len(v) not in (0, 4):
@@ -356,6 +358,7 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
         'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
         'roi_enabled', 'roi_points',
+        'clahe_enabled',
     )
     current = _load_settings()
     for k in allowed_keys:
