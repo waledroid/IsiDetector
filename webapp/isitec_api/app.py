@@ -652,8 +652,15 @@ def get_models():
 
                 entry = {"name": file, "path": rel_path}
 
-                if file.endswith('.xml') and 'openvino' not in root_dir.lower():
-                    continue
+                # Skip non-model XML files (e.g. sitemap.xml). OpenVINO IRs
+                # always come as a (.xml, .bin) pair with matching basenames;
+                # use that as the gate rather than a directory-name heuristic
+                # — the latter excluded NNCF / POT-quantised IRs the operator
+                # drops alongside the FP32 weights instead of in a sub-folder.
+                if file.endswith('.xml'):
+                    bin_path = abs_path[:-4] + '.bin'
+                    if not os.path.exists(bin_path):
+                        continue
 
                 path_lower = rel_path.lower()
                 is_rfdetr = 'rfdetr' in path_lower or 'detr' in path_lower or 'rf-detr' in file.lower()
