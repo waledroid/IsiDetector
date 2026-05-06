@@ -125,15 +125,17 @@ internet_ok() {
 }
 
 write_state() {
-    # JSON state file: Tailscale IP, RustDesk ID, install timestamp, services.
-    # chmod 0640 so the password isn't world-readable (we only stored the
-    # SHA-256, but defensive anyway).
+    # JSON state file: Tailscale IP, RustDesk ID + plaintext password,
+    # install timestamp, service states. The plaintext password lets the
+    # admin read it directly on the next visit without re-running setup;
+    # mode 0640 + a root-owned dir keeps it off world view. Site PCs are
+    # single-admin boxes — full plaintext recovery is the right tradeoff.
     mkdir -p "$STATE_DIR"
     chmod 0750 "$STATE_DIR"
 
     local ts_ip="${1:-}"
     local rd_id="${2:-}"
-    local rd_pw_hash="${3:-}"
+    local rd_pw="${3:-}"
     local ts_status="${4:-}"
     local rd_status="${5:-}"
 
@@ -146,7 +148,7 @@ write_state() {
   },
   "rustdesk": {
     "id": "${rd_id}",
-    "password_sha256": "${rd_pw_hash}",
+    "password": "${rd_pw}",
     "service_status": "${rd_status}"
   }
 }
@@ -630,29 +632,31 @@ cmd_setup() {
     fi
 
     # 5. State recording
-    local pw_hash="(unknown)"
-    if [ -n "${REMOTE_RD_PW:-}" ]; then
-        pw_hash=$(printf '%s' "$REMOTE_RD_PW" | sha256sum | awk '{print $1}')
-    fi
-    write_state "$ts_ip" "$rd_id" "$pw_hash" "$(ts_status)" "$(rd_status)"
+    write_state "$ts_ip" "$rd_id" "${REMOTE_RD_PW:-}" "$(ts_status)" "$(rd_status)"
 
-    # 6. Summary
+    # 6. Summary — plain text, no terminal escapes. The earlier bug where
+    # \033[1m showed up literally was because `echo` (no -e) prints the
+    # raw backslash sequences. Dropping the BOLD/NC wrappers entirely
+    # also makes the password trivially copy-paste-able.
     header "Setup complete"
-    echo "Tailscale IP (private mesh):  ${BOLD}${ts_ip}${NC}"
-    echo "RustDesk ID:                  ${BOLD}${rd_id}${NC}"
-    echo "RustDesk password:            ${BOLD}${REMOTE_RD_PW:-(unchanged)}${NC}"
     echo ""
-    echo "From your laptop, after joining the same Tailscale tailnet:"
-    echo "  • SSH:        tailscale ssh ${USER}@${ts_ip}"
-    echo "  • Desktop:    open RustDesk → enter ID ${rd_id} + password above"
+    echo "  Tailscale IP (private mesh):  ${ts_ip:-(not connected — see warnings above)}"
+    echo "  RustDesk ID:                  ${rd_id:-(pending — launch RustDesk GUI once)}"
+    echo "  RustDesk password:            ${REMOTE_RD_PW:-(unchanged)}"
     echo ""
-    echo "State for next visit: ${STATE_FILE}"
+    echo "  From your laptop, on the same Tailscale tailnet:"
+    if [ -n "$ts_ip" ]; then
+        echo "    SSH:      tailscale ssh ${SUDO_USER:-$USER}@${ts_ip}"
+    fi
+    echo "    Desktop:  open RustDesk on your laptop → enter the ID + password above"
+    echo ""
+    echo "  These details are also persisted in:  ${STATE_FILE}"
+    echo "  (root-readable; cat the file on next visit to recover them)"
     if [ "${REMOTE_NEED_REBOOT:-0}" = "1" ]; then
         echo ""
         warn "REBOOT REQUIRED: Wayland was disabled in /etc/gdm3/custom.conf."
-        warn "Reboot the site PC now so RustDesk lands in an X11 session;"
-        warn "otherwise screen capture and input will be blocked by the Wayland"
-        warn "compositor's security model. Run:  sudo reboot"
+        warn "Reboot the site PC now so RustDesk lands in an X11 session."
+        warn "Run:  sudo reboot"
     fi
     echo ""
 }
@@ -689,8 +693,12 @@ cmd_status() {
 
     if [ -r "$STATE_FILE" ]; then
         echo ""
-        echo "Last setup state: ${STATE_FILE}"
+        echo "Last setup state (from ${STATE_FILE}):"
         cat "$STATE_FILE" | sed 's/^/  /'
+    elif [ -e "$STATE_FILE" ]; then
+        echo ""
+        warn "State file exists but is not readable by current user."
+        warn "Run:  sudo cat ${STATE_FILE}"
     fi
 }
 
