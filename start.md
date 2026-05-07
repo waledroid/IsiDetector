@@ -44,6 +44,8 @@
 
 You're on the **`deploy`** branch — the lean runtime subset shipped to site PCs. No training, no compression, no docs source. Just the inference stack and the sorter UDP feed.
 
+> 🛠️ **First-time site install?** Use [`site-install.md`](site-install.md) as your runbook (one-page, photo-verified, ~60 min). This file is the deeper reference — open it for daily ops, troubleshooting, or the "how does this work" questions.
+
 ## 🎯 Supported targets
 
 | Platform | Hardware | Image built | RF-DETR sidecar |

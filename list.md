@@ -42,6 +42,8 @@ Quick grab-bag. Tick each box as it goes in the case.
 - [ ] SSH key to pull updates from GitHub
 
 ## Docs (printed)
+- [ ] `site-install.md` — **the runbook**, follow it step-by-step on the day
+- [ ] `remote-setup.md` — the four-step Tailscale + RustDesk reference
 - [ ] `start.md` from the `deploy` branch (install → daily start → net lock-down)
 - [ ] `net.sh manual` output — bilingual FR/EN sheet for the automaticien
 - [ ] Blank form for sorter UDP target + camera RTSP URL + line settings
