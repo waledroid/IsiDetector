@@ -15,7 +15,7 @@ One-page checklist. Follow the four steps in order. ~10 minutes including the Ta
 ## Prerequisites
 
 - Site PC: Ubuntu/Debian with internet (apt + GitHub reachable).
-- The repo cloned at `~/logistic` on the site PC, on the `fps` branch.
+- The repo cloned at `~/fps` on the site PC, on the `fps` branch.
 - A Gmail account that owns the Tailscale tailnet (or a Tailscale auth key).
 
 ---
@@ -25,7 +25,7 @@ One-page checklist. Follow the four steps in order. ~10 minutes including the Ta
 Even on a brand-new PC, this guarantees no half-installed leftovers from a previous attempt.
 
 ```bash
-cd ~/logistic && git pull origin fps
+cd ~/fps && git pull origin fps
 sudo ./remote.sh remove
 # Type 'remove' when prompted.
 ```
