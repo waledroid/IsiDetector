@@ -14,6 +14,8 @@
 
 ## Network reference (memorise — you'll use it constantly)
 
+![Network topology — splitter, camera, internal switch, three NICs on the ISI-Linux PC](net.png)
+
 ```
                 ┌─ Splitter ──┐
   Customer wall ─┤             ├──→  PC Superviseur (192.168.1.20)
