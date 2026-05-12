@@ -81,7 +81,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(_base_dir, "static")), n
 templates = Jinja2Templates(directory=os.path.join(_base_dir, "templates"))
 
 # ── Import and register WebSocket routes ──────────────────────────────────────
-from isitec_api.websockets import router as ws_router
+from isitec_api.ws_routes import router as ws_router
 app.include_router(ws_router)
 
 # ── Routes ────────────────────────────────────────────────────────────────────

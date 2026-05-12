@@ -2,8 +2,18 @@
 # Used by the production Dockerfile. Does NOT include training packages.
 
 # ── Web framework ────────────────────────────────────────────────────────────
+# Both backends are shipped. WEB_BACKEND env at container start picks which
+# one runs (flask = default, fastapi = WebSocket-first variant). See
+# deploy/_impl/web_entrypoint.sh for the dispatcher.
 Flask>=3.0.0
 Werkzeug>=3.0.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+jinja2>=3.1.0
+# Pin <14 — websockets 14.0 dropped the `.legacy` submodule that
+# uvicorn[standard]'s WS protocol implementation still imports.
+websockets>=12.0,<14
 
 # ── Computer vision ──────────────────────────────────────────────────────────
 opencv-python-headless>=4.8.0

@@ -18,6 +18,11 @@ services:
       - ../webapp/isitec_app/logs:/opt/isitec/webapp/isitec_app/logs
       - ../webapp/isitec_app/uploads:/opt/isitec/webapp/isitec_app/uploads
       - ../webapp/isitec_app/settings.json:/opt/isitec/webapp/isitec_app/settings.json
+      # Mount the FastAPI backend's settings.json too so WEB_BACKEND=fastapi
+      # picks up the same operator-tunable state without manual sync.
+      - ../webapp/isitec_api/logs:/opt/isitec/webapp/isitec_api/logs
+      - ../webapp/isitec_api/uploads:/opt/isitec/webapp/isitec_api/uploads
+      - ../webapp/isitec_api/settings.json:/opt/isitec/webapp/isitec_api/settings.json
       - ../mkdocs/site:/opt/isitec/webapp/isitec_app/static/docs:ro
       # X11 forwarding (for cv2.imshow inside container)
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
@@ -33,6 +38,11 @@ services:
       # by run_start.sh / up.sh based on hardware detection). The container's
       # stream_handler reads this to pick inference/cpu.yaml or gpu.yaml.
       - COMPOSE_MODE=${COMPOSE_MODE:-cpu}
+      # WEB_BACKEND = flask (default) | fastapi. Picks which app the
+      # web_entrypoint.sh dispatcher boots inside the container. Flask is
+      # the production default; FastAPI adds /ws/video + /ws/stats for
+      # WebSocket-first clients (lower-latency dashboards).
+      - WEB_BACKEND=${WEB_BACKEND:-flask}
       # Force OpenCV's FFmpeg backend to negotiate RTSP-over-UDP instead of
       # the default TCP. UDP skips TCP's reorder/retransmit buffering and
       # often delivers 1–2 FPS more on a clean LAN. Trades reliability for

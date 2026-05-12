@@ -58,8 +58,9 @@ COPY isidet/src/preprocess/ isidet/src/preprocess/
 COPY isidet/src/__init__.py isidet/src/__init__.py
 COPY isidet/configs/        isidet/configs/
 COPY webapp/isitec_app/     webapp/isitec_app/
+COPY webapp/isitec_api/     webapp/isitec_api/
 
-RUN mkdir -p webapp/isitec_app/static/docs
+RUN mkdir -p webapp/isitec_app/static/docs webapp/isitec_api/static/docs
 
 # ── Environment ─────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1
@@ -79,4 +80,7 @@ EXPOSE 9502/udp
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:${PORT}/ || exit 1
 
-CMD ["python", "webapp/isitec_app/app.py"]
+COPY deploy/_impl/web_entrypoint.sh /usr/local/bin/web_entrypoint.sh
+RUN chmod +x /usr/local/bin/web_entrypoint.sh
+# Dispatcher: WEB_BACKEND=flask (default) or fastapi.
+CMD ["/usr/local/bin/web_entrypoint.sh"]

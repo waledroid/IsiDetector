@@ -48,11 +48,12 @@ COPY isidet/src/preprocess/ isidet/src/preprocess/
 COPY isidet/src/__init__.py isidet/src/__init__.py
 COPY isidet/configs/        isidet/configs/
 COPY webapp/isitec_app/     webapp/isitec_app/
+COPY webapp/isitec_api/     webapp/isitec_api/
 
 # ── MkDocs (optional — pre-built site mounted via compose) ──────────────────
 # To build docs: cd mkdocs && mkdocs build
 # Docs served at /docs if webapp/isitec_app/static/docs/ exists
-RUN mkdir -p webapp/isitec_app/static/docs
+RUN mkdir -p webapp/isitec_app/static/docs webapp/isitec_api/static/docs
 
 # ── Environment ─────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1
@@ -77,4 +78,7 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # CWD stays /opt/isitec so the web app's `Path("isidet/...")` resolutions
 # and volume-mounted paths all line up.
-CMD ["python", "webapp/isitec_app/app.py"]
+COPY deploy/_impl/web_entrypoint.sh /usr/local/bin/web_entrypoint.sh
+RUN chmod +x /usr/local/bin/web_entrypoint.sh
+# Dispatcher: WEB_BACKEND=flask (default) or fastapi.
+CMD ["/usr/local/bin/web_entrypoint.sh"]
