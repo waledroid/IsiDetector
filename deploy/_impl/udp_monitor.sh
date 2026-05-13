@@ -206,16 +206,28 @@ cmd_watch() {
     trap "rm -f '$pyscript'" RETURN
     cat > "$pyscript" <<'PYEOF'
 import sys, re, time
+from datetime import datetime
 
 our_ip   = sys.argv[1]
 peer_ip  = sys.argv[2]
 port     = sys.argv[3]
 GREEN, BLUE, YELLOW, NC = sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
 
-# Header line shape (tcpdump -tttt -A):
-#   2026-05-13 14:23:45.312847 IP 10.0.0.5.48372 > 10.0.0.2.9502: UDP, length 60
+# Header line shape varies based on tcpdump's interface flag:
+#
+#   -i any -tttt:
+#     2026-05-13 14:23:45.312847 veth97fdf51 P   IP 172.18.0.2.36748 > 192.168.2.45.9502: UDP, length 66
+#                                ^iface       ^dir(P|In|Out)
+#
+#   -i eno1 -tttt:
+#     2026-05-13 14:23:45.312847 IP 10.0.0.5.48372 > 10.0.0.2.9502: UDP, length 60
+#
+# Make the iface + direction pair optional. Direction values from -i any are
+# P (outgoing on a veth, "peer"), In (entering an interface), Out (leaving).
 HDR_RE = re.compile(
-    r'^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+IP\s+'
+    r'^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+'
+    r'(?:(?P<iface>\S+)\s+(?P<dir>P|In|Out|B)\s+)?'
+    r'IP\s+'
     r'(?P<src>[\d\.]+)\.(?P<sport>\d+)\s+>\s+'
     r'(?P<dst>[\d\.]+)\.(?P<dport>\d+):\s+UDP'
 )
@@ -224,6 +236,30 @@ count = out_count = in_count = other_count = 0
 start_t = time.time()
 last_seen_t = None
 current = None
+
+# Same logical packet captured on veth + bridge + eno1 produces 3 tcpdump
+# lines for one crossing. Dedupe within a 150 ms window keyed on
+# src+sport+dst+dport+payload — different ids produce different keys, so
+# real distinct crossings still print.
+_DEDUP_WINDOW_S = 0.15
+_dedup_cache = {}
+
+def _ts_to_seconds(ts_str):
+    try:
+        return datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S.%f').timestamp()
+    except Exception:
+        return time.time()
+
+def _is_duplicate(src, sport, dst, dport, payload, ts_sec):
+    key = (src, sport, dst, dport, payload[:60])
+    last_ts = _dedup_cache.get(key)
+    _dedup_cache[key] = ts_sec
+    # Periodic cache pruning so memory doesn't grow forever on long runs.
+    if len(_dedup_cache) > 200:
+        cutoff = ts_sec - 2.0
+        for k in [k for k, v in _dedup_cache.items() if v < cutoff]:
+            del _dedup_cache[k]
+    return last_ts is not None and (ts_sec - last_ts) < _DEDUP_WINDOW_S
 
 def flush(pkt):
     global count, out_count, in_count, other_count, last_seen_t
@@ -236,12 +272,26 @@ def flush(pkt):
     m = re.search(r'\{[^}]*\}', body)
     payload = m.group(0) if m else body.strip()[-80:].replace('\n', ' ')
 
-    if hdr['src'] == our_ip:    direction, color = 'OUT  ', GREEN
-    elif hdr['dst'] == our_ip:  direction, color = 'IN   ', BLUE
-    else:                       direction, color = 'OTHER', YELLOW
+    # Dedupe duplicate captures of the same packet across multiple interfaces.
+    ts_sec = _ts_to_seconds(hdr['ts'])
+    if _is_duplicate(hdr['src'], hdr['sport'], hdr['dst'], hdr['dport'],
+                     payload, ts_sec):
+        return
+
+    # Prefer tcpdump's explicit direction marker (more reliable than
+    # src/dst comparison after NAT). P = peer-outgoing on a veth pair.
+    explicit_dir = hdr.get('dir') or ''
+    if   explicit_dir in ('Out', 'P'):  direction, color = 'OUT  ', GREEN
+    elif explicit_dir == 'In':          direction, color = 'IN   ', BLUE
+    elif explicit_dir == 'B':           direction, color = 'BCAST', YELLOW
+    elif hdr['src'] == our_ip:          direction, color = 'OUT  ', GREEN
+    elif hdr['dst'] == our_ip:          direction, color = 'IN   ', BLUE
+    else:                               direction, color = 'OTHER', YELLOW
 
     short_ts = hdr['ts'].split(' ')[1][:12]  # HH:MM:SS.mmm
+    iface = (hdr.get('iface') or '-')[:14]   # truncate long veth names
     line = (f"[{short_ts}] {color}{direction}{NC}  "
+            f"{iface:<14}  "
             f"{hdr['src']}:{hdr['sport']} → {hdr['dst']}:{hdr['dport']}  {payload}")
     # Clear the inline stats footer before printing the packet line
     sys.stdout.write('\r\033[K')
@@ -291,8 +341,15 @@ PYEOF
     # Echo the exact tcpdump invocation so on-site debugging is reproducible.
     info "tcpdump filter: udp port ${port}  (interfaces: any)"
     info "if no packets appear during streaming, try one of these alternatives:"
-    info "    sudo tcpdump -i docker0 -n -A 'udp port ${port}'"
-    info "    sudo tcpdump -i any -n -A 'host ${TARGET_IPV4}'   (any port)"
+    # Detect the compose-stack bridge automatically (docker-compose creates a
+    # bridge named br-<network_id_prefix> for the project, NOT docker0).
+    local bridge_name
+    bridge_name=$(ip -o link show type bridge 2>/dev/null \
+        | awk -F': ' '/^[0-9]+:[[:space:]]*(br-|docker)/ {print $2; exit}')
+    if [ -n "$bridge_name" ]; then
+        info "    sudo tcpdump -i ${bridge_name} -n -A 'udp port ${port}'    (compose bridge, auto-detected)"
+    fi
+    info "    sudo tcpdump -i any -n -A 'host ${TARGET_IPV4}'    (any port)"
     info "    sudo nsenter -t \$(docker inspect -f '{{.State.Pid}}' deploy-web-1) -n tcpdump -i any 'udp port ${port}'"
     echo ""
 
