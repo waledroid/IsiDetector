@@ -1,43 +1,42 @@
 #!/usr/bin/env bash
 # ============================================================================
-# IsiDetector — Standalone-mode helpers for site PCs
+# IsiDetector — Standalone-mode (hands-free kiosk) one-shot installer
 #
-# Three independent layers turn a fresh site PC into a hands-free kiosk:
+# Turns a fresh site PC into a hands-free kiosk by applying THREE layers in
+# one go (or rolling them back in one go):
 #
-#   1. enable-autologin    OS-level auto-login → no operator at the login screen
-#   2. enable-systemd      docker compose up at boot via systemd → stack runs
-#                          before the desktop session even loads
-#   3. enable              desktop autostart → opens kiosk Chrome on the dashboard
+#   Layer 1 — OS auto-login           (GDM3 / LightDM / SDDM, writes AutomaticLogin=)
+#   Layer 2 — boot-time compose       (systemd unit runs `docker compose up -d`)
+#   Layer 3 — kiosk Chrome at login   (~/.config/autostart .desktop file)
 #
-# Layer 3 alone (the original behaviour) waits for the desktop to come up,
-# then runs `up.sh` which both starts compose AND opens Chrome. Adding
-# layer 2 cuts ~30 s off cold boot because the stack is warming up while
-# the desktop is still rendering. Adding layer 1 removes the only manual
-# step (sitting at the login screen).
+# After `enable + reboot`, the site PC goes power-on → ~30-40 s → kiosk
+# Chrome on the dashboard with the inference stack already running. Zero
+# clicks.
 #
-# Recommended on a real site PC: enable all three.
-#
-# Subcommands:
-#   ./autostart.sh enable                  install desktop autostart (kiosk Chrome)
-#   ./autostart.sh disable                 remove desktop autostart + systemd unit
-#   ./autostart.sh status                  print state of all three layers
-#
-#   ./autostart.sh enable-systemd          install + start /etc/systemd/system/isidetector.service
-#   ./autostart.sh disable-systemd         stop + remove the systemd unit
-#
-#   ./autostart.sh enable-autologin USER   write AutomaticLogin= for GDM3 / LightDM (sudo)
-#   ./autostart.sh disable-autologin       remove AutomaticLogin= (sudo)
-#
-#   ./autostart.sh -h | --help             this help
+# Usage:
+#   ./autostart.sh enable [USER]     install all three layers (sudo, auto-escalates)
+#                                    USER defaults to the invoking user; pass it
+#                                    explicitly when running under sudo from cron etc.
+#   ./autostart.sh disable           reverse all three layers in one go (sudo)
+#                                    restores /etc/gdm3/custom.conf from its
+#                                    .pre-autostart-* backup, removes the systemd
+#                                    unit, removes the .desktop autostart file.
+#   ./autostart.sh status            read-only — print state of all three layers
+#   ./autostart.sh -h | --help       this help
 #
 # Notes:
-#   - enable-systemd auto-rewrites the .desktop file (if present) to use
-#     `up.sh --open-only` so the desktop layer doesn't race with systemd
-#     to bring up compose.
-#   - enable-autologin takes effect on next reboot. We don't restart the
-#     display manager — that would log the operator out mid-setup.
-#   - `disable` removes layers 2 and 3 but leaves auto-login alone (it's
-#     OS-wide and the operator may want it for non-IsiDetector reasons).
+#   - When Layer 2 (systemd) is active, Layer 3 (.desktop) is auto-rewritten
+#     to use `up.sh --open-only` so the desktop layer doesn't race with
+#     systemd to bring up compose.
+#   - Layers 1 (autologin) and the X11 switch take effect on the NEXT REBOOT.
+#     The script doesn't restart the display manager — that would log the
+#     operator out mid-setup.
+#   - Layer 1 backs up /etc/gdm3/custom.conf to .pre-autostart-<timestamp>
+#     before any edit; `disable` restores the most recent such backup.
+#   - For RustDesk to capture the screen after auto-login, the session must
+#     be X11 not Wayland. `enable` sets WaylandEnable=false alongside the
+#     autologin keys; `remote.sh setup` also writes this (with its own
+#     .pre-remote-* backup that doesn't collide).
 # ============================================================================
 
 set -euo pipefail
@@ -46,8 +45,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-$SCRIPT_DIR}"
 
+# Legacy globals — kept for the systemd-side rewrite logic + status read.
+# When running under sudo (after need_root), $HOME is /root, so the
+# DESKTOP_FILE path here points at root's autostart dir, not the operator's.
+# That's why `_kiosk_install` resolves the right path from the target user
+# instead of relying on these. cmd_status falls back to walking /home/* so
+# it still works as a non-root read.
 AUTOSTART_DIR="$HOME/.config/autostart"
 DESKTOP_FILE="$AUTOSTART_DIR/isidetector.desktop"
+
+# Find the kiosk-Chrome .desktop file across every /home/*/.config/autostart
+# regardless of which user invoked the script. Returns the first match, or
+# empty string. Used by cmd_status so `sudo ./autostart.sh status` finds
+# the operator's file even though sudo's HOME is /root.
+find_desktop_file() {
+    local f
+    for d in "$HOME/.config/autostart" /home/*/.config/autostart; do
+        f="$d/isidetector.desktop"
+        if [[ -f "$f" ]]; then echo "$f"; return; fi
+    done
+    echo ""
+}
 
 SYSTEMD_UNIT="/etc/systemd/system/isidetector.service"
 
@@ -93,17 +111,56 @@ detect_dm() {
     echo ""
 }
 
-# ── enable: desktop autostart ──────────────────────────────────────────────
-cmd_enable() {
+# ── Target-user resolution ──────────────────────────────────────────────────
+# enable orchestrates all three layers; Layer 1 needs to know which user
+# gets AutomaticLogin=, Layer 3 writes a .desktop file in that user's
+# autostart dir. The selection priority is:
+#   1. explicit positional arg ($1)
+#   2. $SUDO_USER (set when invoked via sudo)
+#   3. $ORIG_USER (set by our own need_root re-exec)
+#   4. first /home/* user with a real UID (1000+)
+resolve_target_user() {
+    local u="${1:-}"
+    if [[ -z "$u" ]]; then
+        u="${SUDO_USER:-${ORIG_USER:-}}"
+    fi
+    if [[ -z "$u" || "$u" = "root" ]]; then
+        u=$(awk -F: '$3 >= 1000 && $3 < 65000 {print $1; exit}' /etc/passwd)
+    fi
+    if [[ -z "$u" ]]; then
+        echo "✗ Could not resolve a target user. Pass one explicitly:" >&2
+        echo "    sudo ./autostart.sh enable USERNAME" >&2
+        return 1
+    fi
+    echo "$u"
+}
+
+target_user_home() {
+    getent passwd "${1:?user required}" | cut -d: -f6
+}
+
+# ── Layer 3 internals: kiosk-Chrome desktop autostart ──────────────────────
+# Writes ~/.config/autostart/isidetector.desktop in the target user's home.
+# Called from cmd_enable after Layers 1 + 2 are in place.
+_kiosk_install() {
+    local target_user="${1:?user required}"
+    local user_home; user_home=$(target_user_home "$target_user")
+    if [[ -z "$user_home" || ! -d "$user_home" ]]; then
+        echo "✗ Could not locate home directory for '$target_user'" >&2
+        return 1
+    fi
+    local autostart_dir="$user_home/.config/autostart"
+    local desktop_file="$autostart_dir/isidetector.desktop"
+
     if [[ ! -x "$INSTALL_DIR/up.sh" ]]; then
         echo "✗ Could not find executable up.sh at $INSTALL_DIR/up.sh" >&2
         echo "  Set INSTALL_DIR=/path/to/your/clone and re-run." >&2
-        exit 1
+        return 1
     fi
-    mkdir -p "$AUTOSTART_DIR"
+    mkdir -p "$autostart_dir"
     local flags
     flags="$(desktop_up_flags)"
-    cat > "$DESKTOP_FILE" <<EOF
+    cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=IsiDetector
@@ -115,38 +172,113 @@ NoDisplay=false
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=10
 EOF
-    chmod 644 "$DESKTOP_FILE"
-    echo "✓ Desktop autostart enabled."
-    echo "  File:  $DESKTOP_FILE"
-    echo "  Runs: cd $INSTALL_DIR && ./up.sh $flags"
+    chmod 644 "$desktop_file"
+    # Fix ownership — we may be running as root via sudo; the file needs
+    # to belong to target_user so their session can read it at login.
+    chown -R "${target_user}:${target_user}" "$autostart_dir" 2>/dev/null || true
+
+    echo "  ✓ Layer 3 (kiosk Chrome) — wrote $desktop_file"
     if [[ "$flags" == *--open-only* ]]; then
-        echo "  Mode: --open-only (systemd unit handles the compose stack)."
+        echo "      Mode: --open-only (systemd unit owns the compose lifecycle)"
     else
-        echo "  Mode: full up.sh (compose + browser). Run 'enable-systemd' for"
-        echo "        faster cold boot."
+        echo "      Mode: full up.sh (compose + browser at login)"
     fi
-    echo ""
-    echo "  ⓘ For a fully-hands-off boot, also enable:"
-    echo "    sudo ./autostart.sh enable-autologin $USER"
-    echo "    sudo ./autostart.sh enable-systemd"
 }
 
+_kiosk_uninstall() {
+    local target_user="${1:?user required}"
+    local user_home; user_home=$(target_user_home "$target_user")
+    if [[ -z "$user_home" ]]; then
+        echo "  ℹ Layer 3 — no home dir for '$target_user', nothing to remove"
+        return 0
+    fi
+    local desktop_file="$user_home/.config/autostart/isidetector.desktop"
+    if [[ -f "$desktop_file" ]]; then
+        rm -f "$desktop_file"
+        echo "  ✓ Layer 3 (kiosk Chrome) — removed $desktop_file"
+    else
+        echo "  ℹ Layer 3 — no $desktop_file (already disabled)"
+    fi
+}
+
+# ── enable: one-shot install of all three layers ───────────────────────────
+cmd_enable() {
+    local target_user
+    target_user=$(resolve_target_user "${1:-}") || exit 1
+    need_root enable "$target_user"
+
+    echo "─── IsiDetector standalone mode — enabling all three layers ────"
+    echo "Target user: $target_user"
+    echo ""
+
+    # Layer 1 — autologin (sudo-required, already root after need_root)
+    echo "▶ Layer 1 — OS auto-login"
+    cmd_enable_autologin "$target_user" \
+        | sed 's/^/  /'
+    echo ""
+
+    # Layer 2 — systemd unit (also sudo-required)
+    echo "▶ Layer 2 — systemd boot-time compose"
+    cmd_enable_systemd \
+        | sed 's/^/  /'
+    echo ""
+
+    # Layer 3 — desktop autostart in target_user's home
+    echo "▶ Layer 3 — kiosk Chrome at login"
+    _kiosk_install "$target_user"
+    echo ""
+
+    echo "─── All three layers enabled ──────────────────────────────────"
+    echo "Reboot to apply:  sudo reboot"
+    echo ""
+    echo "After reboot, expect:"
+    echo "  • $target_user is auto-logged-in (no password prompt)"
+    echo "  • Session is X11 (RustDesk capture works)"
+    echo "  • Inference stack is up via systemd"
+    echo "  • Kiosk Chrome opens to the dashboard within ~30 s of login"
+}
+
+# ── disable: one-shot rollback of all three layers ─────────────────────────
 cmd_disable() {
-    local removed_any=0
-    if [[ -f "$DESKTOP_FILE" ]]; then
-        rm -f "$DESKTOP_FILE"
-        echo "✓ Removed $DESKTOP_FILE"
-        removed_any=1
-    fi
+    local target_user
+    target_user=$(resolve_target_user "${1:-}") || exit 1
+    need_root disable "$target_user"
+
+    echo "─── IsiDetector standalone mode — disabling all three layers ───"
+    echo "Target user: $target_user"
+    echo ""
+
+    # Reverse-order rollback. Layer 3 first because removing the .desktop
+    # has zero side-effects on running boots; Layer 1 last because its
+    # GDM3 edit may need its backup restored.
+
+    # Layer 3 — desktop autostart
+    echo "▶ Layer 3 — remove kiosk Chrome .desktop"
+    _kiosk_uninstall "$target_user"
+    echo ""
+
+    # Layer 2 — systemd unit
+    echo "▶ Layer 2 — remove systemd unit"
     if [[ -f "$SYSTEMD_UNIT" ]]; then
-        echo "▶ Removing systemd unit too (use 'disable-systemd' alone if you"
-        echo "  want to keep the desktop autostart)…"
-        cmd_disable_systemd
-        removed_any=1
+        cmd_disable_systemd | sed 's/^/  /'
+    else
+        echo "  ℹ no $SYSTEMD_UNIT — already disabled"
     fi
-    if [[ $removed_any -eq 0 ]]; then
-        echo "ℹ Nothing to remove (no desktop autostart, no systemd unit)."
-    fi
+    echo ""
+
+    # Layer 1 — autologin + Wayland-disable, restored from .pre-autostart-* backup
+    echo "▶ Layer 1 — restore display-manager config from backup"
+    cmd_disable_autologin | sed 's/^/  /'
+    echo ""
+
+    echo "─── All three layers disabled ─────────────────────────────────"
+    echo "Reboot to apply the login-screen change:  sudo reboot"
+    echo ""
+    echo "After reboot, expect:"
+    echo "  • Normal login prompt (no auto-login)"
+    echo "  • Inference stack does NOT auto-start"
+    echo "  • Kiosk Chrome does NOT auto-launch"
+    echo "  • Tailscale + RustDesk (if installed via ./remote.sh) still work"
 }
 
 # ── enable-systemd: docker compose up at boot ──────────────────────────────
@@ -241,7 +373,7 @@ cmd_disable_systemd() {
 cmd_enable_autologin() {
     local target_user="${1:-}"
     if [[ -z "$target_user" ]]; then
-        echo "Usage: $0 enable-autologin USER" >&2
+        echo "Internal: cmd_enable_autologin requires a target user (called from cmd_enable)" >&2
         exit 2
     fi
     need_root "enable-autologin" "$target_user"
@@ -441,11 +573,15 @@ cmd_status() {
     fi
     printf "  2. Systemd unit:                %s\n" "$systemd_state"
 
-    # Layer 3: desktop autostart
-    if [[ -f "$DESKTOP_FILE" ]]; then
+    # Layer 3: desktop autostart — search every user's autostart dir, not
+    # just the script-invoker's $HOME (under sudo $HOME is /root and we'd
+    # miss the operator's file).
+    local desktop_file_found
+    desktop_file_found="$(find_desktop_file)"
+    if [[ -n "$desktop_file_found" ]]; then
         local exec_line
-        exec_line="$(grep '^Exec=' "$DESKTOP_FILE" | sed 's/^Exec=//')"
-        printf "  3. Desktop autostart:           %s\n" "ENABLED"
+        exec_line="$(grep '^Exec=' "$desktop_file_found" | sed 's/^Exec=//')"
+        printf "  3. Desktop autostart:           %s\n" "ENABLED ($desktop_file_found)"
         printf "       %s\n" "$exec_line"
     else
         printf "  3. Desktop autostart:           %s\n" "not installed"
@@ -461,16 +597,16 @@ cmd="${1:-status}"
 shift || true
 
 case "$cmd" in
-    enable)            cmd_enable "$@" ;;
-    disable)           cmd_disable "$@" ;;
-    enable-systemd)    cmd_enable_systemd "$@" ;;
-    disable-systemd)   cmd_disable_systemd "$@" ;;
-    enable-autologin)  cmd_enable_autologin "$@" ;;
-    disable-autologin) cmd_disable_autologin "$@" ;;
-    status)            cmd_status ;;
-    -h|--help)         sed -n '2,42p' "$0" | sed 's/^# *//' ;;
+    enable)   cmd_enable "$@" ;;
+    disable)  cmd_disable "$@" ;;
+    status)   cmd_status ;;
+    -h|--help)
+        # The header docstring is the single source of truth — print it back.
+        sed -n '2,40p' "$0" | sed 's/^# *//'
+        ;;
     *)
         echo "Unknown subcommand: $cmd" >&2
+        echo "Available:  enable [USER] | disable | status | --help" >&2
         echo "Try: $0 --help" >&2
         exit 2
         ;;

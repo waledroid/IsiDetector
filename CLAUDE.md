@@ -127,21 +127,22 @@ sudo ./remote.sh remove                   # uninstall both, leave system clean
 
 ### Standalone-mode helpers (`autostart.sh`)
 
-Three independent layers turn a fresh site PC into a hands-free kiosk. Each layer can be enabled or reverted on its own — they compose but don't depend on each other.
+Three layers turn a fresh site PC into a hands-free kiosk, installed and rolled back via a single command each.
 
 ```bash
-sudo ./autostart.sh enable-autologin USER   # Layer 1 — OS skips login screen (GDM3/LightDM/SDDM)
-sudo ./autostart.sh enable-systemd          # Layer 2 — docker compose up at boot via systemd
-./autostart.sh enable                       # Layer 3 — desktop autostart opens kiosk Chrome on login
-./autostart.sh status                       # print state of all three
-sudo ./autostart.sh disable-autologin       # reverse Layer 1
-sudo ./autostart.sh disable-systemd         # reverse Layer 2
-./autostart.sh disable                      # reverse Layers 2 + 3 (leaves auto-login alone)
+sudo ./autostart.sh enable [USER]   # install all three layers (auto-escalates sudo)
+                                    # USER defaults to $SUDO_USER / first /home/* user
+sudo ./autostart.sh disable         # reverse all three; restores GDM3 from .pre-autostart-* backup
+./autostart.sh status               # read-only — state of all three layers
 ```
 
-- **Layer 1** (`enable-autologin`) auto-detects the display manager and writes `AutomaticLogin=USER` to the right config (`/etc/gdm3/custom.conf`, LightDM `lightdm.conf.d/`, or SDDM `sddm.conf.d/`). Takes effect on next reboot — script does not restart the DM, that would log the operator out mid-setup.
-- **Layer 2** (`enable-systemd`) installs `/etc/systemd/system/isidetector.service` that runs `docker compose up -d` from the install directory, ordered after `docker.service` + `network-online.target`. `User=` is set to the install-dir owner so settings.json file ownership stays consistent across systemd-managed and operator-managed runs.
-- **Layer 3** (`enable`) writes `~/.config/autostart/isidetector.desktop`, which the desktop session runs ~10 s after login. Auto-rewrites itself to use `up.sh --open-only` (skip compose, just wait + open Chrome) when Layer 2 is also installed, so the two layers don't race.
+The CLI is intentionally three commands. The script orchestrates the three internal layers in order:
+
+- **Layer 1 — OS auto-login.** Auto-detects the display manager and writes `AutomaticLogin=USER` to the right config (`/etc/gdm3/custom.conf`, LightDM `lightdm.conf.d/`, or SDDM `sddm.conf.d/`). On GDM3 also writes `WaylandEnable=false` so RustDesk's X11-only capture works. Takes effect on next reboot — script does not restart the DM, that would log the operator out mid-setup. GDM3 edits go through per-key incremental `sed` calls (one key per `-e`) plus post-edit verification with rollback to a `.pre-autostart-<timestamp>` backup — the old single-shot `sed "..a A\nB\nC"` corrupted custom.conf because bash double-quotes + sed's `a` command both refuse to expand `\n` into a newline.
+- **Layer 2 — boot-time compose.** Installs `/etc/systemd/system/isidetector.service` that runs `docker compose up -d` from the install directory, ordered after `docker.service` + `network-online.target`. `User=` is set to the install-dir owner so settings.json file ownership stays consistent across systemd-managed and operator-managed runs.
+- **Layer 3 — kiosk Chrome at login.** Writes `~/.config/autostart/isidetector.desktop` (resolved from the target user's home, not the script-invoker's `$HOME` — necessary because `sudo` flips `$HOME` to `/root`). Auto-rewrites itself to use `up.sh --open-only` (skip compose, just wait + open Chrome) when Layer 2 is also installed, so the two layers don't race.
+
+`disable` reverses in reverse-order (Layer 3 → Layer 2 → Layer 1). The Layer 1 restoration uses the most recent `.pre-autostart-*` backup if found, which preserves any extra `[daemon]` keys the original sysadmin had. The `.pre-autostart-*` suffix is distinct from `remote.sh`'s `.pre-remote-*`, so the two scripts coexist without clobbering each other's backups.
 
 Combined with the in-app **Settings → Camera → Auto-start stream on boot** toggle, the full hands-free path is: power on → ~30–40 s → kiosk Chrome on the dashboard with the stream running, zero clicks.
 

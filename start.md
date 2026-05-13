@@ -129,16 +129,22 @@ site PC once:
 ```bash
 cd ~/fps               # or ~/logistic — wherever the install lives
 
-sudo ./autostart.sh enable-autologin $USER   # Layer 1: OS skips the login screen
-sudo ./autostart.sh enable-systemd           # Layer 2: docker compose at boot via systemd
-./autostart.sh enable                        # Layer 3: kiosk Chrome opens at login
-
-./autostart.sh status                        # confirm all three are green
+sudo ./autostart.sh enable           # all three layers in one go
+./autostart.sh status                # confirm all three are green
+sudo reboot                          # apply the auto-login + X11 switch
 ```
 
-Each layer is independent and can be reverted with the matching
-`disable-*` subcommand. Together they take cold-boot-to-stream-running
-from "wait for kiosk + click Start" down to **~30–40 s with zero clicks**.
+The CLI is intentionally tiny — `enable`, `disable`, `status`. `enable`
+auto-escalates to sudo, auto-detects the target user from `$SUDO_USER`,
+and installs Layer 1 (auto-login) + Layer 2 (systemd) + Layer 3 (kiosk
+Chrome) in sequence. `disable` rolls all three back. Together they take
+cold-boot-to-stream-running from "wait for kiosk + click Start" down to
+**~30–40 s with zero clicks**.
+
+```bash
+sudo ./autostart.sh enable kiosk     # override target user explicitly
+sudo ./autostart.sh disable          # full rollback, restores GDM3 backup
+```
 
 ### What each layer does
 
