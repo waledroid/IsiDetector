@@ -67,7 +67,7 @@ cd "$SCRIPT_DIR"
 CODENAME=$(. /etc/os-release 2>/dev/null && echo "$VERSION_CODENAME" || echo "noble")
 
 # ── Stage 1: Detect Hardware & Platform ─────────────────────────────────────
-header "Stage 1/7 — Hardware & Platform Detection"
+header "Stage 1/8 — Hardware & Platform Detection"
 
 # Detect WSL
 IS_WSL=false
@@ -125,7 +125,7 @@ if [ -n "$FORCE_MODE" ]; then
 fi
 
 # ── Stage 2: Install Docker Engine ──────────────────────────────────────────
-header "Stage 2/7 — Docker Engine"
+header "Stage 2/8 — Docker Engine"
 
 # Check if Docker Engine (not Docker Desktop) is actually working
 DOCKER_OK=false
@@ -167,7 +167,7 @@ if [ "$DOCKER_OK" = false ]; then
 fi
 
 # ── Stage 3: Docker Service & Permissions ───────────────────────────────────
-header "Stage 3/7 — Docker Service & Permissions"
+header "Stage 3/8 — Docker Service & Permissions"
 
 # Start Docker daemon
 if sudo service docker status &>/dev/null 2>&1; then
@@ -216,7 +216,7 @@ else
 fi
 
 # ── Stage 4: NVIDIA Container Toolkit (GPU only) ───────────────────────────
-header "Stage 4/7 — Runtime Setup"
+header "Stage 4/8 — Runtime Setup"
 
 if [ "$HAS_GPU" = true ]; then
     if dpkg -l nvidia-container-toolkit &>/dev/null 2>&1; then
@@ -249,7 +249,7 @@ else
 fi
 
 # ── Stage 5: Verify Runtime ─────────────────────────────────────────────────
-header "Stage 5/7 — Runtime Verification"
+header "Stage 5/8 — Runtime Verification"
 
 if [ "$HAS_GPU" = true ]; then
     info "Testing GPU access inside Docker..."
@@ -270,8 +270,72 @@ else
     fi
 fi
 
+# ── Stage 5b: Docker build-container DNS preflight ──────────────────────────
+# Ubuntu 22.04+ ships systemd-resolved by default. /etc/resolv.conf becomes a
+# symlink to /run/systemd/resolve/stub-resolv.conf which contains only
+#   nameserver 127.0.0.53
+# Docker reads that file when constructing DNS for build containers. Inside
+# the container, 127.0.0.53 is the container's own loopback (no stub running
+# there), so DNS resolution fails. The very first apt-get in the Dockerfile
+# then bombs out with "Temporary failure resolving deb.debian.org" — the
+# operator sees a confusing error during stage 6 even though the host's own
+# internet works fine.
+#
+# Fix: probe DNS from inside a tiny container; if it fails, write
+# /etc/docker/daemon.json with explicit public DNS servers and restart
+# Docker so subsequent builds use them. Idempotent — re-running this script
+# sees the daemon.json already in place and skips the probe.
+header "Stage 5b/8 — Docker DNS Preflight"
+
+# If daemon.json already configured with dns: settings, trust it and skip.
+if [ -r /etc/docker/daemon.json ] && grep -qE '"dns"[[:space:]]*:' /etc/docker/daemon.json; then
+    success "Docker daemon DNS already configured in /etc/docker/daemon.json — skipping probe"
+else
+    info "Probing DNS from inside a build container (10 s timeout)..."
+    # Use a tiny image we know is present (or pull it ad-hoc) — keep timeout
+    # short so a misconfigured host doesn't hang the install forever.
+    if timeout 15 $SUDO_DOCKER docker run --rm debian:trixie-slim \
+            sh -c 'getent hosts deb.debian.org >/dev/null 2>&1' >/dev/null 2>&1; then
+        success "Docker build-container DNS is working — no fix needed"
+    else
+        warn "Docker build containers cannot resolve external hosts."
+        warn "  Cause: Ubuntu 22.04+ systemd-resolved stub at 127.0.0.53"
+        warn "  Fix:   writing /etc/docker/daemon.json with public DNS servers"
+        info "Backing up any existing daemon.json..."
+        if [ -f /etc/docker/daemon.json ]; then
+            sudo cp -a /etc/docker/daemon.json \
+                "/etc/docker/daemon.json.pre-run_start-$(date +%Y%m%d-%H%M%S)"
+        else
+            sudo mkdir -p /etc/docker
+        fi
+        # Write the minimal fix. If daemon.json already exists, the operator
+        # may have other settings worth preserving — we warn them above and
+        # backed up the file, but we still overwrite because merging JSON in
+        # bash safely is hard. Operator can re-merge from the backup if needed.
+        sudo tee /etc/docker/daemon.json > /dev/null <<'EOF'
+{
+  "dns": ["8.8.8.8", "1.1.1.1"]
+}
+EOF
+        info "Restarting Docker daemon to apply DNS config..."
+        sudo systemctl restart docker
+        sleep 2
+        info "Re-probing DNS to confirm the fix..."
+        if timeout 15 $SUDO_DOCKER docker run --rm debian:trixie-slim \
+                sh -c 'getent hosts deb.debian.org >/dev/null 2>&1' >/dev/null 2>&1; then
+            success "Docker build-container DNS now working (via 8.8.8.8 / 1.1.1.1)"
+        else
+            fail "DNS still broken after daemon.json fix. Manual investigation needed."
+            fail "  Try:  sudo cat /etc/docker/daemon.json"
+            fail "        sudo journalctl -u docker -n 50"
+            fail "        getent ahosts deb.debian.org   (verify host itself can resolve)"
+            exit 1
+        fi
+    fi
+fi
+
 # ── Stage 6: Build & Launch IsiDetector ─────────────────────────────────────
-header "Stage 6/7 — Build & Launch IsiDetector"
+header "Stage 6/8 — Build & Launch IsiDetector"
 
 info "Project directory: ${REPO_ROOT}"
 
@@ -316,7 +380,7 @@ $COMPOSE_CMD build
 success "Docker image ready"
 
 # ── Stage 7: X11 / GUI Check ────────────────────────────────────────────────
-header "Stage 7/7 — GUI Display Check"
+header "Stage 8/8 — GUI Display Check"
 
 if [ "$HAS_X11" = true ]; then
     success "X11 forwarding enabled — cv2.imshow() will work inside container"
