@@ -478,59 +478,6 @@ EOF
     echo "  logging you out mid-setup."
 }
 
-_gdm3_looks_corrupted() {
-    # Signature of the historical sed-escape bug: literal `\n` chars on
-    # a value line, e.g.
-    #   WaylandEnable=false\nAutomaticLoginEnable=true\nAutomaticLogin=user
-    # When this is present, the file is unparseable by GDM3 and the login
-    # screen breaks. Detect it so disable() can recover even when no
-    # .pre-autostart-* backup exists (which is the typical case for systems
-    # corrupted by the OLD autostart.sh before the sed-escape fix landed).
-    local conf="${1:-/etc/gdm3/custom.conf}"
-    [[ -f "$conf" ]] || return 1
-    # Look for the literal two-char escape `\n` inside any line that
-    # belongs to one of the keys we manage.
-    grep -qE '(WaylandEnable|AutomaticLogin[A-Za-z]*)=[^=]*\\n' "$conf" 2>/dev/null
-}
-
-_gdm3_write_stock() {
-    # Ubuntu's stock /etc/gdm3/custom.conf as shipped with the gdm3 package
-    # on 22.04 / 24.04. Used as the "ultimate fallback" when neither a
-    # .pre-autostart-* nor .pre-remote-* backup is available AND the file
-    # is detected as corrupted by the legacy sed-escape bug.
-    local conf="${1:-/etc/gdm3/custom.conf}"
-    cat > "$conf" <<'STOCK'
-# GDM configuration storage
-#
-# See /usr/share/gdm/gdm.schemas for a list of available options.
-
-[daemon]
-# Uncoment the line below to force the login screen to use Xorg
-#WaylandEnable=false
-
-# Enabling automatic login
-#  AutomaticLoginEnable = true
-#  AutomaticLogin = user1
-
-# Enabling timed login
-#  TimedLoginEnable = true
-#  TimedLogin = user1
-#  TimedLoginDelay = 10
-
-[security]
-
-[xdmcp]
-
-[chooser]
-
-[debug]
-# Uncomment the line below to turn on debugging
-# More verbose logs
-# Additionally lets the X server dump core if it crashes
-#Enable=true
-STOCK
-}
-
 cmd_disable_autologin() {
     need_root "disable-autologin"
     local dm
@@ -546,23 +493,10 @@ cmd_disable_autologin() {
             if [[ -n "$newest_backup" && -r "$newest_backup" ]]; then
                 cp -a "$newest_backup" "$conf"
                 echo "✓ Restored $conf from $newest_backup"
-            elif _gdm3_looks_corrupted "$conf"; then
-                # Corruption from the legacy sed-escape bug AND no backup we
-                # can use to revert. Quarantine the broken file + write the
-                # Ubuntu stock contents. This recovers a site PC from a
-                # state where the login screen is broken.
-                local quar="${conf}.corrupted-$(date +%Y%m%d-%H%M%S)"
-                cp -a "$conf" "$quar" 2>/dev/null && echo "  quarantine: $quar"
-                _gdm3_write_stock "$conf"
-                echo "✓ $conf was corrupted; restored Ubuntu stock content"
-                echo "  (legacy sed-escape bug; the OLD autostart.sh wrote a"
-                echo "   malformed line with literal \\n. The current code does"
-                echo "   not exhibit this; you can re-run './autostart.sh enable'"
-                echo "   safely now.)"
             elif [[ -f "$conf" ]]; then
-                # File looks healthy, no backup → surgical strip of
-                # AutomaticLogin* lines only. Leave WaylandEnable= alone;
-                # that key is co-owned with remote.sh.
+                # No backup found → surgical strip of AutomaticLogin* lines
+                # only. Leave WaylandEnable= alone; that key is co-owned with
+                # remote.sh, which has its own .pre-remote-* backups.
                 sed -i -E \
                     -e '/^[[:space:]]*AutomaticLoginEnable[[:space:]]*=/d' \
                     -e '/^[[:space:]]*AutomaticLogin[[:space:]]*=/d' \
