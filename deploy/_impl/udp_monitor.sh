@@ -196,18 +196,15 @@ cmd_watch() {
     echo "  Press Ctrl+C to stop. Final summary prints on exit."
     echo ""
 
-    # `-i any` listens on every interface (incl. loopback); `-l` = line-buffered;
-    # `-tttt` = full timestamp; `-A` = ASCII payload after the header.
-    tcpdump -i any -l -n -tttt -A "udp port $port" 2>/dev/null \
-        | _pretty_print_loop
-}
-
-# Pretty-printer: tcpdump emits one "header" line per packet followed by 0+
-# payload lines (with mixed binary header bytes + ASCII JSON payload). We
-# accumulate per-packet, extract the JSON, and emit one coloured line.
-_pretty_print_loop() {
-    python3 - "$TARGET_SRC" "$TARGET_IPV4" "$TARGET_PORT" \
-              "$GREEN" "$BLUE" "$YELLOW" "$NC" <<'PYEOF'
+    # Write the python parser to a tempfile and pass it as a script arg.
+    # CRITICAL: do NOT use `python3 - <<EOF` here — that heredoc claims
+    # stdin, so the pipe from tcpdump is shadowed and python's `for raw
+    # in sys.stdin` reads zero lines, exits, kills tcpdump via SIGPIPE.
+    # That was the "stops after a few seconds" bug.
+    local pyscript; pyscript=$(mktemp -t udp_monitor.XXXXXX.py)
+    # shellcheck disable=SC2064
+    trap "rm -f '$pyscript'" RETURN
+    cat > "$pyscript" <<'PYEOF'
 import sys, re, time
 
 our_ip   = sys.argv[1]
@@ -290,6 +287,25 @@ finally:
     print(f"    IN  (to us):     {in_count}")
     print(f"    OTHER:           {other_count}")
 PYEOF
+
+    # Echo the exact tcpdump invocation so on-site debugging is reproducible.
+    info "tcpdump filter: udp port ${port}  (interfaces: any)"
+    info "if no packets appear during streaming, try one of these alternatives:"
+    info "    sudo tcpdump -i docker0 -n -A 'udp port ${port}'"
+    info "    sudo tcpdump -i any -n -A 'host ${TARGET_IPV4}'   (any port)"
+    info "    sudo nsenter -t \$(docker inspect -f '{{.State.Pid}}' deploy-web-1) -n tcpdump -i any 'udp port ${port}'"
+    echo ""
+
+    # `-i any` listens on every interface (incl. loopback) — including the
+    # docker0 bridge where container-originated packets first appear.
+    # `-l` = line-buffered (matters when piping). `-tttt` = full timestamp.
+    # `-A` = ASCII payload (we grep the JSON out of it in the parser).
+    # tcpdump's stderr is NOT suppressed so the operator sees its startup
+    # banner ("listening on any, link-type LINUX_SLL2, snapshot length …")
+    # — useful to confirm the right interface set is active.
+    tcpdump -i any -l -n -tttt -A "udp port $port" \
+        | python3 "$pyscript" "$TARGET_SRC" "$TARGET_IPV4" "$TARGET_PORT" \
+                  "$GREEN" "$BLUE" "$YELLOW" "$NC"
 }
 
 # ── cmd: test ───────────────────────────────────────────────────────────────
