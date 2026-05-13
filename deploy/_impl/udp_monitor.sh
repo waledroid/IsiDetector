@@ -19,10 +19,16 @@
 
 set -u
 
-# ── Colour helpers (mirrors net.sh / remote.sh / cam_status.sh) ─────────────
+# ── Colour helpers ──────────────────────────────────────────────────────────
+# CRITICAL: these MUST be defined with `$'...'` ANSI-C quoting so the
+# variables contain actual ESC (0x1B) bytes, not the 4-char literal `\033`.
+# The python pretty-printer receives these as argv strings; if they were
+# literal `\033...` python would `print` them verbatim and the terminal
+# wouldn't interpret them as colour codes. The shell `echo -e` helpers below
+# happen to work with either form because echo re-interprets at output time.
 if [ -t 1 ]; then
-    GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BLUE='\033[0;34m'
-    RED='\033[0;31m';   BOLD='\033[1m';     NC='\033[0m'
+    GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; CYAN=$'\033[0;36m'; BLUE=$'\033[0;34m'
+    RED=$'\033[0;31m';   BOLD=$'\033[1m';     NC=$'\033[0m'
 else
     GREEN=''; YELLOW=''; CYAN=''; BLUE=''; RED=''; BOLD=''; NC=''
 fi
@@ -341,13 +347,28 @@ PYEOF
     # Echo the exact tcpdump invocation so on-site debugging is reproducible.
     info "tcpdump filter: udp port ${port}  (interfaces: any)"
     info "if no packets appear during streaming, try one of these alternatives:"
-    # Detect the compose-stack bridge automatically (docker-compose creates a
-    # bridge named br-<network_id_prefix> for the project, NOT docker0).
-    local bridge_name
-    bridge_name=$(ip -o link show type bridge 2>/dev/null \
-        | awk -F': ' '/^[0-9]+:[[:space:]]*(br-|docker)/ {print $2; exit}')
+    # Auto-detect the compose-stack bridge. docker-compose creates a bridge
+    # named br-<network-id-prefix> per project — distinct from the default
+    # docker0 bridge. Prefer the project bridge (where the running container
+    # actually lives) over docker0 (typically unused by our stack).
+    local bridge_name=""
+    if command -v docker >/dev/null 2>&1; then
+        bridge_name=$(docker inspect deploy-web-1 2>/dev/null \
+            | grep -oE '"NetworkID"[[:space:]]*:[[:space:]]*"[^"]+"' \
+            | head -1 | cut -d'"' -f4 | cut -c1-12)
+        [ -n "$bridge_name" ] && bridge_name="br-${bridge_name}"
+        # Verify the named bridge actually exists locally before suggesting it
+        if [ -n "$bridge_name" ] && ! ip link show "$bridge_name" >/dev/null 2>&1; then
+            bridge_name=""
+        fi
+    fi
+    # Fall back to listing bridges and preferring br-* over docker0
+    if [ -z "$bridge_name" ]; then
+        bridge_name=$(ip -o link show type bridge 2>/dev/null \
+            | awk -F': ' '$2 ~ /^br-/ {print $2; exit}')
+    fi
     if [ -n "$bridge_name" ]; then
-        info "    sudo tcpdump -i ${bridge_name} -n -A 'udp port ${port}'    (compose bridge, auto-detected)"
+        info "    sudo tcpdump -i ${bridge_name} -n -A 'udp port ${port}'    (compose bridge for deploy-web-1)"
     fi
     info "    sudo tcpdump -i any -n -A 'host ${TARGET_IPV4}'    (any port)"
     info "    sudo nsenter -t \$(docker inspect -f '{{.State.Pid}}' deploy-web-1) -n tcpdump -i any 'udp port ${port}'"
