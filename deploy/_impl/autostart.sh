@@ -590,6 +590,228 @@ cmd_status() {
     echo ""
     echo "  Recommended on a real site PC: all three enabled. See --help."
     echo ""
+
+    # System diagnostics for on-site troubleshooting — printed after the
+    # three-layer summary so the operator always has a copy-pasteable
+    # snapshot to share when something's broken.
+    _run_diagnostics
+}
+
+# ── Diagnostics helpers ────────────────────────────────────────────────────
+# Safe wrappers: never let a missing command or non-zero exit bubble out
+# and break the status output. Each returns a placeholder on failure.
+_safe() {
+    local out
+    if out="$("$@" 2>/dev/null)" && [[ -n "$out" ]]; then
+        echo "$out"
+    else
+        echo "(unavailable)"
+    fi
+}
+
+_session_type() {
+    # Same logic remote.sh uses: env var → loginctl probe → process scan.
+    if [[ -n "${XDG_SESSION_TYPE:-}" ]]; then
+        echo "$XDG_SESSION_TYPE"; return
+    fi
+    if command -v loginctl >/dev/null 2>&1; then
+        local user="${SUDO_USER:-$USER}"
+        local sid
+        sid="$(loginctl show-user "$user" -p Display --value 2>/dev/null)"
+        if [[ -n "$sid" ]]; then
+            local t
+            t="$(loginctl show-session "$sid" -p Type --value 2>/dev/null)"
+            [[ -n "$t" ]] && { echo "$t"; return; }
+        fi
+    fi
+    if pgrep -x Xwayland >/dev/null 2>&1; then echo "wayland"
+    elif pgrep -x Xorg >/dev/null 2>&1; then    echo "x11"
+    else                                         echo "unknown"
+    fi
+}
+
+_distro_pretty() {
+    # PRETTY_NAME from /etc/os-release: e.g. "Ubuntu 22.04.4 LTS".
+    [[ -r /etc/os-release ]] || { echo "unknown"; return; }
+    awk -F= '/^PRETTY_NAME=/{gsub(/"/,"",$2); print $2; exit}' /etc/os-release
+}
+
+_run_diagnostics() {
+    echo "─── System diagnostics ────────────────────────────────────────────"
+    echo ""
+
+    # ── System ─────────────────────────────────────────────────────────────
+    echo "System:"
+    printf "  Distro:        %s\n" "$(_distro_pretty)"
+    printf "  Kernel:        %s\n" "$(_safe uname -srm)"
+    printf "  Uptime:        %s\n" "$(_safe uptime -p)"
+    printf "  Boot time:     %s\n" "$(_safe who -b | awk '{print $3, $4}')"
+    printf "  Time now:      %s\n" "$(date '+%Y-%m-%d %H:%M:%S %z')"
+    echo ""
+
+    # ── User & session ─────────────────────────────────────────────────────
+    echo "User & session:"
+    local cur_user target_user_resolved sess dm_detected
+    cur_user="$(id -un 2>/dev/null) (uid $(id -u 2>/dev/null))"
+    target_user_resolved="$(resolve_target_user "" 2>/dev/null || echo '(not detectable)')"
+    sess="$(_session_type)"
+    dm_detected="$(detect_dm)"
+    printf "  Current user:  %s\n" "$cur_user"
+    printf "  Target user:   %s\n" "$target_user_resolved"
+    printf "  Session type:  %s\n" "$sess"
+    if [[ "$sess" = "wayland" ]]; then
+        printf "                 ⚠ Wayland active — RustDesk capture is broken.\n"
+        printf "                   Reboot after './autostart.sh enable' or\n"
+        printf "                   './remote.sh setup' to land in X11.\n"
+    fi
+    printf "  Display mgr:   %s\n" "${dm_detected:-not detected}"
+    echo ""
+
+    # ── Resources ──────────────────────────────────────────────────────────
+    echo "Resources:"
+    if command -v df >/dev/null 2>&1; then
+        df -h / 2>/dev/null | awk 'NR==2 {printf "  Disk /:        %s used / %s total (%s)\n", $3, $2, $5}'
+    fi
+    if command -v free >/dev/null 2>&1; then
+        free -h 2>/dev/null | awk '/^Mem:/ {printf "  RAM:           %s used / %s total\n", $3, $2}'
+    fi
+    if [[ -r /proc/loadavg ]]; then
+        printf "  Load (1/5/15): %s\n" "$(awk '{print $1, $2, $3}' /proc/loadavg)"
+    fi
+    echo ""
+
+    # ── Network ────────────────────────────────────────────────────────────
+    echo "Network:"
+    printf "  Hostname:      %s\n" "$(_safe hostname)"
+    # IPv4 per interface, excluding loopback / docker / virtual bridges.
+    if command -v ip >/dev/null 2>&1; then
+        local nic_list
+        nic_list="$(ip -4 -o addr show 2>/dev/null \
+            | awk '{print $2, $4}' \
+            | awk '$1 !~ /^(lo|docker|br-|veth|tailscale)/ {printf "                 %s → %s\n", $1, $2}')"
+        if [[ -n "$nic_list" ]]; then
+            echo "  IPv4 NICs:"
+            echo "$nic_list"
+        else
+            echo "  IPv4 NICs:     (none non-virtual found)"
+        fi
+    fi
+    # Internet reachability — TCP/443 to a stable endpoint, then a ping fallback.
+    local internet="(unknown)"
+    if curl -sS -m 4 -o /dev/null -w "%{http_code}" https://1.1.1.1/ 2>/dev/null | grep -qE '^(2|3)..'; then
+        internet="reachable (HTTPS)"
+    elif ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+        internet="reachable (ICMP)"
+    else
+        internet="UNREACHABLE"
+    fi
+    printf "  Internet:      %s\n" "$internet"
+    # DNS — try to resolve github.com (we'll hit it during ./remote.sh setup).
+    if getent hosts github.com >/dev/null 2>&1; then
+        printf "  DNS:           working (github.com resolves)\n"
+    else
+        printf "  DNS:           NOT RESOLVING github.com\n"
+    fi
+    echo ""
+
+    # ── Docker stack ──────────────────────────────────────────────────────
+    echo "Docker stack:"
+    if command -v docker >/dev/null 2>&1; then
+        if systemctl is-active --quiet docker 2>/dev/null; then
+            printf "  Daemon:        active\n"
+        else
+            printf "  Daemon:        NOT ACTIVE\n"
+        fi
+        # Image present?
+        local img_line
+        img_line="$(docker images --format '{{.Repository}}:{{.Tag}} ({{.Size}}, {{.CreatedSince}})' isitec-visionai 2>/dev/null | head -1)"
+        if [[ -n "$img_line" ]]; then
+            printf "  Image:         %s\n" "$img_line"
+        else
+            printf "  Image:         isitec-visionai not built yet (run ./up.sh)\n"
+        fi
+        # Container state via compose -p deploy.
+        local web_state
+        web_state="$(docker ps --filter 'name=deploy-web-1' --format '{{.Names}} → {{.Status}}' 2>/dev/null | head -1)"
+        if [[ -n "$web_state" ]]; then
+            printf "  Web container: %s\n" "$web_state"
+        else
+            printf "  Web container: not running\n"
+        fi
+        # Which backend (Flask vs FastAPI)?
+        if [[ -n "$web_state" ]]; then
+            local backend
+            backend="$(docker exec deploy-web-1 sh -c 'echo ${WEB_BACKEND:-flask}' 2>/dev/null)"
+            printf "  Backend:       %s\n" "${backend:-unknown}"
+            local mode_line
+            mode_line="$(docker exec deploy-web-1 sh -c 'echo ${COMPOSE_MODE:-cpu}' 2>/dev/null)"
+            printf "  Compose mode:  %s\n" "${mode_line:-unknown}"
+        fi
+        # Port 9501 listening?
+        if command -v ss >/dev/null 2>&1; then
+            if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ':9501$'; then
+                printf "  Port 9501:     listening\n"
+            else
+                printf "  Port 9501:     NOT listening\n"
+            fi
+        fi
+    else
+        printf "  Docker not installed\n"
+    fi
+    echo ""
+
+    # ── Remote access ─────────────────────────────────────────────────────
+    echo "Remote access:"
+    if command -v tailscale >/dev/null 2>&1; then
+        local ts_ip ts_status
+        ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+        if [[ -n "$ts_ip" ]]; then
+            printf "  Tailscale:     connected — IP %s\n" "$ts_ip"
+        elif tailscale status >/dev/null 2>&1; then
+            printf "  Tailscale:     installed but no IPv4 (check admin/machines for pending approval)\n"
+        else
+            printf "  Tailscale:     installed but logged out\n"
+        fi
+    else
+        printf "  Tailscale:     not installed\n"
+    fi
+    if systemctl is-active --quiet rustdesk.service 2>/dev/null; then
+        printf "  RustDesk:      service active\n"
+        # State file written by remote.sh setup
+        if [[ -r /var/log/isidetector/remote-state.json ]]; then
+            local rd_id
+            rd_id="$(grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]*"' /var/log/isidetector/remote-state.json | head -1 | sed -E 's/.*"id"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')"
+            [[ -n "$rd_id" ]] && printf "  RustDesk ID:   %s (from /var/log/isidetector/remote-state.json)\n" "$rd_id"
+        fi
+    elif command -v rustdesk >/dev/null 2>&1; then
+        printf "  RustDesk:      installed but service not active\n"
+    else
+        printf "  RustDesk:      not installed\n"
+    fi
+    echo ""
+
+    # ── Display config (GDM3 only — most common case) ─────────────────────
+    if [[ -r /etc/gdm3/custom.conf ]]; then
+        echo "GDM3 custom.conf (key lines):"
+        # Show the keys we manage; flag missing/wrong ones inline.
+        for key in AutomaticLogin AutomaticLoginEnable WaylandEnable; do
+            local line
+            line="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" /etc/gdm3/custom.conf 2>/dev/null | head -1)"
+            if [[ -n "$line" ]]; then
+                printf "  ✓ %s\n" "$line"
+            else
+                printf "  ✗ %s= (missing)\n" "$key"
+            fi
+        done
+        local bk_autostart_n bk_remote_n
+        bk_autostart_n="$(ls /etc/gdm3/custom.conf.pre-autostart-* 2>/dev/null | wc -l)"
+        bk_remote_n="$(ls /etc/gdm3/custom.conf.pre-remote-* 2>/dev/null | wc -l)"
+        printf "  Backups:       %s autostart + %s remote\n" "$bk_autostart_n" "$bk_remote_n"
+        echo ""
+    fi
+
+    echo "─── End diagnostics ───────────────────────────────────────────────"
+    echo ""
 }
 
 # ── Subcommand dispatch ────────────────────────────────────────────────────
