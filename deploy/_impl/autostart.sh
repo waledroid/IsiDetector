@@ -264,15 +264,59 @@ cmd_enable_autologin() {
             local conf="/etc/gdm3/custom.conf"
             mkdir -p "$(dirname "$conf")"
             touch "$conf"
-            # Strip any prior AutomaticLogin* lines, then write fresh ones
-            # under the [daemon] section.
-            sed -i '/^AutomaticLoginEnable=/d; /^AutomaticLogin=/d' "$conf"
-            if grep -q '^\[daemon\]' "$conf"; then
-                sed -i "/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=$target_user" "$conf"
-            else
-                printf "\n[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=%s\n" "$target_user" >> "$conf"
+
+            # 1. Backup once with a timestamp suffix. Suffix `.pre-autostart-*`
+            #    is distinct from remote.sh's `.pre-remote-*` so both scripts'
+            #    backups coexist without overwriting each other.
+            local backup="${conf}.pre-autostart-$(date +%Y%m%d-%H%M%S)"
+            cp -a "$conf" "$backup" 2>/dev/null \
+                && echo "  backup: $backup" \
+                || echo "  ⚠ could not create backup; continuing"
+
+            # 2. Strip every variant of the keys we manage. Each pattern is its
+            #    own sed expression — no embedded newlines, no shell-escape
+            #    gymnastics that bit us before.
+            sed -i -E \
+                -e '/^[[:space:]]*AutomaticLoginEnable[[:space:]]*=/d' \
+                -e '/^[[:space:]]*AutomaticLogin[[:space:]]*=/d' \
+                -e '/^[[:space:]]*WaylandEnable[[:space:]]*=/d' \
+                -e '/^[[:space:]]*#[[:space:]]*WaylandEnable[[:space:]]*=/d' \
+                "$conf"
+
+            # 3. Make sure [daemon] exists. printf DOES interpret \n correctly
+            #    (unlike sed's `a` command — the historical bug here was that
+            #    bash double-quotes don't expand \n into newlines either, so
+            #    a one-shot `sed -i ".../a A\nB\nC"` wrote one long line with
+            #    literal backslash-n separators, breaking GDM3's parser).
+            if ! grep -qE '^[[:space:]]*\[daemon\]' "$conf"; then
+                printf '\n[daemon]\n' >> "$conf"
             fi
-            echo "✓ GDM3 auto-login set for '$target_user' in $conf"
+
+            # 4. Insert each key on its own line — one `sed -i ...a LINE` per
+            #    key, no embedded newlines. Works on every GNU sed we'll meet.
+            #    Keys land in reverse insertion order under [daemon]; GDM3
+            #    parses by key, not file position, so ordering doesn't matter.
+            for kv in \
+                "WaylandEnable=false" \
+                "AutomaticLoginEnable=true" \
+                "AutomaticLogin=$target_user"; do
+                sed -i "/^\[daemon\]/a ${kv}" "$conf"
+            done
+
+            # 5. Post-edit verification. If any expected line is missing or
+            #    malformed, restore from backup rather than leave a corrupted
+            #    custom.conf behind (which would break the login screen).
+            if grep -qE '^WaylandEnable=false$' "$conf" \
+               && grep -qE '^AutomaticLoginEnable=true$' "$conf" \
+               && grep -qE "^AutomaticLogin=${target_user}$" "$conf"; then
+                echo "✓ GDM3 auto-login set for '$target_user' in $conf (Wayland disabled for RustDesk)"
+            else
+                echo "  ⚠ post-edit verification failed — restoring from $backup"
+                cp -a "$backup" "$conf" 2>/dev/null
+                echo "✗ GDM3 custom.conf edit failed; inspect manually:"
+                echo "    sudo cat $conf"
+                return 1
+            fi
             ;;
         lightdm)
             local conf="/etc/lightdm/lightdm.conf.d/50-isidetector-autologin.conf"
@@ -309,9 +353,23 @@ cmd_disable_autologin() {
     case "$dm" in
         gdm3)
             local conf="/etc/gdm3/custom.conf"
-            if [[ -f "$conf" ]]; then
-                sed -i '/^AutomaticLoginEnable=/d; /^AutomaticLogin=/d' "$conf"
-                echo "✓ Removed AutomaticLogin entries from $conf"
+            # Prefer restoring from the most recent .pre-autostart-* backup —
+            # cleanest revert path, also recovers any [daemon] keys the
+            # original sysadmin had that we stripped on enable.
+            local newest_backup
+            newest_backup=$(ls -t "${conf}".pre-autostart-* 2>/dev/null | head -1)
+            if [[ -n "$newest_backup" && -r "$newest_backup" ]]; then
+                cp -a "$newest_backup" "$conf"
+                echo "✓ Restored $conf from $newest_backup"
+            elif [[ -f "$conf" ]]; then
+                # No backup found → surgical strip of AutomaticLogin* lines
+                # only. Leave WaylandEnable= alone; that key is co-owned with
+                # remote.sh, which has its own .pre-remote-* backups.
+                sed -i -E \
+                    -e '/^[[:space:]]*AutomaticLoginEnable[[:space:]]*=/d' \
+                    -e '/^[[:space:]]*AutomaticLogin[[:space:]]*=/d' \
+                    "$conf"
+                echo "✓ Removed AutomaticLogin entries from $conf (WaylandEnable left intact)"
             fi
             ;;
         lightdm)
