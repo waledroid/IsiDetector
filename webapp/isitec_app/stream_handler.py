@@ -36,6 +36,25 @@ from isitec_app.performance_monitor import PerformanceMonitor
 logger = logging.getLogger("IsiDetector-Web")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Recursively merge ``overlay`` into a copy of ``base``.
+
+    Dict subtrees are merged (not wholesale-replaced); overlay wins on leaf
+    conflicts. Neither input is mutated. Used to combine train.yaml's config
+    with the mode-driven inference_config so train.yaml-only subtrees (e.g.
+    ``inference.logging``) survive the overlay instead of being clobbered by
+    a shallow ``{**a, **b}`` spread.
+    """
+    import copy
+    out = copy.deepcopy(base)
+    for k, v in (overlay or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+    return out
+
 class UDPPublisher:
     """Broadcasts line-crossing events via UDP to the sorting machine controller.
 
@@ -1003,8 +1022,11 @@ class StreamHandler:
                 base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
                 # Merge mode-driven inference_config (bytetrack thresholds etc.)
                 # under self.config so VisionEngine sees both the train.yaml
-                # bits (logging) and the runtime mode bits.
-                ve_config = {**self.config, **(self.inference_config or {})}
+                # bits (logging) and the runtime mode bits. DEEP merge: a shallow
+                # {**a, **b} would let inference_config's `inference` block wholesale-
+                # replace train.yaml's, dropping inference.logging.log_dir and sending
+                # event CSVs to the wrong dir (read/write path mismatch → empty exports).
+                ve_config = _deep_merge(self.config, self.inference_config or {})
                 self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._apply_line_settings(self.engine)
                 self._apply_render_settings(self.engine)
