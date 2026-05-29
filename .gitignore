@@ -6,6 +6,14 @@
 # ── isidet/ bucket — ML core, mostly large artefacts ────────────────────────
 /isidet/data/
 /isidet/logs/
+# Ship the events/ dir as the bind-mount source (so docker compose mounts a
+# real host dir, not a root-owned auto-created one) WITHOUT tracking the
+# per-day event CSVs themselves. Layered re-include chain, same style as runs/.
+!/isidet/logs/
+/isidet/logs/*
+!/isidet/logs/events/
+/isidet/logs/events/*
+!/isidet/logs/events/.gitkeep
 
 # runs/ — exclude all training artefacts EXCEPT one specific trained model
 # run we ship with the deploy branch so a single `git clone` gives the

@@ -15,6 +15,11 @@ services:
       - ../isidet/models:/opt/isitec/isidet/models
       - ../isidet/runs:/opt/isitec/isidet/runs
       - ../isidet/configs:/opt/isitec/isidet/configs
+      # Persist the per-crossing event CSVs (isidet/logs/events/) on the host so
+      # they survive container recreation (down/up, rebuild, reboot). Without
+      # this they live only in the container's writable layer and are wiped on
+      # restart — the audit trail the automaticien's loss disputes depend on.
+      - ../isidet/logs:/opt/isitec/isidet/logs
       - ../webapp/isitec_app/logs:/opt/isitec/webapp/isitec_app/logs
       - ../webapp/isitec_app/uploads:/opt/isitec/webapp/isitec_app/uploads
       - ../webapp/isitec_app/settings.json:/opt/isitec/webapp/isitec_app/settings.json
