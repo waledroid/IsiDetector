@@ -371,7 +371,7 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
     if 'udp_host' in request_body or 'udp_port' in request_body:
         try:
             stream_handler.publisher.update_target(
-                current.get('udp_host', '127.0.0.1'),
+                current.get('udp_host', '10.0.0.1'),
                 int(current.get('udp_port', 9502)),
             )
         except Exception:

@@ -87,7 +87,7 @@ Write-Host "══════════════════════�
 Write-Host ""
 Write-Host "  Dashboard:    http://localhost:9501"
 Write-Host "  Docs:         http://localhost:9501/docs"
-Write-Host "  UDP Target:   127.0.0.1:9502"
+Write-Host "  UDP Target:   10.0.0.1:9502"
 Write-Host ""
 Write-Host "  Drop model weights into:" -ForegroundColor DarkCyan
 Write-Host "    $RepoRoot\isidet\models\" -ForegroundColor DarkCyan

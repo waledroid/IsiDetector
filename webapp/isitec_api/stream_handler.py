@@ -39,9 +39,9 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 class UDPPublisher:
     """Broadcasts line-crossing events via UDP to the sorting machine controller.
 
-    Fires a ~60-byte JSON datagram on every line-crossing event::
+    Fires a ~70-byte JSON datagram on every line-crossing event::
 
-        {"class": "carton", "ts": "2026-03-31T14:23:45.312847"}
+        {"class": "carton", "seq": 17, "id": 42, "ts": "2026-03-31T14:23:45.312847"}
 
     A single UDP socket is created at construction and reused for
     every event — no connection overhead per datagram.
@@ -49,9 +49,22 @@ class UDPPublisher:
     The target can be re-pointed at runtime via :meth:`update_target`
     without restarting the stream (``POST /api/udp``).
 
+    The payload carries two distinct counters — do not confuse them:
+
+    - ``seq`` is a monotonic per-publisher datagram counter that
+      increments by exactly 1 on every emitted datagram. It is
+      **gap-free by construction**, so any gap the receiver sees in
+      ``seq`` is a genuinely dropped/lost datagram — the metric to
+      measure transport loss against.
+    - ``id`` is the ByteTrack *tracker ID* of the crossing object. It
+      is **not** sequential: ByteTrack assigns IDs to every tracked
+      object (including ones that never cross the line), so ``id`` gaps
+      are normal and do **not** indicate loss. Use it only for dedup /
+      tracing individual objects.
+
     Args:
         host: IP address of the sorting controller. Defaults to
-            ``"127.0.0.1"`` (same machine).
+            ``"10.0.0.1"`` (the canonical site PLC target).
         port: UDP port the controller is listening on. Defaults to
             ``9502``.
         enabled: Set ``False`` to disable all publishing without
@@ -62,22 +75,26 @@ class UDPPublisher:
     1. ``POST /api/udp`` at runtime.
     2. ``UDP_HOST`` / ``UDP_PORT`` environment variables.
     3. ``isidet/configs/train.yaml`` → ``inference.udp.host / port``.
-    4. Hardcoded defaults (``127.0.0.1:9502``).
+    4. Hardcoded defaults (``10.0.0.1:9502``).
     """
 
-    def __init__(self, host="127.0.0.1", port=9502, enabled=True):
+    def __init__(self, host="10.0.0.1", port=9502, enabled=True):
         self.host = host
         self.port = port
         self.enabled = enabled
+        self._seq = 0   # monotonic datagram counter — gap-free by construction
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def publish(self, class_name, event_id=None):
         """Emit one UDP datagram per line-crossing event.
 
-        Optional ``event_id`` (tracker ID) is included in the payload as
-        ``"id"`` so the sorter can dedupe and trace individual objects.
-        Omitted when ``None`` — backward-compatible with consumers that
-        only read ``class``.
+        Every datagram carries a monotonic ``seq`` (increments by 1 per
+        emitted datagram, gap-free) so the receiver can detect genuinely
+        lost datagrams. Optional ``event_id`` (ByteTrack tracker ID) is
+        included as ``"id"`` for dedup / tracing — it is **not**
+        sequential, so do not use ``id`` gaps to infer loss. Omitted when
+        ``None`` — backward-compatible with consumers that only read
+        ``class``.
 
         Returns:
             Trigger-to-wire latency in nanoseconds (JSON encode +
@@ -89,8 +106,10 @@ class UDPPublisher:
         if not self.enabled:
             return 0
         t0 = time.perf_counter_ns()
+        self._seq += 1   # increment per emitted datagram so the receiver can spot real loss
         msg = {
             "class": str(class_name),
+            "seq": self._seq,
             "ts": datetime.datetime.now().isoformat(),
         }
         if event_id is not None:
@@ -344,9 +363,9 @@ class StreamHandler:
         #   1. settings.json (operator-edited from Settings UI; persists)
         #   2. UDP_HOST / UDP_PORT env vars (compose / .env)
         #   3. train.yaml inference.udp.host / port
-        #   4. Hardcoded default 127.0.0.1:9502
+        #   4. Hardcoded default 10.0.0.1:9502
         udp_cfg = self.config.get('inference', {}).get('udp', {})
-        env_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '127.0.0.1'))
+        env_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '10.0.0.1'))
         env_port = int(os.environ.get('UDP_PORT', udp_cfg.get('port', 9502)))
         udp_host, udp_port = env_host, env_port
         try:

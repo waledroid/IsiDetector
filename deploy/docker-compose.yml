@@ -31,7 +31,7 @@ services:
       - TZ=Europe/Paris
       - DEV_PASSWORD=${DEV_PASSWORD:-change-me}
       - PORT=9501
-      - UDP_HOST=127.0.0.1
+      - UDP_HOST=10.0.0.1
       - UDP_PORT=9502
       - CUDA_MODULE_LOADING=LAZY
       # COMPOSE_MODE = cpu | gpu, sourced from deploy/.deployment.env (written

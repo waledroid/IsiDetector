@@ -1293,7 +1293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         const udpHostEl = document.getElementById('set_udp_host');
-        if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '127.0.0.1';
+        if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '10.0.0.1';
         const udpPortEl = document.getElementById('set_udp_port');
         if (udpPortEl) udpPortEl.value = serverSettings.udp_port ?? 9502;
 

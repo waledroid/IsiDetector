@@ -279,7 +279,7 @@ def settings():
     if 'udp_host' in data or 'udp_port' in data:
         try:
             stream_handler.publisher.update_target(
-                current.get('udp_host', '127.0.0.1'),
+                current.get('udp_host', '10.0.0.1'),
                 int(current.get('udp_port', 9502)),
             )
         except Exception:

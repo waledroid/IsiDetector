@@ -64,11 +64,12 @@ Run from `~/fps` on the dev box. CPU mode (`COMPOSE_MODE=cpu`) reflects the real
 
 ## 7. UDP sort triggers
 
-- [ ] Settings → Sorter → UDP host/port editable + persists
+- [ ] Settings → Sorter → UDP host/port editable + persists (default target `10.0.0.1:9502`)
 - [ ] On a line-crossing detection, `tcpdump -i lo -n udp port 9502` shows one datagram per crossing
-- [ ] Datagram payload is valid JSON with `class`, `id`, `ts` keys
+- [ ] Datagram payload is valid JSON with `class`, `seq`, `id`, `ts` keys
+- [ ] `seq` increments by exactly 1 per datagram with **no gaps** over a continuous run (gaps the sorter sees later = real transport loss, not the model)
 - [ ] `/api/performance` shows `udp.p50` / `udp.p95` populated
-- [ ] Two close-together objects → two distinct datagrams in same frame
+- [ ] Two close-together objects → two distinct datagrams in same frame (distinct `seq`)
 - [ ] `/api/udp` POST to retarget live → next event hits new target without stream restart
 
 ## 8. Encode throttle + display

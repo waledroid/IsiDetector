@@ -232,32 +232,38 @@ Operators see colours flip on YOLO ↔ RF-DETR swap as confirmation the swap too
 
 ## UDP sorting broadcast (`stream_handler.py` — `UDPPublisher`)
 
-On every line-crossing event, a ~60-byte JSON datagram is fired to the sorting machine controller. **One datagram per crossing** (including multiple-per-frame when objects are close together).
+On every line-crossing event, a ~70-byte JSON datagram is fired to the sorting machine controller. **One datagram per crossing** (including multiple-per-frame when objects are close together).
 
 ```json
-{"class": "carton", "id": 42, "ts": "2026-03-31T14:23:45.312847"}
+{"class": "carton", "seq": 17, "id": 42, "ts": "2026-03-31T14:23:45.312847"}
 ```
 
-- `id` is the ByteTrack tracker ID — lets the sorter dedupe if the network duplicates the datagram. Optional; older consumers that only read `class` keep working.
-- Transport: `socket.SOCK_DGRAM` — single socket created once at stream start, reused per event, no queue.
+- `seq` is a **monotonic per-publisher datagram counter** — increments by exactly 1 on every emitted datagram, gap-free by construction. **Any gap the receiver sees in `seq` is a genuinely lost datagram.** This is the field to measure transport loss against, and resets to 1 when the stream (publisher) restarts.
+- `id` is the ByteTrack tracker ID — lets the sorter dedupe if the network duplicates the datagram. **It is NOT sequential**: ByteTrack assigns IDs to every tracked object (including ones that never cross the line, and re-acquisitions after occlusion), so `id` gaps are normal and do **not** indicate loss. Optional; older consumers that only read `class` keep working. ⚠️ Do not infer packet loss from `id` gaps — use `seq`.
+- Transport: `socket.SOCK_DGRAM` — single socket created once at stream start, reused per event, no queue. UDP is fire-and-forget (no ACK); `seq` exists precisely so the receiver can detect drops.
 - Timestamp: microsecond ISO format (`.isoformat()`).
-- Default target: `127.0.0.1:9502` (controller on same machine).
+- Default target: `10.0.0.1:9502` (canonical site PLC).
 - **Configuration priority** (highest wins):
   1. Runtime API: `POST /api/udp {"host": "...", "port": ...}` — retargets live, no restart needed
   2. Env var: `UDP_HOST`, `UDP_PORT`
   3. `isidet/configs/train.yaml` → `inference.udp.host / port`
-  4. Hardcoded default: `127.0.0.1:9502`
+  4. Hardcoded default: `10.0.0.1:9502`
 - Per-datagram latency histogram (p50 / p95 / p99 / max µs) surfaces in `/api/performance` so the automation engineer can see the real sort-trigger budget.
 
-**Consumer-side minimal implementation:**
+**Consumer-side minimal implementation** (with loss detection via `seq`):
 
 ```python
 import socket, json
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("127.0.0.1", 9502))
+sock.bind(("0.0.0.0", 9502))            # bind the interface that faces the vision PC
+prev_seq = None
 while True:
     data, _ = sock.recvfrom(1024)       # blocks until event arrives — no polling
     event = json.loads(data)
+    seq = event["seq"]
+    if prev_seq is not None and seq != prev_seq + 1:
+        print(f"⚠️ lost {seq - prev_seq - 1} datagram(s): {prev_seq+1}..{seq-1}")
+    prev_seq = seq
     trigger_sort_gate(event["class"])   # act on "carton" or "polybag"
 ```
 
@@ -329,7 +335,7 @@ Operator-tunable per-site state only. Hardware-optimization knobs live in the mo
 | `line_position` | float [0..1] | 0.5 | Fraction of frame width (vertical) or height (horizontal). After ROI crop, fraction is relative to the cropped frame. |
 | `belt_direction` | `left_to_right`/`right_to_left`/`top_to_bottom`/`bottom_to_top` | left_to_right | Picks the bbox leading-edge anchor (see Trigger semantics). |
 | `rtsp_url` | str | per-build | Saved camera URL used by the **📡 Site Camera** landing-page button. |
-| `udp_host` / `udp_port` | str / int | 10.0.0.2 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
+| `udp_host` / `udp_port` | str / int | 10.0.0.1 / 9502 | Sorter target. **Live-retargets** on save (publisher updates without stream restart). |
 | `auto_start` | bool | false | If true, container boot replays the last successful Start (saved camera + last-used model) — no operator click needed. |
 | `last_model_type` | str | "" | **Server-written.** Recorded after a successful Start; used by `auto_start`. Client POSTs cannot set this. |
 | `last_weights` | str | "" | **Server-written.** Same as above. |

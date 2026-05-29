@@ -74,7 +74,7 @@ esac
 # ── Read current UDP target ─────────────────────────────────────────────────
 # Priority: settings.json (operator-tunable, persists across reboot)
 #        → container env (UDP_HOST / UDP_PORT in docker-compose env)
-#        → built-in default (10.0.0.2:9502 — the canonical Isitec site target).
+#        → built-in default (10.0.0.1:9502 — the canonical Isitec site target).
 read_udp_target() {
     local settings_file="${REPO_ROOT}/webapp/isitec_app/settings.json"
     local host="" port=""
@@ -90,7 +90,7 @@ read_udp_target() {
     if [ -z "$port" ] && command -v docker >/dev/null 2>&1; then
         port=$(docker exec deploy-web-1 sh -c 'printf "%s" "${UDP_PORT:-}"' 2>/dev/null)
     fi
-    [ -z "$host" ] && host="10.0.0.2"
+    [ -z "$host" ] && host="10.0.0.1"
     [ -z "$port" ] && port="9502"
     echo "${host}|${port}"
 }
@@ -226,7 +226,7 @@ GREEN, BLUE, YELLOW, NC = sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
 #                                ^iface       ^dir(P|In|Out)
 #
 #   -i eno1 -tttt:
-#     2026-05-13 14:23:45.312847 IP 10.0.0.5.48372 > 10.0.0.2.9502: UDP, length 60
+#     2026-05-13 14:23:45.312847 IP 10.0.0.5.48372 > 10.0.0.1.9502: UDP, length 70
 #
 # Make the iface + direction pair optional. Direction values from -i any are
 # P (outgoing on a veth, "peer"), In (entering an interface), Out (leaving).

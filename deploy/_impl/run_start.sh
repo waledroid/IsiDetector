@@ -397,7 +397,7 @@ echo -e "  ${BOLD}Platform:${NC}     $([ "$IS_WSL" = true ] && echo "WSL2" || ec
 echo -e "  ${BOLD}Hardware:${NC}     $([ "$HAS_GPU" = true ] && echo "GPU (${GPU_NAME})" || echo "CPU-only (OpenVINO)")"
 echo -e "  ${BOLD}Dashboard:${NC}    http://localhost:9501"
 echo -e "  ${BOLD}Docs:${NC}         http://localhost:9501/docs"
-echo -e "  ${BOLD}UDP Target:${NC}   127.0.0.1:9502"
+echo -e "  ${BOLD}UDP Target:${NC}   10.0.0.1:9502"
 echo -e ""
 echo -e "  ${BOLD}Model weights:${NC} Place .pt / .onnx / .xml files in ${REPO_ROOT}/isidet/models/"
 echo -e "  ${BOLD}Dev access:${NC}   Double-click logo, password: set via \$DEV_PASSWORD env var (default: change-me)"
