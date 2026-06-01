@@ -36,4 +36,4 @@ openvino:
 # 0.7 admits motion up to ~30 % of parcel length per frame; still well
 # above 0 so distinct parcels with even a small gap don't merge.
 bytetrack:
-  match_thresh: 0.7
+  match_thresh: 0.8

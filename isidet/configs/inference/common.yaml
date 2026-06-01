@@ -18,7 +18,7 @@ inference:
   # ByteTrack track_buffer is FPS-independent — same value works on both.
   # match_thresh IS FPS-dependent so it's mode-specific (see cpu.yaml / gpu.yaml).
   bytetrack:
-    track_buffer: 60       # 3.3 s at 18 FPS, 2 s at 30 FPS — generous either way
+    track_buffer: 90       # 5 s at 18 FPS, 3 s at 30 FPS — placeholder, re-tune on real footage
 
   # UDP publisher always-on; host/port live in settings.json (operator-tunable
   # per site). The publisher updates target live when settings.json changes.
