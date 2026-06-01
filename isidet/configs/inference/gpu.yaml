@@ -26,8 +26,9 @@ tensorrt:
 onnx:
   providers: [CUDAExecutionProvider, CPUExecutionProvider]
 
-# Stricter matching at high FPS. At 30+ FPS, frame-to-frame IoU on moving
-# parcels is typically > 85 %, so a stricter threshold rejects spurious
-# cross-track confusion when items pass close together.
+# Loose IoU gate (match accepted when IoU >= 1-thresh = 0.15). At 30+ FPS,
+# frame-to-frame IoU on the same parcel is high, so this comfortably
+# re-associates a parcel to its existing track (fewer new ids = less churn)
+# while the sparse single-file belt keeps distinct parcels from merging.
 bytetrack:
   match_thresh: 0.85
