@@ -25,6 +25,11 @@ inference:
   udp:
     enabled: true
 
+  # Line-crossing trigger anchor. 'center' = emit when the parcel CENTER crosses
+  # the line (fixed position, size-independent) — required by the PLC timing
+  # correlation. 'leading_edge' = legacy size-dependent anchor (opt-in only).
+  trigger_anchor: center
+
   annotation:
     line_thickness: 2
     label_padding: 4

@@ -172,11 +172,17 @@ class VisionEngine:
             start = sv.Point(line_x, 0)
             end = sv.Point(line_x, height)
 
-        # Pick the leading-edge anchor based on orientation + belt direction.
-        anchor = self._ANCHOR_MAP.get(
-            (orientation, self.belt_direction),
-            sv.Position.BOTTOM_CENTER,   # safe fallback
-        )
+        # Trigger anchor. Default CENTER: the parcel emits from the SAME belt
+        # position regardless of size, which the PLC's timing correlation requires.
+        # Leading-edge (size-dependent) is kept only as an opt-in.
+        _anchor_name = self.config.get('inference', {}).get('trigger_anchor', 'center')
+        if _anchor_name == 'leading_edge':
+            anchor = self._ANCHOR_MAP.get(
+                (orientation, self.belt_direction),
+                sv.Position.BOTTOM_CENTER,
+            )
+        else:
+            anchor = sv.Position.CENTER
 
         self.line_zone = sv.LineZone(
             start=start, end=end,
