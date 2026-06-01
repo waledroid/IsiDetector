@@ -261,12 +261,25 @@ def settings():
         if k in data:
             del data[k]
 
+    if 'dedup_time_enabled' in data:
+        if not isinstance(data['dedup_time_enabled'], bool):
+            return jsonify({"status": "error", "message": "dedup_time_enabled must be a boolean"}), 400
+    if 'dedup_interval_ms' in data:
+        try:
+            n = int(data['dedup_interval_ms'])
+            if not (0 <= n <= 60000):
+                raise ValueError
+            data['dedup_interval_ms'] = n
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "dedup_interval_ms must be 0-60000"}), 400
+
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
         'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
         'roi_enabled', 'roi_points',
         'clahe_enabled',
+        'dedup_time_enabled', 'dedup_interval_ms',
     )
     current = _load_settings()
     for k in allowed_keys:
@@ -284,6 +297,15 @@ def settings():
             )
         except Exception:
             pass  # publisher may not be initialised yet — settings still saved
+
+    if 'dedup_time_enabled' in data or 'dedup_interval_ms' in data:
+        try:
+            stream_handler.engine.dedup.configure(
+                current.get('dedup_time_enabled', True),
+                int(current.get('dedup_interval_ms', 300)),
+            )
+        except Exception:
+            pass  # engine may not be running yet — settings still saved & used on next start
 
     return jsonify({"status": "success", "settings": current})
 
