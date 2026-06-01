@@ -212,6 +212,10 @@ Rebuilt: the inferencer reference and palette-indexed annotators (mask/box/label
 
 ## Trigger semantics (sorter-first)
 
+**Default anchor is now `center`** (config `inference.trigger_anchor`): the datagram fires when a parcel's **center** crosses the line, giving a fixed, size-independent emit position — required by the Celio PLC's timing-based correlation (the PLC, not IsiDetector, drives the sort gate). The leading-edge map below is the legacy `trigger_anchor: leading_edge` opt-in.
+
+Dedup: track-ID (one emission per ByteTrack id) is always on; a time guard (`dedup_time_enabled`, default on; `dedup_interval_ms`, default 300) suppresses churned re-emissions of the same parcel. `seq` is stamped post-dedup, so it stays a gap-free delivery counter.
+
 Line-crossing fires on the **leading edge** of the bbox — the side that enters the line zone first given belt direction. Maximises the sorter gate's reaction window. Mapping lives in `isidet/src/shared/vision_engine.py _ANCHOR_MAP`:
 
 | Orientation | Belt direction | Anchor (`sv.Position`) |
