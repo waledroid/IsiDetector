@@ -397,6 +397,12 @@
                                 <label data-i18n="set_udp_port_label">UDP port</label>
                                 <input type="number" id="set_udp_port" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" min="1" max="65535" value="9502">
                             </div>
+                            <div style="flex: 0 0 120px;">
+                                <label title="Suppress duplicate detections of the same parcel within the interval below (track-ID dedup is always on).">Time dedup</label>
+                                <input type="checkbox" id="set_dedup_time" checked>
+                                <label>Dedup interval (ms)</label>
+                                <input type="number" id="set_dedup_interval" class="set-select" min="0" max="60000" value="300">
+                            </div>
                         </div>
                         <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="sorter_settings_hint">
                             Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.

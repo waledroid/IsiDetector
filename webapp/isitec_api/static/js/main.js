@@ -1296,6 +1296,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '10.0.0.1';
         const udpPortEl = document.getElementById('set_udp_port');
         if (udpPortEl) udpPortEl.value = serverSettings.udp_port ?? 9502;
+        const dedupTimeEl = document.getElementById('set_dedup_time');
+        if (dedupTimeEl) dedupTimeEl.checked = serverSettings.dedup_time_enabled ?? true;
+        const dedupIntEl = document.getElementById('set_dedup_interval');
+        if (dedupIntEl) dedupIntEl.value = serverSettings.dedup_interval_ms ?? 300;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1391,6 +1395,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 clahe_enabled: document.getElementById('set_clahe_enabled').checked,
                 udp_host:      document.getElementById('set_udp_host').value.trim(),
                 udp_port:      parseInt(document.getElementById('set_udp_port').value),
+                dedup_time_enabled: document.getElementById('set_dedup_time').checked,
+                dedup_interval_ms:  parseInt(document.getElementById('set_dedup_interval').value),
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
