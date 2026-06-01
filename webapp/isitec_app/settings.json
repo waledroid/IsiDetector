@@ -1,17 +1,20 @@
 {
   "yolo_weights": "isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/model.xml",
-  "rfdetr_weights": "isidet/models/rfdetr/24-03-2026_0120/inference_model.onnx",
+  "rfdetr_weights": "",
   "yolo_conf": 0.55,
   "detr_conf": 0.35,
   "line_orientation": "vertical",
   "line_position": 0.6,
   "belt_direction": "left_to_right",
   "rtsp_url": "rtsp://admin:admin123@192.168.1.108:554/user=admin&password=admin123&channel=1&stream=1.sdp?",
-  "udp_host": "10.0.0.1",
+  "udp_host": "192.168.2.146",
   "udp_port": 9502,
+  "dedup_time_enabled": true,
+  "dedup_interval_ms": 300,
   "auto_start": false,
-  "last_model_type": "",
-  "last_weights": "",
-  "roi_enabled": false,
-  "roi_points": []
+  "last_model_type": "yolo",
+  "last_weights": "isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/model.xml",
+  "roi_enabled": true,
+  "roi_points": [],
+  "clahe_enabled": false
 }
