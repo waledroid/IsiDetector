@@ -1038,6 +1038,17 @@ class StreamHandler:
                 # replace train.yaml's, dropping inference.logging.log_dir and sending
                 # event CSVs to the wrong dir (read/write path mismatch → empty exports).
                 ve_config = _deep_merge(self.config, self.inference_config or {})
+                # Operator dedup controls (settings.json) override inference-config defaults.
+                try:
+                    _sp = Path(__file__).parent / 'settings.json'
+                    _ui = json.load(open(_sp)) if _sp.exists() else {}
+                except Exception:
+                    _ui = {}
+                ve_config.setdefault('inference', {})
+                if isinstance(_ui.get('dedup_time_enabled'), bool):
+                    ve_config['inference']['dedup_time_enabled'] = _ui['dedup_time_enabled']
+                if isinstance(_ui.get('dedup_interval_ms'), int) and 0 <= _ui['dedup_interval_ms'] <= 60000:
+                    ve_config['inference']['dedup_interval_ms'] = _ui['dedup_interval_ms']
                 self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._tune_annotators(self.engine)
                 self._apply_line_settings(self.engine)
