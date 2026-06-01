@@ -59,29 +59,34 @@ leading-edge anchor. Every parcel then emits from the same belt position regardl
 - The leading-edge anchor mapping is **kept available via config** (not default) — cheap insurance,
   no regression for any hypothetical non-PLC use.
 
-### 2. One datagram per parcel — **selectable dedup strategy** (operator setting)
+### 2. One datagram per parcel — track-ID base + **optional** time guard
 
-Over-firing (one physical parcel → several emissions, from ByteTrack ID churn) is killed by a
-**configurable dedup strategy**, exposed in Settings. Two methods, selectable:
+Over-firing (one physical parcel → several emissions, from ByteTrack ID churn) is killed in two
+layers:
 
-- **Time-based (default).** Suppress a line-crossing that occurs within `dedup_interval_ms` of the
-  previous emission. **Justified by the live flow:** parcels arrive **clearly separated** on this
-  belt (stations are ~1100 ms apart; observed spacing is comfortably wider than ID-churn, which is
-  <100 ms). A reasonable interval (default **300 ms**) absorbs churn while never reaching real
-  parcels. *Accepted trade-off:* in the **rare** case of joined/overlapping parcels, the second may
-  be suppressed — an acceptable penalty given how infrequently it occurs.
-- **Track-ID-based (toggle).** "One ByteTrack ID → one emission" via the existing `counted_ids` set:
-  each parcel fires once for its track's lifetime; two close parcels are two IDs → two emissions, so
-  it has **no** close-parcel merge risk. Best paired with tracker stabilization (below). Toggle this
-  on when ID churn is under control, or when tighter parcel spacing is expected.
+- **Track-ID dedup — ALWAYS ON (base).** "One ByteTrack ID → one emission" via the existing
+  `counted_ids` set: a parcel fires once for its track's lifetime; two close parcels are two IDs →
+  two emissions (no close-parcel merge risk). This is the existing behavior and is **never disabled**
+  — turning it off would mean emitting on every straddle frame (pure over-fire), which has no use
+  case.
+- **Time guard — OPERATOR TOGGLE (`dedup_time_enabled`, default ON).** On top of the base, suppress a
+  crossing that occurs within `dedup_interval_ms` of the **last emitted** datagram. This catches the
+  one thing the base misses: *churned-new-ID* over-fire (same parcel re-numbered, emitting again).
+  **The operator can switch this off** (→ track-ID only) or on (→ "both") from Settings.
 
-Both are config-driven and selectable. **Default ships as `both` (300 ms)** — the most protective
-combination. Exact rule (an **AND**): emit a crossing only if **(its track ID is not in
-`counted_ids`) AND (≥ `dedup_interval_ms` since the last emitted datagram)**; on emit, add the ID to
-`counted_ids` and update the global last-emit timestamp. This catches *churned-new-ID* over-fire
-(via the time term) **and** *stable-ID re-cross/straddle* over-fire (via the track-ID term) — modes
-that each method alone misses one of. The only cost is merging two real parcels closer than the
-interval, which the live flow rules out (min observed spacing 703 ms ≫ 300 ms).
+**Default = both layers on.** Combined rule (an **AND**): emit a crossing only if **(its track ID is
+not in `counted_ids`) AND (time guard off OR ≥ `dedup_interval_ms` since the last emitted
+datagram)**; on emit, add the ID to `counted_ids` and update the global last-emit timestamp.
+
+- The time guard's only cost is merging two real parcels closer than the interval — **ruled out by
+  the live flow** (min observed spacing 703 ms ≫ 300 ms; stations ~1100 ms apart; churn <100 ms).
+  Rare joined/overlap parcels are an **accepted penalty**; switching the toggle off removes even that.
+
+**`seq` interaction:** `seq` is stamped only at `publish()`, i.e. **after** dedup — suppressed
+crossings never consume a `seq`. So the `seq` stream stays gap-free at the sender regardless of dedup
+(a receiver-side gap still means *transport* loss), and with dedup `seq` ≈ a clean per-parcel count.
+**Ordering is mandatory: dedup → then `seq`.** (Already true: `vision_engine` filters events, then
+`publish()` increments `seq`.)
 
 **Tracker stability (supporting either mode):** tune ByteTrack (longer `lost_track_buffer`, looser
 `match_thresh`) + keep CLAHE/SpecularGuard on dark polybags, so one parcel keeps one ID. This makes
@@ -98,9 +103,9 @@ the dedup guard → emit **one** datagram (`class`, `seq`, `ts`; `id` kept for i
 ### 4. Config & defaults
 **Operator-facing (Settings UI + `settings.json`)** — dedup is exposed so it can be changed on-site
 without redeploy:
-- `dedup_strategy: both` — one of `both` | `time` | `track_id` | `off` (default **`both`**).
-- `dedup_interval_ms: 300` — used by `both`/`time` modes (tunable; default 300 ms).
-- (`track_id` term needs no operator field; it keys on the existing `counted_ids`.)
+- `dedup_time_enabled: true` — **operator toggle** for the time guard. ON = "both" (default),
+  OFF = track-ID only. (Track-ID dedup is the always-on base; not exposed as a toggle.)
+- `dedup_interval_ms: 300` — used only when the time guard is enabled (tunable; default 300 ms).
 
 This means the Settings plumbing must carry these: `settings.json` keys, the Settings form
 (`templates/index.html` + `static/js/main.js`), `/api/settings` validation, and wiring into
@@ -116,10 +121,10 @@ All are config values, not hard-codes, so they can be calibrated per belt withou
 - **ID churn → over-firing** (the observed problem). Killed by the chosen dedup strategy: `time`
   collapses near-simultaneous re-detections; `track_id` emits once per ID. Tracker stabilization
   reduces churn for both.
-- **`both`/`time` merging two close parcels.** Possible *in principle* (the time term), but the live
+- **Time guard merging two close parcels.** Possible *in principle* (the time term), but the live
   flow shows parcels **clearly separated** (min 703 ms ≫ the 300 ms interval), so it effectively
   never triggers. The **rare** joined/overlap case is an **accepted penalty**; if it ever becomes a
-  problem, switch the setting to `track_id` (no merge risk). Recorded as a deliberate trade-off.
+  problem, turn **`dedup_time_enabled` off** (→ track-ID only, no merge risk). Deliberate trade-off.
 - **Overlapping/touching parcels seen as one detection** → one datagram (under-count). A
   **segmentation/detection** limitation (model quality), independent of dedup mode; the accepted
   rare-case penalty above. Out of scope here.
