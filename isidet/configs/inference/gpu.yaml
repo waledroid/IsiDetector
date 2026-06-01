@@ -30,4 +30,4 @@ onnx:
 # parcels is typically > 85 %, so a stricter threshold rejects spurious
 # cross-track confusion when items pass close together.
 bytetrack:
-  match_thresh: 0.8
+  match_thresh: 0.85
