@@ -6,6 +6,7 @@ import supervision as sv
 import numpy as np
 from datetime import datetime
 from src.utils.event_logger import EventLogger
+from src.shared.dedup_gate import DedupGate
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,13 @@ class VisionEngine:
         )
         
         # 3. Line Counting Logic (Stateful)
-        self.line_zone = None 
-        self.counted_ids = set()
+        self.line_zone = None
+        # Dedup: track-ID base (always on) + optional time guard (operator toggle).
+        _inf = config.get('inference', {})
+        self.dedup = DedupGate(
+            time_enabled=bool(_inf.get('dedup_time_enabled', True)),
+            interval_ms=int(_inf.get('dedup_interval_ms', 300)),
+        )
         
         # 4. Logging & Telemetry — one CSV row per line crossing.
         # The events subdir keeps them separate from legacy snapshot logs
@@ -120,7 +126,7 @@ class VisionEngine:
 
         Rebuilds palette-dependent annotators against the new inferencer's
         class_names so per-class colours reflect the new model's convention
-        (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, counted_ids,
+        (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, dedup gate,
         line_zone, and event_logger are preserved so hot-swap keeps
         counts and per-event history intact.
         """
@@ -204,8 +210,8 @@ class VisionEngine:
               in the same frame (close-together on the belt).
 
         Note:
-            ``counted_ids`` is automatically pruned when it exceeds
-            50,000 entries (prevents unbounded memory growth in
+            The dedup gate's ``counted_ids`` is automatically pruned when it
+            exceeds 50,000 entries (prevents unbounded memory growth in
             sessions longer than 8–12 hours).
         """
         if self.line_zone is None:
@@ -232,24 +238,20 @@ class VisionEngine:
         # UDP datagram per event so the sorter never misses a trigger when
         # two close-together objects cross in the same frame.
         new_events = []
+        now_ms = time.monotonic() * 1000.0   # one clock per frame; within-frame ties share it
         for i, crossed in enumerate(all_crossings):
             if crossed and detections.tracker_id is not None:
                 t_id = int(detections.tracker_id[i])
-                if t_id not in self.counted_ids:
+                if self.dedup.should_emit(t_id, now_ms):
                     class_id = int(detections.class_id[i])
                     name = self.inferencer.class_names.get(class_id, "object")
                     class_totals[name] = class_totals.get(name, 0) + 1
-                    self.counted_ids.add(t_id)
+                    self.dedup.record(t_id, now_ms)
                     new_events.append({"class": name, "id": t_id})
                     self.event_logger.log(name, t_id)
-
-        # Prune counted_ids to prevent unbounded growth over long shifts.
-        # ByteTrack IDs are monotonically increasing — old IDs are never reassigned,
-        # so it is safe to discard the lower half once the set gets large.
-        if len(self.counted_ids) > 50_000:
-            sorted_ids = sorted(self.counted_ids)
-            self.counted_ids = set(sorted_ids[len(sorted_ids) // 2:])
-            logger.info(f"♻️ counted_ids pruned to {len(self.counted_ids)} entries")
+                elif self.dedup.time_suppressed(t_id, now_ms):
+                    logger.info(f"⏱️ dedup-suppressed crossing id={t_id} "
+                                f"(<{self.dedup.interval_ms}ms since last emit)")
 
         # 3. Visual Composition
         # skip_masks / skip_traces are set by stream_handler._apply_render_settings
