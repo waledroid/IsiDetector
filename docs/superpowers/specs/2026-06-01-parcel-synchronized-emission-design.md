@@ -59,14 +59,29 @@ leading-edge anchor. Every parcel then emits from the same belt position regardl
 - The leading-edge anchor mapping is **kept available via config** (not default) — cheap insurance,
   no regression for any hypothetical non-PLC use.
 
-### 2. One datagram per parcel (kill over-firing)
-Two layers, in `vision_engine.py`:
-- **(a) Tracking stability (root cause):** tune ByteTrack so one physical parcel keeps one track ID
-  — longer `lost_track_buffer`, looser `match_thresh` — and keep CLAHE/SpecularGuard on dark
-  polybags. With stable IDs, `counted_ids` already yields one emit per parcel.
-- **(b) Dedup guard (safety net):** suppress a line-crossing that occurs within a configurable
-  **minimum interval** of the previously emitted crossing, to absorb residual ID-churn. Every
-  suppressed crossing is **logged** so over-aggressive tuning is visible.
+### 2. One datagram per parcel — dedup by **identity**, not time
+
+The mechanism is **identity-based**, in `vision_engine.py`:
+
+- **Primary — one track ID → one emission.** Each physical parcel is one ByteTrack track; the
+  existing `counted_ids` set emits it exactly once. Crucially, **two parcels close together are two
+  *different* track IDs → two emissions**, even 50 ms apart — identity dedup handles tight spacing
+  correctly, which a time-based filter cannot.
+- **Enabler — tracking stability.** The only reason over-firing happens is ID *churn* (one parcel
+  flickering into several track IDs). Fix the root cause: tune ByteTrack (longer `lost_track_buffer`,
+  looser `match_thresh`) + keep CLAHE/SpecularGuard on dark polybags, so one parcel keeps one ID.
+- **Safety net — a *bounded* time guard, demoted.** As a last resort against any residual churn,
+  optionally suppress a second crossing within a **very short** interval of the previous emission.
+  This interval MUST be set **well below the minimum real parcel pitch**, so it can only ever catch
+  same-parcel re-detection (churn is <100 ms) and can **never** merge two real parcels. Every
+  suppression is **logged**. If tracking is stable enough, this guard stays effectively off.
+
+> **Time is never the primary discriminator.** Identity is. The guard is a small, bounded backstop,
+> not the mechanism.
+
+**Overlapping / touching parcels** are a *detection* matter, not a dedup one: whether we emit one or
+two datagrams depends on whether the model **segments** them as two instances or one blob. Tracked
+as a separate detection-quality concern, out of scope for this sync design.
 
 ### 3. Per-frame data flow (unchanged except the trigger rule)
 detect → track → for each tracked **center** crossing the line, not in `counted_ids` **and** past
@@ -76,15 +91,20 @@ the dedup guard → emit **one** datagram (`class`, `seq`, `ts`; `id` kept for i
 ### 4. Config & defaults
 New config keys (with the mode-driven `inference` config; defaults shown):
 - `trigger_anchor: center`  (was effectively leading-edge)
-- `dedup_min_interval_ms: 200`  (absorbs <100 ms churn, ≪ 500 ms window; **tunable**)
-- ByteTrack: `lost_track_buffer`, `match_thresh` tuned for stability.
+- ByteTrack: `lost_track_buffer`, `match_thresh` tuned for stability — **the primary lever.**
+- `dedup_guard_ms: 0`  (the bounded safety net; **off by default**, enabled only if churn persists.
+  When set, MUST stay well below the min parcel pitch — see Open items.)
 
 All are config values, not hard-codes, so they can be calibrated per belt without code changes.
 
 ## Edge cases / risks
-- **Two parcels closer than `dedup_min_interval_ms` merge** (under-count). Mitigation: keep the
-  interval conservative, log suppressions, and tune against real footage. **Open item:** ask the
-  automaticien for max cadence (parcels/min) or minimum parcel pitch to set a safe ceiling.
+- **ID churn → over-firing** (the observed problem). Primary mitigation is tracking stability so one
+  parcel keeps one ID; the bounded `dedup_guard_ms` is the backstop. Because identity is the
+  discriminator, **two close real parcels are not at risk of merging** (distinct IDs) — the only way
+  the guard could merge real parcels is if it were mis-set *above* the min pitch, which the Open-item
+  cadence check exists to prevent.
+- **Overlapping/touching parcels seen as one detection** → one datagram (under-count). This is a
+  **segmentation/detection** limitation (model quality), not a dedup issue; out of scope here.
 - **Latency spikes** (FPS drop) push a datagram out of the 500 ms window → `NON_LU_CAM`. Keep
   per-frame latency bounded; FPS/UDP latency already surface in `/api/performance`.
 - **Center anchor + belt_direction**: confirm in/out counting still uses `belt_direction` correctly
@@ -98,6 +118,7 @@ All are config values, not hard-codes, so they can be calibrated per belt withou
   correlated count to localize any residual gap.
 
 ## Open items
-1. Ask automaticien: **max cadence / min parcel pitch** → finalize `dedup_min_interval_ms` ceiling.
+1. Ask automaticien: **max cadence / min parcel pitch** → only to confirm the `dedup_guard_ms`
+   ceiling stays safely below it (guard is off by default, so this is a safety bound, not a blocker).
 2. Confirm `belt_direction` semantics post-anchor-change.
 3. ByteTrack tuning values to be set against real belt footage (placeholder defaults until then).
