@@ -75,8 +75,13 @@ Over-firing (one physical parcel → several emissions, from ByteTrack ID churn)
   it has **no** close-parcel merge risk. Best paired with tracker stabilization (below). Toggle this
   on when ID churn is under control, or when tighter parcel spacing is expected.
 
-Both are config-driven and independently toggleable; they may also be combined (track-ID primary +
-time backstop). **Default ships as time-based, 300 ms.**
+Both are config-driven and selectable. **Default ships as `both` (300 ms)** — the most protective
+combination. Exact rule (an **AND**): emit a crossing only if **(its track ID is not in
+`counted_ids`) AND (≥ `dedup_interval_ms` since the last emitted datagram)**; on emit, add the ID to
+`counted_ids` and update the global last-emit timestamp. This catches *churned-new-ID* over-fire
+(via the time term) **and** *stable-ID re-cross/straddle* over-fire (via the track-ID term) — modes
+that each method alone misses one of. The only cost is merging two real parcels closer than the
+interval, which the live flow rules out (min observed spacing 703 ms ≫ 300 ms).
 
 **Tracker stability (supporting either mode):** tune ByteTrack (longer `lost_track_buffer`, looser
 `match_thresh`) + keep CLAHE/SpecularGuard on dark polybags, so one parcel keeps one ID. This makes
@@ -93,9 +98,9 @@ the dedup guard → emit **one** datagram (`class`, `seq`, `ts`; `id` kept for i
 ### 4. Config & defaults
 **Operator-facing (Settings UI + `settings.json`)** — dedup is exposed so it can be changed on-site
 without redeploy:
-- `dedup_strategy: time` — one of `time` | `track_id` | `both` | `off` (default **`time`**).
-- `dedup_interval_ms: 300` — used by `time`/`both` modes (tunable; default 300 ms).
-- (`track_id` mode needs no operator field; it keys on the existing `counted_ids`.)
+- `dedup_strategy: both` — one of `both` | `time` | `track_id` | `off` (default **`both`**).
+- `dedup_interval_ms: 300` — used by `both`/`time` modes (tunable; default 300 ms).
+- (`track_id` term needs no operator field; it keys on the existing `counted_ids`.)
 
 This means the Settings plumbing must carry these: `settings.json` keys, the Settings form
 (`templates/index.html` + `static/js/main.js`), `/api/settings` validation, and wiring into
@@ -111,10 +116,10 @@ All are config values, not hard-codes, so they can be calibrated per belt withou
 - **ID churn → over-firing** (the observed problem). Killed by the chosen dedup strategy: `time`
   collapses near-simultaneous re-detections; `track_id` emits once per ID. Tracker stabilization
   reduces churn for both.
-- **Time mode merging two close parcels.** Possible *in principle*, but the live flow shows parcels
-  **clearly separated** (≫ the 300 ms interval), so it effectively never triggers. The **rare**
-  joined/overlap case is an **accepted penalty**; if it becomes a problem, switch the setting to
-  `track_id` (no merge risk). Decision recorded as a deliberate trade-off.
+- **`both`/`time` merging two close parcels.** Possible *in principle* (the time term), but the live
+  flow shows parcels **clearly separated** (min 703 ms ≫ the 300 ms interval), so it effectively
+  never triggers. The **rare** joined/overlap case is an **accepted penalty**; if it ever becomes a
+  problem, switch the setting to `track_id` (no merge risk). Recorded as a deliberate trade-off.
 - **Overlapping/touching parcels seen as one detection** → one datagram (under-count). A
   **segmentation/detection** limitation (model quality), independent of dedup mode; the accepted
   rare-case penalty above. Out of scope here.
