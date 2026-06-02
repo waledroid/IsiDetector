@@ -1041,6 +1041,10 @@ class StreamHandler:
                     ve_config['inference']['dedup_time_enabled'] = _ui['dedup_time_enabled']
                 if isinstance(_ui.get('dedup_interval_ms'), int) and 0 <= _ui['dedup_interval_ms'] <= 60000:
                     ve_config['inference']['dedup_interval_ms'] = _ui['dedup_interval_ms']
+                # Make the operator's recall toggle authoritative at stream START (not just
+                # live via configure_counting) so it survives a stream restart.
+                if isinstance(_ui.get('count_interpolate'), bool):
+                    ve_config['inference']['count_interpolate'] = _ui['count_interpolate']
                 # Tracker FPS calibration — feed the real capture FPS to ByteTrack so
                 # its Kalman predicts the true per-frame displacement (fast parcels keep
                 # their id across the line). tracker_fps>0 overrides; auto uses the
