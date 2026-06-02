@@ -36,6 +36,13 @@ inference:
   # 'center' = emit at the bbox centre (size-independent but fires later) — opt-in.
   trigger_anchor: leading_edge
 
+  # Counting accuracy defaults (recall-focused).
+  # Operator can override dedup_time_enabled / dedup_interval_ms / count_interpolate
+  # via settings.json without touching this file.
+  count_interpolate: true        # recall: frame-gap-tolerant crossing
+  dedup_time_enabled: false      # recall: global time guard OFF (dropped distinct parcels)
+  dedup_interval_ms: 300         # only used if dedup_time_enabled is turned back on
+
   annotation:
     line_thickness: 2
     label_padding: 4

@@ -1073,6 +1073,9 @@ class StreamHandler:
                         _native = 0.0
                     ve_config['bytetrack']['frame_rate'] = _native if 1.0 <= _native <= 120.0 else 20.0
                 self._tracker_frame_rate = ve_config['bytetrack'].get('frame_rate')
+                _tb = int(_ui.get('track_buffer', 0) or 0)
+                if _tb > 0:
+                    ve_config['bytetrack']['track_buffer'] = _tb
                 self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._tune_annotators(self.engine)
                 self._apply_line_settings(self.engine)
