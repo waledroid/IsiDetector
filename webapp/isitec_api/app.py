@@ -627,10 +627,10 @@ def export_events(from_: str | None = Query(None, alias="from"),
                             status_code=400)
 
     def _generate():
-        yield "ts,class,id\n"
-        for ts, cls, eid in EventLogger.read_events(_events_dir(),
-                                                    window_start, window_end):
-            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''}\n"
+        yield "ts,class,id,seq\n"
+        for ts, cls, eid, seq in EventLogger.read_events_full(_events_dir(),
+                                                              window_start, window_end):
+            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''},{seq if seq is not None else ''}\n"
 
     filename = f"events_{from_}_to_{to}.csv"
     return StreamingResponse(

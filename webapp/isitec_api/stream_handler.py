@@ -104,7 +104,7 @@ class UDPPublisher:
         self._seq = 0   # monotonic datagram counter — gap-free by construction
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def publish(self, class_name, event_id=None):
+    def publish(self, class_name, event_id=None, seq=None):
         """Emit one UDP datagram per line-crossing event.
 
         Every datagram carries a monotonic ``seq`` (increments by 1 per
@@ -125,10 +125,12 @@ class UDPPublisher:
         if not self.enabled:
             return 0
         t0 = time.perf_counter_ns()
-        self._seq += 1   # increment per emitted datagram so the receiver can spot real loss
+        if seq is None:                  # inference loop passes the engine's seq; fall back to
+            self._seq += 1               # our own counter for any direct/legacy caller
+            seq = self._seq
         msg = {
             "class": str(class_name),
-            "seq": self._seq,
+            "seq": seq,
             "ts": datetime.datetime.now().isoformat(),
         }
         if event_id is not None:
@@ -1235,7 +1237,7 @@ class StreamHandler:
                         ts = datetime.datetime.now().isoformat()
                         with self.lock:
                             self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
-                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'])
+                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'], seq=event.get('seq'))
                         self.monitor.track_udp_publish(latency_ns=latency_ns)
                         self.monitor.track_crossing()
 

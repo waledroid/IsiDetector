@@ -75,6 +75,7 @@ class VisionEngine:
             time_enabled=bool(_inf.get('dedup_time_enabled', True)),
             interval_ms=int(_inf.get('dedup_interval_ms', 300)),
         )
+        self._emit_seq = 0   # monotonic per-emitted-crossing counter (== UDP seq, == CSV seq)
         
         # 4. Logging & Telemetry — one CSV row per line crossing.
         # The events subdir keeps them separate from legacy snapshot logs
@@ -253,8 +254,12 @@ class VisionEngine:
                     name = self.inferencer.class_names.get(class_id, "object")
                     class_totals[name] = class_totals.get(name, 0) + 1
                     self.dedup.record(t_id, now_ms)
-                    new_events.append({"class": name, "id": t_id})
-                    self.event_logger.log(name, t_id)
+                    # One monotonic seq per emitted crossing — the SAME value the
+                    # UDP publisher sends and the event log records, so the CSV can
+                    # be reconciled against the wire. Gap-free per stream/engine.
+                    self._emit_seq += 1
+                    new_events.append({"class": name, "id": t_id, "seq": self._emit_seq})
+                    self.event_logger.log(name, t_id, self._emit_seq)
                 elif self.dedup.time_suppressed(t_id, now_ms):
                     logger.info(f"⏱️ dedup-suppressed crossing id={t_id} "
                                 f"(<{self.dedup.interval_ms}ms since last emit)")
