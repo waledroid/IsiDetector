@@ -11,16 +11,47 @@
 # ffmpeg runs in the background so the shell can draw a countdown bar; ffmpeg's own
 # output (incl. the harmless "Timestamps unset" notice) goes to <OUT_DIR>/ffmpeg.log.
 #
+# Camera URL:
+#   - Pass it explicitly as arg 1 (wins, no prompt), OR
+#   - Run with no URL: the default is read from the web app's settings.json
+#     (`rtsp_url`) — i.e. whatever camera THIS site uses — and you confirm [Y/n].
+#     Answer 'n' to type a different URL. (No per-site URL is hardcoded here.)
+#
 # Usage:
-#   tools/rtsp_record_30min.sh [RTSP_URL] [OUT_DIR] [MAX_SECONDS]
-#   tools/rtsp_record_30min.sh                       # defaults below, 30 min
-#   tools/rtsp_record_30min.sh "" "" 30              # quick 30 s test
-#   SEGMENT_SECONDS=120 tools/rtsp_record_30min.sh   # smaller 2-min chunks (easier to send)
+#   tools/rtsp_record_30min.sh                       # confirm settings.json camera, 30 min
+#   tools/rtsp_record_30min.sh "rtsp://user:pass@ip:554/path"   # explicit URL
+#   tools/rtsp_record_30min.sh "" recordings/test 30           # OUT_DIR + 30 s test
+#   SEGMENT_SECONDS=120 tools/rtsp_record_30min.sh             # smaller 2-min chunks
 #
 # Stop early with Ctrl-C — the current chunk is finalized cleanly.
 set -euo pipefail
 
-RTSP_URL="${1:-rtsp://admin:admin@192.168.1.88:554/1}"   # pass YOUR camera URL as arg 1
+# ── Resolve the camera URL ───────────────────────────────────────────────────
+# Default = the camera currently configured in the web app (settings.json), so the
+# tool follows whatever this site actually uses — no hardcoded per-site URL/creds.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SETTINGS="$SCRIPT_DIR/../webapp/isitec_app/settings.json"
+DEFAULT_URL=""
+if [ -r "$SETTINGS" ]; then
+  DEFAULT_URL="$(python3 -c "import json; print(json.load(open('$SETTINGS')).get('rtsp_url',''))" 2>/dev/null || true)"
+fi
+[ -z "$DEFAULT_URL" ] && DEFAULT_URL="rtsp://admin:admin@192.168.1.88:554/1"   # generic fallback
+
+if [ -n "${1:-}" ]; then
+  RTSP_URL="$1"                              # explicit URL wins — no prompt
+elif [ -t 0 ]; then                          # interactive: confirm the default camera
+  echo "Default camera (from settings.json):"
+  echo "    $DEFAULT_URL"
+  read -r -p "Use this camera? [Y/n] " _ans
+  case "${_ans:-y}" in
+    [Nn]*) read -r -p "Enter the RTSP URL to record: " RTSP_URL ;;
+    *)     RTSP_URL="$DEFAULT_URL" ;;
+  esac
+  [ -z "${RTSP_URL:-}" ] && { echo "No URL given. Aborting." >&2; exit 1; }
+else
+  RTSP_URL="$DEFAULT_URL"                     # non-interactive (piped/background): use default
+fi
+
 OUT_DIR="${2:-recordings/$(date +%Y%m%d_%H%M%S)}"
 MAX_SECONDS="${3:-1800}"          # hard cap: 30 minutes
 SEGMENT_SECONDS="${SEGMENT_SECONDS:-600}"   # 10-minute chunks
