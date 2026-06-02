@@ -603,6 +603,8 @@ document.addEventListener('DOMContentLoaded', () => {
             udpEl.textContent = 'UDP: idle';
             udpEl.style.color = '#9aa0a6';
         }
+        const _fpsEl = document.getElementById('detectedFps');
+        if (_fpsEl) _fpsEl.textContent = (data && data.frame_rate) ? Math.round(data.frame_rate) + ' fps' : '—';
     }
 
     function closeWebSockets() {
@@ -1316,9 +1318,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const udpPortEl = document.getElementById('set_udp_port');
         if (udpPortEl) udpPortEl.value = serverSettings.udp_port ?? 9502;
         const dedupTimeEl = document.getElementById('set_dedup_time');
-        if (dedupTimeEl) dedupTimeEl.checked = serverSettings.dedup_time_enabled ?? true;
+        if (dedupTimeEl) dedupTimeEl.checked = serverSettings.dedup_time_enabled ?? false;
         const dedupIntEl = document.getElementById('set_dedup_interval');
         if (dedupIntEl) dedupIntEl.value = serverSettings.dedup_interval_ms ?? 300;
+        const ciEl = document.getElementById('set_count_interpolate');
+        if (ciEl) ciEl.checked = serverSettings.count_interpolate !== false;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1416,6 +1420,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 udp_port:      parseInt(document.getElementById('set_udp_port').value),
                 dedup_time_enabled: document.getElementById('set_dedup_time').checked,
                 dedup_interval_ms:  parseInt(document.getElementById('set_dedup_interval').value),
+                count_interpolate:  document.getElementById('set_count_interpolate').checked,
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
