@@ -370,6 +370,31 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
                 {"status": "error", "message": str(e)}, status_code=400
             )
 
+    if 'count_interpolate' in request_body:
+        request_body['count_interpolate'] = bool(request_body['count_interpolate'])
+    if 'tracker_fps_auto' in request_body:
+        request_body['tracker_fps_auto'] = bool(request_body['tracker_fps_auto'])
+    if 'tracker_fps' in request_body:
+        try:
+            _v = float(request_body['tracker_fps'])
+            if not (0 <= _v <= 120):
+                raise ValueError("tracker_fps must be 0-120 (0=auto)")
+            request_body['tracker_fps'] = _v
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+    if 'track_buffer' in request_body:
+        try:
+            _v = int(request_body['track_buffer'])
+            if not (1 <= _v <= 600):
+                raise ValueError("track_buffer must be 1-600")
+            request_body['track_buffer'] = _v
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+
     allowed_keys = (
         'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
         'line_orientation', 'line_position', 'belt_direction',
@@ -377,6 +402,7 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
         'roi_enabled', 'roi_points',
         'clahe_enabled',
         'dedup_time_enabled', 'dedup_interval_ms',
+        'count_interpolate', 'tracker_fps_auto', 'tracker_fps', 'track_buffer',
     )
     current = _load_settings()
     for k in allowed_keys:
@@ -401,6 +427,13 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
                 current.get('dedup_time_enabled', True),
                 int(current.get('dedup_interval_ms', 300)),
             )
+        except Exception:
+            pass  # engine may not be running yet — settings still saved & used on next start
+
+    if stream_handler.engine is not None and 'count_interpolate' in request_body:
+        try:
+            stream_handler.engine.configure_counting(
+                count_interpolate=bool(request_body['count_interpolate']))
         except Exception:
             pass  # engine may not be running yet — settings still saved & used on next start
 
