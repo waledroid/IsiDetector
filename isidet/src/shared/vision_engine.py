@@ -173,10 +173,11 @@ class VisionEngine:
             start = sv.Point(line_x, 0)
             end = sv.Point(line_x, height)
 
-        # Trigger anchor. Default CENTER: the parcel emits from the SAME belt
-        # position regardless of size, which the PLC's timing correlation requires.
-        # Leading-edge (size-dependent) is kept only as an opt-in.
-        _anchor_name = self.config.get('inference', {}).get('trigger_anchor', 'center')
+        # Trigger anchor. Default 'leading_edge': fire on the FRONT of the parcel
+        # ("début de l'objet") — the PLC's timing correlation expects the send at the
+        # leading edge (size-independent timing), not the centre (which fires later).
+        # 'center' (bbox centre) is an opt-in alternative.
+        _anchor_name = self.config.get('inference', {}).get('trigger_anchor', 'leading_edge')
         if _anchor_name == 'leading_edge':
             anchor = self._ANCHOR_MAP.get(
                 (orientation, self.belt_direction),
@@ -189,6 +190,8 @@ class VisionEngine:
             start=start, end=end,
             triggering_anchors=[anchor],
         )
+        logger.info(f"[LINE] {orientation} @ {position:.2f} ({_anchor_name}) "
+                    f"for frame {width}x{height}")
 
     def process_frame(self, frame: np.ndarray, class_totals: dict):
         """Run detection, tracking, and line-crossing counting on one frame.
@@ -221,8 +224,14 @@ class VisionEngine:
             exceeds 50,000 entries (prevents unbounded memory growth in
             sessions longer than 8–12 hours).
         """
-        if self.line_zone is None:
-            h, w = frame.shape[:2]
+        # (Re)build the line whenever the incoming frame size changes — this is what
+        # makes line_position adapt to an ROI crop. The ROI crop (+ downscale) changes
+        # the frame dimensions; without this, the line keeps the pixel geometry from
+        # the first/pre-crop frame and no longer sits at line_position of the new crop.
+        # Dims are stable for a fixed ROI+source, so this only fires on an actual
+        # ROI/source change (no per-frame churn, no crossing-state thrash).
+        h, w = frame.shape[:2]
+        if self.line_zone is None or (w, h) != (self._frame_w, self._frame_h):
             self.init_line(w, h, self.line_position, self.line_orientation)
 
         # 1. Core AI Logic (timed for performance dashboard)
