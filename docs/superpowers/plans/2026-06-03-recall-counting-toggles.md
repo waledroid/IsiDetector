@@ -381,6 +381,20 @@ print('tracker frame_rate:', getattr(e.tracker, 'frame_rate', '?'))
 
 Expected: a value matching `testvid.mp4`'s FPS (e.g. `25`), not absent.
 
+- [ ] **Step 3b: Expose the calibrated FPS in `get_stats()` (both backends)**
+
+In **both** `stream_handler.py` `get_stats()`, add `frame_rate` to the returned dict (so the UI's read-only "Detected FPS" can show it). Use the value injected into `ve_config['bytetrack']['frame_rate']`, which you should also store on `self` at injection time as `self._tracker_frame_rate`:
+
+```python
+            "frame_rate": getattr(self, '_tracker_frame_rate', None),
+```
+
+And in the Task 3 Step 2 injection block, after setting `ve_config['bytetrack']['frame_rate'] = ...`, record it:
+
+```python
+                self._tracker_frame_rate = ve_config['bytetrack'].get('frame_rate')
+```
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -547,22 +561,17 @@ Immediately after the existing dedup settings group in the dev Settings section,
     Recover crossings between frames (recommended ON for low FPS)
   </label>
   <label class="switch-row">
-    <input type="checkbox" id="set_tracker_fps_auto" checked>
-    Auto-calibrate tracker to camera FPS (recommended ON)
-  </label>
-  <label>Manual tracker FPS (0 = auto)
-    <input type="number" id="set_tracker_fps" min="0" max="120" step="1" value="0">
-  </label>
-  <label>Track buffer (frames — higher survives detection gaps; applies on next Start)
-    <input type="number" id="set_track_buffer" min="1" max="600" step="1" value="60">
-  </label>
-  <label class="switch-row">
     <input type="checkbox" id="set_dedup_time_enabled">
     Time-dedup guard (OFF for recall — ON can drop close-together parcels)
   </label>
-  <small>FPS / track-buffer changes take effect on the next stream Start.</small>
+  <small>Tracker auto-calibrates to the camera frame rate. Detected FPS:
+    <span id="detectedFps">—</span></small>
 </div>
 ```
+
+Note: `tracker_fps` (manual override) and `track_buffer` are intentionally NOT in the
+UI — auto-calibration covers them. They remain settable via `settings.json` / `/api/settings`
+as engineer escape hatches (Tasks 4-5 keep accepting them), just not operator-facing.
 
 - [ ] **Step 2: Populate the fields on settings load (both main.js)**
 
@@ -570,9 +579,6 @@ In the function that fills the Settings form from `serverSettings` (search where
 
 ```javascript
         document.getElementById('set_count_interpolate').checked = serverSettings.count_interpolate !== false;
-        document.getElementById('set_tracker_fps_auto').checked = serverSettings.tracker_fps_auto !== false;
-        document.getElementById('set_tracker_fps').value = serverSettings.tracker_fps ?? 0;
-        document.getElementById('set_track_buffer').value = serverSettings.track_buffer ?? 60;
         document.getElementById('set_dedup_time_enabled').checked = serverSettings.dedup_time_enabled === true;
 ```
 
@@ -582,10 +588,17 @@ In the object POSTed to `/api/settings` (search where `dedup_interval_ms` is add
 
 ```javascript
             count_interpolate: document.getElementById('set_count_interpolate').checked,
-            tracker_fps_auto: document.getElementById('set_tracker_fps_auto').checked,
-            tracker_fps: parseFloat(document.getElementById('set_tracker_fps').value) || 0,
-            track_buffer: parseInt(document.getElementById('set_track_buffer').value) || 60,
             dedup_time_enabled: document.getElementById('set_dedup_time_enabled').checked,
+```
+
+- [ ] **Step 3b: Show the detected FPS (read-only) from the stats poll (both main.js)**
+
+In the stats handler (Flask poll of `/api/stats` / FastAPI `/ws/stats` onmessage), where other live fields are written to the DOM, add:
+
+```javascript
+        const _fps = (stats && stats.frame_rate) ? Math.round(stats.frame_rate) : null;
+        const _el = document.getElementById('detectedFps');
+        if (_el) _el.textContent = _fps ? _fps + ' fps' : '—';
 ```
 
 - [ ] **Step 4: Syntax check + visual verify**
@@ -760,6 +773,7 @@ git push origin fps
 
 ## Self-review notes
 
-- **Spec coverage:** tracker FPS calibration → Task 3; predicted-path crossing → Tasks 1-2; time-dedup OFF default → Task 4; track_buffer/conf exposed → Tasks 4/6; UI block → Task 6; live-apply → Task 5; seq/leading-edge/timing invariants → Task 8; eval harness → Task 7; dropped filters → not built (correct). conf (`yolo_conf`/`detr_conf`) is already in the existing Settings form — no new task needed; the new block's help text cross-references lowering it.
+- **Spec coverage:** tracker FPS calibration → Task 3; predicted-path crossing → Tasks 1-2; time-dedup OFF default → Task 4; UI block → Task 6; live-apply → Task 5; seq/leading-edge/timing invariants → Task 8; eval harness → Task 7; dropped filters → not built (correct).
+- **UI simplification (refinement after review):** `tracker_fps` and `track_buffer` are NOT exposed in the operator UI — FPS auto-calibration makes them redundant for the normal case. They remain settable via `settings.json`/`/api/settings`/YAML as engineer escape hatches (Tasks 4-5 still accept + default them; `track_buffer` default stays 60). The UI shows only `count_interpolate`, `dedup_time_enabled`, and a read-only detected-FPS readout. conf (`yolo_conf`/`detr_conf`) is already in the existing Settings form — unchanged.
 - **Type consistency:** `count_interpolate`, `tracker_fps_auto`, `tracker_fps`, `track_buffer`, `dedup_time_enabled` use identical names across settings.json, `/api/settings`, the UI ids (`set_*`), and `ve_config`. `CrossingDetector.update(track_ids, positions, line_coord, after_is_greater)` / `.forget(keep_ids)` signatures match between Task 1 (def) and Task 2 (call). `configure_counting(count_interpolate=...)` matches between Task 2 (def) and Task 5 (call).
 - **State across hot-swap:** `self.crossing` (CrossingDetector) is created in `__init__` and not rebuilt by `swap_inferencer`, so its latch survives a model swap like `counted_ids` does.
