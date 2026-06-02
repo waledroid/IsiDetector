@@ -1178,11 +1178,17 @@ class StreamHandler:
                             logger.warning(f"[ROI] Crop failed — disabling for this session: {roi_err}")
                             self.roi = None  # latch off; never retry mid-session
 
-                    # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz
+                    # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz.
+                    # INTER_AREA = area-averaging: the correct, anti-aliased
+                    # downscaler for large reductions (e.g. 2880→320). The default
+                    # INTER_LINEAR samples only 2×2 source px and aliases/blurs at
+                    # that ratio — this is the frame the inference engine sees, so
+                    # it must be a clean downscale.
                     fh, fw = frame.shape[:2]
                     if max(fh, fw) > self.web_imgsz:
                         scale = self.web_imgsz / max(fh, fw)
-                        frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)))
+                        frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)),
+                                           interpolation=cv2.INTER_AREA)
 
                     # Optional preprocess chain (CLAHE etc.) — applied on the
                     # already-downscaled frame to keep the cost low (~0.5 ms at

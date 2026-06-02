@@ -272,7 +272,10 @@ class OptimizedONNXInferencer(BaseInferencer):
         orig_h, orig_w = frame.shape[:2]
         r = min(self.model_h / orig_h, self.model_w / orig_w)
         new_w, new_h = int(round(orig_w * r)), int(round(orig_h * r))
-        resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        # INTER_AREA when shrinking (anti-aliased, sharp at large reductions);
+        # INTER_LINEAR when enlarging.
+        _interp = cv2.INTER_AREA if r < 1 else cv2.INTER_LINEAR
+        resized = cv2.resize(frame, (new_w, new_h), interpolation=_interp)
         pad_w = self.model_w - new_w
         pad_h = self.model_h - new_h
         left = pad_w // 2
