@@ -33,9 +33,10 @@ openvino:
 # IoU on moving parcels lands in the 70-85 % range — 0.9 was rejecting
 # legitimate matches and dropping tracker IDs (LineZone history then
 # starts empty for the new ID and the crossing event is missed).
-# 0.85: loose IoU gate (a match is accepted when IoU >= 1-thresh = 0.15), so a
-# parcel that jumps a lot between frames on a low-FPS CPU feed still re-associates
-# to its EXISTING track instead of spawning a new id (which would over-fire). The
-# sparse single-file belt keeps distinct parcels separate even at this looseness.
+# 0.70: tuned baseline (the pre-2026-06 value). A match is accepted when
+# IoU >= 1-thresh = 0.30, which is strict enough that a finished track does NOT
+# absorb the next parcel's detection (looser values let one track swallow the
+# following parcel -> that parcel never gets a new id -> its crossing is missed).
+# Over-fire from ID churn is handled by DedupGate, not by loosening this.
 bytetrack:
-  match_thresh: 0.85
+  match_thresh: 0.70
