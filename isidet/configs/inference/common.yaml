@@ -25,10 +25,14 @@ inference:
   udp:
     enabled: true
 
-  # Line-crossing trigger anchor. 'center' = emit when the parcel CENTER crosses
-  # the line (fixed position, size-independent) — required by the PLC timing
-  # correlation. 'leading_edge' = legacy size-dependent anchor (opt-in only).
-  trigger_anchor: center
+  # Line-crossing trigger anchor.
+  # 'leading_edge' (DEFAULT) = emit when the FRONT of the parcel crosses the line
+  #   (the "début de l'objet"). This is what the Celio automaticien requires: the
+  #   PLC's timing correlation expects the send at the leading edge, not later.
+  #   Maps via _ANCHOR_MAP using line_orientation + belt_direction (e.g.
+  #   horizontal + top_to_bottom → bottom edge = the front as the parcel descends).
+  # 'center' = emit at the bbox centre (size-independent but fires later) — opt-in.
+  trigger_anchor: leading_edge
 
   annotation:
     line_thickness: 2

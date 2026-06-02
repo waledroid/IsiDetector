@@ -212,7 +212,7 @@ Rebuilt: the inferencer reference and palette-indexed annotators (mask/box/label
 
 ## Trigger semantics (sorter-first)
 
-**Default anchor is now `center`** (config `inference.trigger_anchor`): the datagram fires when a parcel's **center** crosses the line, giving a fixed, size-independent emit position — required by the Celio PLC's timing-based correlation (the PLC, not IsiDetector, drives the sort gate). The leading-edge map below is the legacy `trigger_anchor: leading_edge` opt-in.
+**Default anchor is `leading_edge`** (config `inference.trigger_anchor`): the datagram fires when the **front of the parcel** ("début de l'objet") crosses the line — this is what the Celio automaticien requires, because the PLC's timing-based correlation expects the send at the leading edge, not later (the PLC, not IsiDetector, drives the sort gate). The anchor is resolved from `_ANCHOR_MAP` using `line_orientation` + `belt_direction` (table below). `trigger_anchor: center` (bbox centre, fires later) is an opt-in alternative.
 
 Dedup: track-ID (one emission per ByteTrack id) is always on; a time guard (`dedup_time_enabled`, default on; `dedup_interval_ms`, default 300) suppresses churned re-emissions of the same parcel. `seq` is stamped post-dedup, so it stays a gap-free delivery counter.
 
