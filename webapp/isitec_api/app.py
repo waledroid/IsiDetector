@@ -772,9 +772,9 @@ def set_line(request_body: dict, _token: str = Depends(require_dev)):
         )
     if position is not None:
         position = float(position)
-        if not (0.1 <= position <= 0.9):
+        if not (0.0 <= position <= 1.0):
             return JSONResponse(
-                {"status": "error", "message": "position must be 0.1-0.9"},
+                {"status": "error", "message": "position must be 0.0-1.0"},
                 status_code=400,
             )
     valid_directions = ('left_to_right', 'right_to_left', 'top_to_bottom', 'bottom_to_top')

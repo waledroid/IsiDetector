@@ -1225,19 +1225,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btnLineBack').addEventListener('click', () => {
-        lineSlider.value = Math.max(10, parseInt(lineSlider.value) - 5);
+        lineSlider.value = Math.max(0, parseInt(lineSlider.value) - 5);
         linePosVal.textContent = lineSlider.value;
         updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     document.getElementById('btnLineForward').addEventListener('click', () => {
-        lineSlider.value = Math.min(90, parseInt(lineSlider.value) + 5);
+        lineSlider.value = Math.min(100, parseInt(lineSlider.value) + 5);
         linePosVal.textContent = lineSlider.value;
         updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     lineSlider.addEventListener('input', (e) => {
         linePosVal.textContent = e.target.value;
+        updateLinePreview(lineOrientation, parseInt(e.target.value), beltDirection);
     });
     lineSlider.addEventListener('change', (e) => {
         updateLinePreview(lineOrientation, parseInt(e.target.value), beltDirection);

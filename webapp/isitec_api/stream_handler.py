@@ -626,7 +626,7 @@ class StreamHandler:
             if orientation is not None:
                 engine.line_orientation = orientation
             if position is not None:
-                engine.line_position = max(0.1, min(0.9, float(position)))
+                engine.line_position = max(0.0, min(1.0, float(position)))
             if belt_direction is not None:
                 engine.belt_direction = belt_direction
             if engine.line_zone is not None:

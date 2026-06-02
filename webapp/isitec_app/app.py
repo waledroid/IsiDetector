@@ -701,8 +701,8 @@ def line_config():
         return jsonify({"status": "error", "message": "orientation must be 'vertical' or 'horizontal'"}), 400
     if position is not None:
         position = float(position)
-        if not (0.1 <= position <= 0.9):
-            return jsonify({"status": "error", "message": "position must be 0.1-0.9"}), 400
+        if not (0.0 <= position <= 1.0):
+            return jsonify({"status": "error", "message": "position must be 0.0-1.0"}), 400
     valid_directions = ('left_to_right', 'right_to_left', 'top_to_bottom', 'bottom_to_top')
     if belt_direction and belt_direction not in valid_directions:
         return jsonify({"status": "error", "message": f"belt_direction must be one of {valid_directions}"}), 400
