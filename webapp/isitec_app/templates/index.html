@@ -4,6 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Kiosk memory hygiene: hard-reload the dashboard every 30 min so the
+         renderer's memory (live video buffers, Chart.js, JS heap) can't creep
+         until Chrome freezes. Front-end only — the backend stream, counts,
+         event log and UDP keep running server-side and re-sync on load.
+         Browser-level refresh (not a JS timer) so it fires even if the JS
+         event loop is already sluggish from the leak. -->
+    <meta http-equiv="refresh" content="1800">
     <title>visionAI Platform</title>
     <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
     <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.28-fps-flask">
