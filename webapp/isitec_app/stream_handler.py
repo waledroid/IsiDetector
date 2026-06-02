@@ -729,7 +729,8 @@ class StreamHandler:
             stats = {
                 "is_running": self.running,
                 "counts": self.class_totals,
-                "last_detected": self.last_detected
+                "last_detected": self.last_detected,
+                "frame_rate": getattr(self, '_tracker_frame_rate', None),
             }
             return sanitize_for_json(stats)
 
@@ -1040,6 +1041,27 @@ class StreamHandler:
                     ve_config['inference']['dedup_time_enabled'] = _ui['dedup_time_enabled']
                 if isinstance(_ui.get('dedup_interval_ms'), int) and 0 <= _ui['dedup_interval_ms'] <= 60000:
                     ve_config['inference']['dedup_interval_ms'] = _ui['dedup_interval_ms']
+                # Tracker FPS calibration — feed the real capture FPS to ByteTrack so
+                # its Kalman predicts the true per-frame displacement (fast parcels keep
+                # their id across the line). tracker_fps>0 overrides; auto uses the
+                # capture's nominal FPS, clamped to a sane 1..120, else 20.
+                # NOTE: self.reader (LiveReader) is not yet created at this point; we
+                # probe the source directly with a temporary VideoCapture to read the
+                # nominal FPS before the engine is built.
+                ve_config.setdefault('bytetrack', {})
+                _manual = float(_ui.get('tracker_fps', 0) or 0)
+                if _manual > 0:
+                    ve_config['bytetrack']['frame_rate'] = _manual
+                elif _ui.get('tracker_fps_auto', True):
+                    _native = 0.0
+                    try:
+                        _probe = cv2.VideoCapture(src_val)
+                        _native = float(_probe.get(cv2.CAP_PROP_FPS) or 0.0)
+                        _probe.release()
+                    except Exception:
+                        _native = 0.0
+                    ve_config['bytetrack']['frame_rate'] = _native if 1.0 <= _native <= 120.0 else 20.0
+                self._tracker_frame_rate = ve_config['bytetrack'].get('frame_rate')
                 self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._apply_line_settings(self.engine)
                 self._apply_render_settings(self.engine)

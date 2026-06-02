@@ -62,11 +62,16 @@ class VisionEngine:
         track_cfg = config.get('bytetrack') or inf_cfg.get('tracker', {})
 
         # 2. Tracking & Core Analytics
-        self.tracker = sv.ByteTrack(
+        _fr = track_cfg.get('frame_rate')
+        _bt_kwargs = dict(
             track_activation_threshold=conf_thresh,
             lost_track_buffer=track_cfg.get('track_buffer', 60),
-            minimum_matching_threshold=track_cfg.get('match_thresh', 0.9)
+            minimum_matching_threshold=track_cfg.get('match_thresh', 0.9),
         )
+        if _fr:                      # 0/None => let supervision default (30)
+            _bt_kwargs['frame_rate'] = int(round(float(_fr)))
+        self.tracker = sv.ByteTrack(**_bt_kwargs)
+        self._tracker_kwargs = _bt_kwargs    # remembered for live rebuilds
         
         # 3. Line Counting Logic (Stateful)
         self.line_zone = None
