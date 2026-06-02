@@ -7,6 +7,7 @@ import numpy as np
 from datetime import datetime
 from src.utils.event_logger import EventLogger
 from src.shared.dedup_gate import DedupGate
+from src.shared.crossing import CrossingDetector
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,9 @@ class VisionEngine:
             time_enabled=bool(_inf.get('dedup_time_enabled', True)),
             interval_ms=int(_inf.get('dedup_interval_ms', 300)),
         )
+        # Recall booster — OR-ed with LineZone, shares the dedup/seq path.
+        self.count_interpolate = bool(_inf.get('count_interpolate', True))
+        self.crossing = CrossingDetector()
         self._emit_seq = 0   # monotonic per-emitted-crossing counter (== UDP seq, == CSV seq)
         
         # 4. Logging & Telemetry — one CSV row per line crossing.
@@ -142,6 +146,16 @@ class VisionEngine:
             text_scale=0.3, text_thickness=1, text_padding=2,
         )
 
+    def configure_counting(self, count_interpolate=None):
+        """Live-toggle the recall recovery without tearing down session state.
+
+        Preserves counts/tracker/line/dedup. Only flips the interpolation flag;
+        CrossingDetector latch state is preserved so in-flight tracks keep their
+        before/after history across the toggle.
+        """
+        if count_interpolate is not None:
+            self.count_interpolate = bool(count_interpolate)
+
     def init_line(self, width, height, position=0.5, orientation='vertical',
                    belt_direction=None):
         """Initializes the counting line based on frame dimensions.
@@ -185,6 +199,17 @@ class VisionEngine:
             )
         else:
             anchor = sv.Position.CENTER
+
+        # Geometry the CrossingDetector needs (axis + line coord + belt "after" side).
+        self._trigger_anchor = anchor
+        if orientation == 'horizontal':
+            self._cross_axis = 1            # compare anchor y
+            self._line_coord = float(line_y)
+            self._after_is_greater = (self.belt_direction == 'top_to_bottom')
+        else:
+            self._cross_axis = 0            # compare anchor x
+            self._line_coord = float(line_x)
+            self._after_is_greater = (self.belt_direction == 'left_to_right')
 
         self.line_zone = sv.LineZone(
             start=start, end=end,
@@ -249,7 +274,20 @@ class VisionEngine:
         # 2. Crossing/Trigger Logic
         in_cross, out_cross = self.line_zone.trigger(detections=detections)
         all_crossings = in_cross | out_cross
-        
+
+        # Recall recovery: OR in the frame-gap-tolerant latch on the leading-edge
+        # anchor. Same dedup/seq path below, so a crossing caught by both counts once.
+        if self.count_interpolate and detections.tracker_id is not None and len(detections):
+            anchors = detections.get_anchors_coordinates(self._trigger_anchor)
+            ids = [int(t) for t in detections.tracker_id]
+            coords = [float(a[self._cross_axis]) for a in anchors]
+            recovered = self.crossing.update(ids, coords, self._line_coord,
+                                              self._after_is_greater)
+            if recovered:
+                all_crossings = all_crossings | np.array(
+                    [t in recovered for t in ids], dtype=bool)
+            self.crossing.forget(keep_ids=ids)
+
         # Collect EVERY new crossing this frame — the caller publishes one
         # UDP datagram per event so the sorter never misses a trigger when
         # two close-together objects cross in the same frame.
