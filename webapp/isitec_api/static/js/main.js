@@ -478,6 +478,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoCanvas = document.getElementById('videoCanvas');
     const vCtx = videoCanvas.getContext('2d');
 
+    // Shape the DISPLAY box to the frame's aspect ratio (longest side fills a
+    // fixed max), so a portrait crop shows portrait and a landscape crop shows
+    // landscape — instead of being squeezed into a fixed square. Sizes both the
+    // canvas and its wrapper so the frame hugs the view with no distortion.
+    const VIDEO_MAX = 640;
+    function fitCanvasDisplay() {
+        const w = videoCanvas.width, h = videoCanvas.height;
+        if (!w || !h) return;
+        const ar = w / h;
+        const dw = ar >= 1 ? VIDEO_MAX : Math.round(VIDEO_MAX * ar);  // landscape → fill width
+        const dh = ar >= 1 ? Math.round(VIDEO_MAX / ar) : VIDEO_MAX;  // portrait  → fill height
+        videoCanvas.style.width = dw + 'px';
+        videoCanvas.style.height = dh + 'px';
+        const wrap = videoCanvas.closest('.video-wrapper');
+        if (wrap) { wrap.style.width = dw + 'px'; wrap.style.height = dh + 'px'; }
+    }
+
     // ROI capture pauses the WebSocket-to-canvas draw so the snapshot stays
     // visible while the operator clicks the 4 corners.
     let roiCaptureActive = false;
@@ -508,6 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (videoCanvas.width !== img.width || videoCanvas.height !== img.height) {
                     videoCanvas.width = img.width;
                     videoCanvas.height = img.height;
+                    fitCanvasDisplay();
                 }
                 vCtx.drawImage(img, 0, 0);
                 URL.revokeObjectURL(url);
@@ -1509,6 +1527,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     snapshotImg = img;
                     videoCanvas.width = img.naturalWidth;
                     videoCanvas.height = img.naturalHeight;
+                    fitCanvasDisplay();
                     vCtx.drawImage(img, 0, 0);
                     videoCanvas.style.cursor = 'crosshair';
                     dragStart = null;
