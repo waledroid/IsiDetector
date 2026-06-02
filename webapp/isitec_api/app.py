@@ -811,4 +811,12 @@ if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get('PORT', 9501))
     print(f"Starting FastAPI Server on http://0.0.0.0:{port}")
-    uvicorn.run(app, host='0.0.0.0', port=port)
+    # Launch by import string (NOT the in-process `app` object). Running this file
+    # as a script makes it the `__main__` module; passing `app` directly runs the
+    # lifespan (which sets the module-global `stream_handler`) in `__main__`, while
+    # `ws_routes._get_handler` imports a *separate* `isitec_api.app` module whose
+    # `stream_handler` stays None -> /ws/video crashes with
+    # "'NoneType' object has no attribute 'frame_ready'". The import string forces
+    # uvicorn to load the single canonical `isitec_api.app`, so the HTTP routes and
+    # the WebSocket routes share one handler.
+    uvicorn.run('isitec_api.app:app', host='0.0.0.0', port=port)
