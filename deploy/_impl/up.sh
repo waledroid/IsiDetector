@@ -107,9 +107,12 @@ export COMPOSE_MODE
 
 if [[ "$COMPOSE_MODE" == "cpu" ]]; then
     COMPOSE_CMD="$SUDO_DOCKER docker compose -f docker-compose.yml -f docker-compose.cpu.yml"
-    # CPU: no ONNX preload is attempted (no CUDA to warm), so the Flask
-    # startup banner is the only useful readiness signal.
-    READY_PATTERN="Running on http://"
+    # CPU: no ONNX preload is attempted (no CUDA to warm), so the web server's
+    # startup banner is the readiness signal. Must match BOTH backends:
+    # Flask/Werkzeug prints "Running on http://"; FastAPI/uvicorn prints
+    # "Uvicorn running on http://" + "Application startup complete" (lowercase
+    # "running", so the Flask pattern alone never matched FastAPI → 300s stall).
+    READY_PATTERN="Running on http://|Uvicorn running on|Application startup complete"
     echo "▶ Using CPU compose profile (Dockerfile.cpu, rfdetr sidecar skipped)"
 else
     # docker-compose.gpu.yml adds the nvidia device reservation; --profile gpu
@@ -120,7 +123,7 @@ else
     # OR the Flask startup banner (fires always → unblocks the browser
     # even when weight paths are empty and no preload was attempted).
     # Whichever hits first wins — grep -m 1 kills the pipe.
-    READY_PATTERN="ONNX preload \(CUDA kernels warm|Running on http://"
+    READY_PATTERN="ONNX preload \(CUDA kernels warm|Running on http://|Uvicorn running on|Application startup complete"
     echo "▶ Using GPU compose profile (rfdetr sidecar enabled)"
 fi
 
