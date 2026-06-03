@@ -123,3 +123,39 @@ process_frame(frame):
 
 Every change is a flag with a config default. Setting `dedup_time_enabled` back ON,
 `count_interpolate` OFF, and `tracker_fps_auto` OFF restores exact current behaviour.
+
+## Findings (A/B on site footage `cam_20260602_105526.mp4`, 2026-06-03)
+
+Tested with the operator's ROI crop + horizontal line @0.71 (top→bottom). All runs
+use a re-timed deterministic copy of the clip, because the raw 25 fps clip can't be
+processed in real time on the CPU/OpenVINO path — frames drop *non-deterministically*
+(the same config gave 61, then 23 cartons), so live counts aren't reproducible enough
+to A/B. Re-timing (every-Nth-frame, same resolution so ROI/line carry over) makes the
+pipeline process every frame → repeatable counts.
+
+1. **The recall toggles are a safe no-op on cleanly-processed footage.** At 12.5 fps and
+   6.25 fps, deterministic, OLD (ByteTrack default 30 fps + dedup ON + interpolate OFF)
+   and NEW (FPS-calibrated + dedup OFF + interpolate ON) produced **identical** counts
+   (12.5 fps: 23/23; 6.25 fps: 9/9). When every frame is processed, baseline tracking
+   already catches every crossing, so there is nothing for `count_interpolate` to recover
+   and no churn for FPS-calibration to fix. **No regression, no false adds** — the toggles
+   are a safety net for the live frame-drop regime, not a counter-booster on good footage.
+   The toggles *do* take effect (verified: `frame_rate` reads `None` for OLD vs the
+   calibrated value for NEW; both A/B repeats match).
+
+2. **CLAHE / SpecularGuard was suppressing carton recall — the real win here.** Same clip,
+   same ROI/line/window, 12.5 fps deterministic: **CLAHE ON → 19 cartons; CLAHE OFF → 23
+   cartons** (+~21%, repeatable). CLAHE on the LAB L-channel alters carton appearance
+   enough to lose detections → lost crossings → under-count. **Recommendation: run carton
+   lines with CLAHE OFF** (the code default is already off; the site had it enabled). This
+   moved the count more than any tracking toggle on this footage.
+
+3. **OPEN — polybag = 0 is a real miss.** Every run counted 0 polybags, CLAHE on *or* off,
+   though the operator confirms polybags do cross in this clip. CLAHE doesn't affect it, so
+   this is a separate **detection / line-placement** issue on this footage — a follow-up,
+   not part of this feature.
+
+**Conclusion:** ship the recall feature (safe, no regression, FPS auto-calibrated, dedup
+default OFF). The measurable under-count win on this footage was **CLAHE OFF**. The recall
+toggles' real benefit lives in the live frame-drop regime and should be validated on-site
+against a manual tally over a real run.
