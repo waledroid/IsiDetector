@@ -34,7 +34,8 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 0 24px;
-    height: 110px;  /* Reduced height */
+    height: 72px;            /* slimmer header */
+    margin-bottom: 16px;     /* breathing room under the header */
     z-index: 10;
 }
 
@@ -44,9 +45,9 @@ body {
 }
 
 .header-logo img {
-    max-height: 80px;
+    max-height: 44px;
     background-color: rgba(255, 255, 255, 0.9);
-    padding: 8px 16px;
+    padding: 6px 12px;
     border-radius: 4px;
 }
 

@@ -27,9 +27,9 @@
     <header class="app-header">
         <div class="header-logo">
             <!-- Using the static local logo, fallback to placeholder -->
-            <img src="/static/img/logo_isitec.png" alt="ISITEC Logo" height="80"
+            <img src="/static/img/logo_isitec.png" alt="ISITEC Logo" height="44"
                 onerror="this.src='https://via.placeholder.com/240x80?text=ISITEC+Logo'">
-            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">visionAI Platform</h1>
+            <h1 style="margin-left: 16px; font-size: 22px;" data-i18n="title">visionAI Platform</h1>
         </div>
 
         <div style="display: flex; align-items: center; height: 100%;">
@@ -157,15 +157,14 @@
                         </button>
                         <!-- Set ROI / Clear ROI — hidden by default; revealed when settings.roi_enabled is true. -->
                         <button id="btnSetROI" class="btn"
-                            style="display: none; flex: 1; min-height: 40px; padding: 8px 12px; font-size: 15px; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 6px; text-align: center; background: #1b9bd8; color: #fff; white-space: nowrap;">
-                            <i class="material-icons" style="font-size: 20px;">crop</i> <span
-                                data-i18n="set_roi_btn">Set ROI</span>
+                            title="Set ROI — crop the inference area to the conveyor"
+                            style="display: none; flex: 0 0 auto; min-height: 40px; padding: 8px 12px; align-items: center; justify-content: center; background: #1b9bd8; color: #fff;">
+                            <i class="material-icons" style="font-size: 20px;">crop</i>
                         </button>
                         <button id="btnClearROI" class="btn"
-                            style="display: none; flex: 1; min-height: 40px; padding: 8px 12px; font-size: 15px; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 6px; text-align: center; background: #f57c00; color: #fff; white-space: nowrap;"
-                            title="Clear the saved ROI bbox so the next stream starts in full-frame mode (Set ROI to redraw)">
-                            <i class="material-icons" style="font-size: 20px;">crop_free</i> <span
-                                data-i18n="roi_clear_btn">Clear ROI</span>
+                            title="Clear the saved ROI (next stream runs full-frame)"
+                            style="display: none; flex: 0 0 auto; min-height: 40px; padding: 8px 12px; align-items: center; justify-content: center; background: #f57c00; color: #fff;">
+                            <i class="material-icons" style="font-size: 20px;">content_cut</i>
                         </button>
                     </div>
                     <!-- ROI capture status banner — hidden until Set ROI is clicked -->
