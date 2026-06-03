@@ -104,21 +104,3 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-
-  docs:
-    # Static documentation server — serves the built MkDocs site (mkdocs/site/)
-    # on its OWN port 9505, independent of the app's :9501/docs. Reuses the
-    # already-built web image (isitec-visionai) so there is NO extra image to
-    # pull on an air-gapped site PC — it just runs Python's stdlib http.server
-    # over the read-only site mount. Runs in both CPU and GPU modes (no profile).
-    image: isitec-visionai
-    pull_policy: never          # never reach out to a registry; use the local web image
-    command: ["python", "-m", "http.server", "9505", "--directory", "/opt/isitec/mkdocs/site"]
-    working_dir: /opt/isitec
-    volumes:
-      - ../mkdocs/site:/opt/isitec/mkdocs/site:ro
-    ports:
-      - "9505:9505"
-    environment:
-      - TZ=Europe/Paris
-    restart: unless-stopped

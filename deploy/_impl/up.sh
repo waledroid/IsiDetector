@@ -264,14 +264,6 @@ open_url() {
     return 1
 }
 
-# Documentation is served on its own port by the `docs` compose service
-# (static MkDocs site). Echo its address + port so the operator knows where
-# to find it without digging through compose.
-DOCS_PORT=9505
-_LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-echo "📚 Documentation: http://localhost:${DOCS_PORT}/${_LAN_IP:+   (LAN: http://${_LAN_IP}:${DOCS_PORT}/)}"
-echo "🖥  Dashboard:     ${URL}"
-
 open_url "$URL"
 
 # Return to the repo root so any code appended to this script later runs
