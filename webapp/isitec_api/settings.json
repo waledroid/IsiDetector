@@ -6,7 +6,7 @@
   "line_orientation": "horizontal",
   "line_position": 0.71,
   "belt_direction": "top_to_bottom",
-  "rtsp_url": "rtsp://admin:admin123@192.168.1.108:554/user=admin&password=admin123&channel=1&stream=1.sdp?",
+  "rtsp_url": "rtsp://admin:admin123@192.168.1.108:554/user=admin&password=admin123&channel=1&stream=0.sdp?",
   "udp_host": "10.0.0.1",
   "udp_port": 9502,
   "dedup_time_enabled": false,
