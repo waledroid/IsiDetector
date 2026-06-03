@@ -116,38 +116,41 @@ plugins:
 
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
-  - Deployment (Docker): deployment.md
-  - Compression Tool: compression.md
-  - Network Setup: network-setup.md
-  - Site Operations: site-operations.md
-  - Tutorials:
-    - Modular Plug-In Architecture: tutorials/MODULAR.md
-    - ONNX Deep-Dive: tutorials/ONNX_TUTORIAL.md
-    - OpenVINO Deep-Dive: tutorials/OPENVINO_TUTORIAL.md
-  - Architecture:
-    - architecture/index.md
-    - System Overview: architecture/overview.md
-    - Registry Pattern: architecture/registry.md
-    - BaseTrainer Contract: architecture/base-trainer.md
-  - Web Platform:
-    - web-app/index.md
-    - Functionalities: web-app/functionalities.md
-  - Trainers:
-    - trainers/index.md
-    - YOLOv26-seg: trainers/yolo.md
-    - RF-DETR-Seg: trainers/rfdetr.md
-  - Modules:
-    - modules/index.md
-    - Shared Vision Engine: modules/vision-engine.md
-    - Industry Analytics: modules/analytics.md
-    - Hook System: hooks/index.md
-    - Inference Engines:
-      - Overview: inference/index.md
-      - Export Engine: inference/export.md
+  - Getting Started:
+    - Install (Linux & Windows): getting-started/install.md
+    - First Run & Camera Setup: getting-started/first-run.md
+  - Daily Operation:
+    - Starting & Stopping: daily-ops/start-stop.md
+    - The Dashboard: daily-ops/dashboard.md
+    - Analytics & Event Logs: daily-ops/analytics.md
+  - Settings & Tuning:
+    - Settings Reference: settings/index.md
+    - Counting Line & Triggers: settings/counting.md
+    - Image & ROI: settings/image-roi.md
+    - Models & Modes (GPU/CPU): settings/models-modes.md
+  - Network & Remote:
+    - Network Lock-down (net.sh): network/network.md
+    - UDP Sorter Protocol: network/udp.md
+    - Remote Access (remote.sh): network/remote.md
+  - Troubleshooting: troubleshooting.md
+  - Reference / Developer:
+    - Overview (office / main only): reference/index.md
+    - Architecture:
+      - System Overview: architecture/overview.md
+      - Registry Pattern: architecture/registry.md
+      - BaseTrainer Contract: architecture/base-trainer.md
+    - Training:
+      - Trainers: trainers/index.md
+      - YOLO: trainers/yolo.md
+      - RF-DETR: trainers/rfdetr.md
+      - Training Hooks: hooks/index.md
+      - Config (train.yaml): config/index.md
+    - Inference Internals:
       - ONNX Engine: inference/onnx.md
-      - OpenVINO Engine: inference/openvino.md
-      - TensorRT Engine: inference/tensorrt.md
+      - Export Engine: inference/export.md
+    - Model Compression: compression.md
     - Performance Monitor: modules/performance.md
-    - Preprocessing: preprocessing/index.md
-  - Configuration: config/index.md
+    - Deep-Dive Tutorials:
+      - Modular Architecture: tutorials/MODULAR.md
+      - ONNX Deep-Dive: tutorials/ONNX_TUTORIAL.md
+      - OpenVINO Deep-Dive: tutorials/OPENVINO_TUTORIAL.md
