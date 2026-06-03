@@ -37,6 +37,12 @@
 /webapp/isitec_app/uploads/
 /webapp/isitec_api/uploads/
 /webapp/isitec_api/logs/
+# settings.json is per-site operator state (RTSP URL, ROI, line, UDP target, CLAHE).
+# Tracking it made every `git pull` on a site collide with the operator's local edits.
+# It is now untracked + ignored; the tracked settings.example.json is the template,
+# and _load_settings() seeds settings.json from it on first run.
+/webapp/isitec_api/settings.json
+/webapp/isitec_app/settings.json
 
 # ── deploy/ bucket ──────────────────────────────────────────────────────────
 # Per-host deployment marker written by run_start.sh

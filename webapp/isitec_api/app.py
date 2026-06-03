@@ -35,6 +35,14 @@ SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
 
 def _load_settings() -> dict:
     try:
+        # settings.json is gitignored per-site operator state. On a fresh clone it
+        # won't exist — seed it from the tracked settings.example.json template so
+        # the dashboard comes up with sane defaults (and never conflicts on git pull).
+        if not os.path.exists(SETTINGS_PATH):
+            _ex = os.path.join(os.path.dirname(SETTINGS_PATH), 'settings.example.json')
+            if os.path.exists(_ex):
+                import shutil
+                shutil.copy(_ex, SETTINGS_PATH)
         if os.path.exists(SETTINGS_PATH):
             with open(SETTINGS_PATH) as f:
                 return json.load(f)
