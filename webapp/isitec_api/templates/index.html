@@ -4,14 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Kiosk memory hygiene: hard-reload the dashboard every 30 min so the
+         renderer's memory (live video buffers, Chart.js, JS heap) can't creep
+         until Chrome freezes. Front-end only — the backend stream, counts,
+         event log and UDP keep running server-side and re-sync on load.
+         Browser-level refresh (not a JS timer) so it fires even if the JS
+         event loop is already sluggish from the leak. -->
+    <meta http-equiv="refresh" content="1800">
     <title>visionAI Platform</title>
-    <!-- Modern Fonts and Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=2.13">
+    <!-- Modern Fonts and Icons (vendored locally — works on air-gapped site PCs) -->
+    <link rel="stylesheet" href="/static/vendor/roboto.css?v=2.28-fps-api">
+    <link rel="stylesheet" href="/static/vendor/material-icons.css?v=2.28-fps-api">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.28-fps-api">
 
-    <!-- Chart.js for Advanced Analytics -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js for Advanced Analytics (vendored — no CDN dependency) -->
+    <script src="/static/vendor/chart.min.js?v=2.28-fps-api"></script>
 </head>
 
 <body>
@@ -20,9 +27,9 @@
     <header class="app-header">
         <div class="header-logo">
             <!-- Using the static local logo, fallback to placeholder -->
-            <img src="/static/img/logo_isitec.png" alt="ISITEC Logo" height="80"
+            <img src="/static/img/logo_isitec.png" alt="ISITEC Logo" height="44"
                 onerror="this.src='https://via.placeholder.com/240x80?text=ISITEC+Logo'">
-            <h1 style="margin-left: 16px; font-size: 28px;" data-i18n="title">visionAI Platform</h1>
+            <h1 style="margin-left: 16px; font-size: 22px;" data-i18n="title">visionAI Platform</h1>
         </div>
 
         <div style="display: flex; align-items: center; height: 100%;">
@@ -95,54 +102,84 @@
                         <label data-i18n="modes">Modes</label>
                         <select id="modelSelect">
                             <option value="yolo">Mode 1</option>
-                            <option value="rfdetr">Mode 2</option>
+                            <option value="rfdetr" class="gpu-only">Mode 2</option>
                         </select>
                     </div>
 
                     <div class="input-group">
                         <label data-i18n="input_source">Input Source</label>
                         <div class="source-buttons">
-                            <button class="source-btn active" data-type="image"><i class="material-icons">image</i>
+                            <button class="source-btn active" data-type="site_camera"><i class="material-icons">videocam</i>
+                                <span data-i18n="src_site_camera">Site Camera</span></button>
+                            <button class="source-btn" data-type="image"><i class="material-icons">image</i>
                                 <span data-i18n="src_image">Image</span></button>
                             <button class="source-btn" data-type="video"><i class="material-icons">movie</i> <span
                                     data-i18n="src_video">Video</span></button>
-                            <button class="source-btn" data-type="rtsp"><i class="material-icons">router</i> <span
-                                    data-i18n="src_rtsp">RTSP URL</span></button>
                             <button class="source-btn" data-type="camera"><i class="material-icons">photo_camera</i>
-                                <span data-i18n="src_camera">Camera</span></button>
+                                <span data-i18n="src_camera">USB Camera</span></button>
                         </div>
                     </div>
 
                     <div class="input-group" id="dynamicInputContainer">
                         <!-- File Upload Drop Area -->
-                        <div class="file-drop-area" id="fileDropArea">
+                        <div class="file-drop-area" id="fileDropArea" style="display:none;">
                             <span class="fake-file-btn" data-i18n="choose_file">Choose File</span>
                             <span class="file-msg" data-i18n="drag_drop">or drag and drop here</span>
                             <input class="file-input" type="file" id="sourceFile" accept="image/*">
                         </div>
-                        <!-- Text Input Area (for Camera ID or RTSP URL) -->
+                        <!-- Text Input Area (for USB Camera index) -->
                         <input type="text" id="sourceText" placeholder="" style="display:none; font-family: inherit;">
+                        <!-- Site Camera caption — shown when 'site_camera' source is active -->
+                        <div id="siteCameraCaption" class="site-camera-caption">
+                            <i class="material-icons" style="font-size:18px; vertical-align:middle;">info</i>
+                            <span data-i18n="site_camera_caption">Saved camera (configurable in Settings → Camera)</span>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Video Side (Right) -->
                 <div class="video-panel" style="display: flex; flex-direction: column;">
                     <div class="video-wrapper">
-                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; width: 100%; height: 100%; object-fit: contain;"></canvas>
+                        <canvas id="videoCanvas" style="background: #000; border-radius: 4px; display: block; margin: 0 auto; object-fit: contain;"></canvas>
                     </div>
 
                     <div class="button-group"
                         style="margin-top: 16px; justify-content: center; background: #f8f9fa; padding: 12px; border-radius: 6px; border: 1px solid #dadce0;">
                         <button id="btnStart" class="btn btn-primary"
-                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <i class="material-icons" style="font-size: 24px;">play_arrow</i> <span
+                            style="flex: 1; min-height: 40px; padding: 8px 12px; font-size: 15px; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 6px; text-align: center; white-space: nowrap;">
+                            <i class="material-icons" style="font-size: 20px;">play_arrow</i> <span
                                 data-i18n="start_tracking">Start</span>
                         </button>
                         <button id="btnStop" class="btn btn-danger"
-                            style="flex: 1; padding: 14px; font-size: 18px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <i class="material-icons" style="font-size: 24px;">stop</i> <span
+                            style="flex: 1; min-height: 40px; padding: 8px 12px; font-size: 15px; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 6px; text-align: center; white-space: nowrap;">
+                            <i class="material-icons" style="font-size: 20px;">stop</i> <span
                                 data-i18n="stop">Stop</span>
                         </button>
+                        <!-- Set ROI / Clear ROI — hidden by default; revealed when settings.roi_enabled is true. -->
+                        <button id="btnSetROI" class="btn"
+                            title="Set ROI — crop the inference area to the conveyor"
+                            style="display: none; flex: 0 0 auto; min-height: 40px; padding: 8px 12px; align-items: center; justify-content: center; background: #1b9bd8; color: #fff;">
+                            <i class="material-icons" style="font-size: 20px;">crop</i>
+                        </button>
+                        <button id="btnClearROI" class="btn"
+                            title="Clear the saved ROI (next stream runs full-frame)"
+                            style="display: none; flex: 0 0 auto; min-height: 40px; padding: 8px 12px; align-items: center; justify-content: center; background: #f57c00; color: #fff;">
+                            <i class="material-icons" style="font-size: 20px;">content_cut</i>
+                        </button>
+                    </div>
+                    <!-- ROI capture status banner — hidden until Set ROI is clicked -->
+                    <div id="roiCaptureBanner"
+                        style="display: none; margin-top: 8px; padding: 10px 14px; background: #e3f2fd; border: 1px solid #1b9bd8; border-radius: 6px; font-size: 14px; color: #0d47a1;">
+                        <span id="roiCaptureStatus" data-i18n="roi_drag_instruction">Click and drag a rectangle over the conveyor belt area.</span>
+                        <div id="roiCaptureButtons"
+                            style="display: none; margin-top: 12px; gap: 12px; align-items: center; justify-content: flex-start;">
+                            <button id="btnSaveROI" class="btn btn-primary"
+                                style="padding: 8px 20px; font-size: 14px; min-width: 130px;"
+                                data-i18n="roi_save">Save ROI</button>
+                            <button id="btnCancelROI" class="btn"
+                                style="padding: 8px 20px; font-size: 14px; min-width: 130px; background: #6c757d; color: #fff;"
+                                data-i18n="roi_cancel">Cancel</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -303,6 +340,103 @@
                 <h2 data-i18n="system_settings">System Settings</h2>
                 <p style="color: var(--text-light); font-size: 14px; margin: -10px 0 20px;">Configure AI models and inference parameters. Changes take effect on the next stream startup.</p>
                 
+                <!-- CAMERA CONFIG (top-level — drives the landing page's Site Camera button) -->
+                <div class="settings-group" style="grid-column: 1 / -1; margin-bottom: 24px;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#1b9bd8;">CAM</span>
+                        <h3 data-i18n="cam_settings">Camera</h3>
+                    </div>
+                    <div class="sg-body">
+                        <label data-i18n="set_rtsp_url_label" title="Saved camera URL used by the Site Camera button on the Live Inference page.">Default RTSP URL</label>
+                        <input type="text" id="set_rtsp_url" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="rtsp://user:pass@ip:554/...">
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="cam_settings_hint">
+                            Tip: most IP cameras expose a sub-stream at a lower resolution — typically <code>stream=1</code> or <code>/102</code> in the URL path. On a CPU-only site PC, sub-stream gives much higher FPS.
+                        </p>
+                        <label style="margin-top: 12px; display: flex; gap: 8px; align-items: center; font-weight: 500;">
+                            <input type="checkbox" id="set_auto_start" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_auto_start_label" title="On container boot, replay the last successful Start (saved camera + last-used model). Stays off until you tick it.">Auto-start stream on boot</span>
+                        </label>
+                        <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);" data-i18n="set_auto_start_hint">
+                            Once enabled, click Start manually one time to record the model selection. After that, the stream comes up by itself every container boot — no operator click needed.
+                        </p>
+                        <label style="margin-top: 12px; display: flex; gap: 8px; align-items: center; font-weight: 500;">
+                            <input type="checkbox" id="set_roi_enabled" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_roi_enabled_label" title="Reveals a 'Set ROI' button on the Live Inference page so the installer can crop the inference area to just the conveyor belt.">Show "Set ROI" button on landing page</span>
+                        </label>
+                        <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);">
+                            <span data-i18n="roi_current">Current ROI:</span>
+                            <span id="disp_roi_current" data-i18n="roi_none" style="font-family: 'Roboto Mono', monospace;">none</span>
+                        </p>
+                        <label style="margin-top: 12px; display: flex; gap: 8px; align-items: center; font-weight: 500;">
+                            <input type="checkbox" id="set_clahe_enabled" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_clahe_enabled_label" title="Applies CLAHE on the LAB lightness channel (SpecularGuard) before inference. Helps with industrial polybag glare and uneven lighting. Costs ~0.5 ms/frame at 320×N. Stop and Start the stream to apply.">Apply CLAHE preprocess (glare / low-light correction)</span>
+                        </label>
+                        <p style="margin: 4px 0 0 26px; font-size: 12px; color: var(--text-light);" data-i18n="set_clahe_enabled_hint">
+                            Boosts contrast in shadowed and reflective regions before the model sees the frame. Re-Start the stream after toggling.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- SORTER / UDP CONFIG (where each line-crossing UDP datagram is sent) -->
+                <div class="settings-group" style="grid-column: 1 / -1; margin-bottom: 24px;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#7e57c2;">UDP</span>
+                        <h3 data-i18n="sorter_settings">Sorter (UDP target)</h3>
+                    </div>
+                    <div class="sg-body">
+                        <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+                            <div style="flex: 2 1 240px;">
+                                <label data-i18n="set_udp_host_label" title="Host or IP of the automate's PC that receives sort triggers.">Sorter IP / hostname</label>
+                                <input type="text" id="set_udp_host" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="127.0.0.1">
+                            </div>
+                            <div style="flex: 0 0 120px;">
+                                <label data-i18n="set_udp_port_label">UDP port</label>
+                                <input type="number" id="set_udp_port" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" min="1" max="65535" value="9502">
+                            </div>
+                            <div style="flex: 0 0 120px;">
+                                <label title="OFF for recall — ON suppresses any crossing within the interval, which can DROP a distinct close-together parcel. Track-ID dedup is always on.">Time dedup</label>
+                                <input type="checkbox" id="set_dedup_time">
+                                <label>Dedup interval (ms)</label>
+                                <input type="number" id="set_dedup_interval" class="set-select" min="0" max="60000" value="300">
+                            </div>
+                        </div>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="sorter_settings_hint">
+                            Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.
+                        </p>
+                        <div style="margin-top:12px;">
+                            <label title="Recover crossings that happen between frames at low FPS (recommended ON).">
+                                <input type="checkbox" id="set_count_interpolate" checked>
+                                Recover crossings between frames (recall — low FPS)
+                            </label>
+                            <p style="margin:6px 0 0; font-size:12px; color: var(--text-light);">
+                                Tracker auto-calibrates to the camera frame rate. Detected FPS:
+                                <span id="detectedFps">—</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODE BANNER (read-only) — populated by main.js from /api/mode -->
+                <div class="settings-group" id="modeBanner" style="grid-column: 1 / -1; margin-bottom: 24px; background: #fff8e1; border-color: #ffd54f;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#f57c00;">MODE</span>
+                        <h3 id="mode_banner_title" data-i18n="mode_label">Runtime mode</h3>
+                    </div>
+                    <div class="sg-body">
+                        <p style="margin: 0; font-size: 14px; color: var(--text);">
+                            <span id="mode_banner_value" style="font-weight: 600; font-size: 16px;">…</span>
+                            <span id="mode_banner_via" style="margin-left: 8px; color: var(--text-light); font-size: 12px;"></span>
+                        </p>
+                        <p style="margin: 6px 0 0; font-size: 12px; color: var(--text-light);">
+                            <span data-i18n="mode_loaded_from">Loaded:</span>
+                            <span id="mode_banner_files" style="font-family: 'Roboto Mono', monospace;">—</span>
+                        </p>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="mode_banner_hint">
+                            CPU vs GPU is auto-detected at container boot. Optimization defaults (skip-masks, threads, ByteTrack thresholds) live in <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — not in this Settings panel.
+                        </p>
+                    </div>
+                </div>
+
                 <div class="settings-grid">
                     <!-- MODE 1 CONFIG -->
                     <div class="settings-group">
@@ -316,12 +450,6 @@
                                 <option value="">Loading models...</option>
                             </select>
 
-                            <label title="Higher resolution reduces speed but improves small object detection.">Image Size (imgsz)</label>
-                            <div class="slider-wrap">
-                                <input type="range" id="set_yolo_imgsz" min="320" max="1024" step="32" value="640">
-                                <span class="slider-val" id="val_yolo_imgsz">640px</span>
-                            </div>
-
                             <label title="Lower confidence = more detections, higher false positive rate.">Confidence Threshold</label>
                             <div class="slider-wrap">
                                 <input type="range" id="set_yolo_conf" min="0.1" max="0.95" step="0.05" value="0.5">
@@ -330,8 +458,8 @@
                         </div>
                     </div>
 
-                    <!-- MODE 2 CONFIG -->
-                    <div class="settings-group">
+                    <!-- MODE 2 CONFIG (GPU mode only — hidden on CPU via .gpu-only) -->
+                    <div class="settings-group gpu-only">
                         <div class="sg-header">
                             <span class="sg-badge mode-2">MODE 2</span>
                             <h3>RF-DETR Configuration</h3>
@@ -341,12 +469,6 @@
                             <select id="set_detr_weights" class="set-select">
                                 <option value="">Loading models...</option>
                             </select>
-
-                            <label title="Native resolution for RF-DETR is usually 640.">Image Size (imgsz)</label>
-                            <div class="slider-wrap">
-                                <input type="range" id="set_detr_imgsz" min="320" max="1024" step="32" value="640">
-                                <span class="slider-val" id="val_detr_imgsz">640px</span>
-                            </div>
 
                             <label>Confidence Threshold</label>
                             <div class="slider-wrap">
@@ -379,7 +501,7 @@
                             <button class="line-btn" id="btnLineBack" title="Move line back (-5%)">
                                 <i class="material-icons">arrow_back</i> Back
                             </button>
-                            <input type="range" id="linePositionSlider" min="10" max="90" step="5" value="50" style="flex:1;">
+                            <input type="range" id="linePositionSlider" min="0" max="100" step="1" value="50" style="flex:1;">
                             <button class="line-btn" id="btnLineForward" title="Move line forward (+5%)">
                                 <i class="material-icons">arrow_forward</i> Forward
                             </button>
@@ -433,7 +555,7 @@
         <button type="button" class="fs-prompt-dismiss" aria-label="Dismiss">×</button>
     </div>
 
-    <script src="/static/js/main.js?v=2.13"></script>
+    <script src="/static/js/main.js?v=2.28-fps-api"></script>
 </body>
 
 </html>

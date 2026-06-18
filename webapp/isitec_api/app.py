@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile, File, Depends, Header, Query
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -81,7 +81,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(_base_dir, "static")), n
 templates = Jinja2Templates(directory=os.path.join(_base_dir, "templates"))
 
 # ── Import and register WebSocket routes ──────────────────────────────────────
-from isitec_api.websockets import router as ws_router
+from isitec_api.ws_routes import router as ws_router
 app.include_router(ws_router)
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -98,6 +98,36 @@ def video_feed():
         stream_handler.generate_frames(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
+
+
+@app.get("/api/mode")
+def api_mode():
+    """Report the auto-detected runtime mode and which inference YAMLs are loaded.
+
+    Used by the UI's Mode banner and by `./net.sh` health checks.
+    """
+    return {
+        "mode": getattr(stream_handler, 'mode', 'unknown'),
+        "config_files": getattr(stream_handler, 'inference_config_files', []),
+        "detected_via": getattr(stream_handler, 'mode_detected_via', 'n/a'),
+    }
+
+
+@app.get("/api/snapshot")
+def api_snapshot():
+    """Return one full-resolution raw camera frame as JPEG.
+
+    Used by the Live-Inference Set-ROI configurator to draw the crop
+    rectangle on a true full-res snapshot. Returns 404 when the stream
+    isn't running (operator must Start first to capture a frame).
+    """
+    payload = stream_handler.get_raw_snapshot()
+    if not payload:
+        return JSONResponse(
+            {"status": "error",
+             "message": "Start the stream first to capture a snapshot."},
+            status_code=404)
+    return Response(content=payload, media_type="image/jpeg")
 
 
 # FastAPI's built-in ``/swagger`` only exposes the OpenAPI interactive UI;
@@ -251,12 +281,162 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             status_code=400,
         )
 
-    allowed_keys = ('yolo_weights', 'rfdetr_weights', 'yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf', 'line_orientation', 'line_position', 'belt_direction')
+    # cpu_threads / skip_masks / skip_traces / yolo_imgsz / detr_imgsz
+    # are now controlled by isidet/configs/inference/{cpu,gpu}.yaml (mode-driven).
+    # Silently strip if posted — defends against stale UI caches.
+    for k in ('cpu_threads', 'skip_masks', 'skip_traces', 'yolo_imgsz', 'detr_imgsz'):
+        if k in request_body:
+            del request_body[k]
+
+    if 'rtsp_url' in request_body:
+        v = request_body['rtsp_url']
+        if (not isinstance(v, str) or len(v) > 512
+                or not v.lower().startswith(('rtsp://', 'rtspt://'))):
+            return JSONResponse(
+                {"status": "error",
+                 "message": "rtsp_url must be a string ≤ 512 chars starting with rtsp:// or rtspt://"},
+                status_code=400,
+            )
+        request_body['rtsp_url'] = v.strip()
+    if 'udp_host' in request_body:
+        v = request_body['udp_host']
+        if not isinstance(v, str) or len(v) > 255 or not v.strip():
+            return JSONResponse(
+                {"status": "error",
+                 "message": "udp_host must be a non-empty string (IP or hostname)"},
+                status_code=400,
+            )
+        request_body['udp_host'] = v.strip()
+    if 'udp_port' in request_body:
+        try:
+            n = int(request_body['udp_port'])
+            if not (1 <= n <= 65535):
+                raise ValueError("udp_port must be between 1 and 65535")
+            request_body['udp_port'] = n
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+    if 'auto_start' in request_body:
+        request_body['auto_start'] = bool(request_body['auto_start'])
+    if 'roi_enabled' in request_body:
+        request_body['roi_enabled'] = bool(request_body['roi_enabled'])
+    if 'clahe_enabled' in request_body:
+        request_body['clahe_enabled'] = bool(request_body['clahe_enabled'])
+    if 'roi_points' in request_body:
+        v = request_body['roi_points']
+        if not isinstance(v, list) or len(v) not in (0, 4):
+            return JSONResponse(
+                {"status": "error",
+                 "message": "roi_points must be an empty list or exactly 4 [x,y] pairs"},
+                status_code=400)
+        cleaned = []
+        for p in v:
+            if (not isinstance(p, (list, tuple)) or len(p) != 2
+                    or not all(isinstance(c, (int, float)) for c in p)):
+                return JSONResponse(
+                    {"status": "error",
+                     "message": "each roi_points entry must be [x,y] of two numbers"},
+                    status_code=400)
+            x, y = int(p[0]), int(p[1])
+            if not (0 <= x <= 8192 and 0 <= y <= 8192):
+                return JSONResponse(
+                    {"status": "error",
+                     "message": "roi_points coords must be in [0, 8192]"},
+                    status_code=400)
+            cleaned.append([x, y])
+        request_body['roi_points'] = cleaned
+    # last_model_type / last_weights are written by the server on a successful
+    # start(); reject client attempts to set them so the operator can't put
+    # the auto-start path into a wedged state via the Settings UI.
+    for k in ('last_model_type', 'last_weights'):
+        if k in request_body:
+            del request_body[k]
+
+    if 'dedup_time_enabled' in request_body:
+        if not isinstance(request_body['dedup_time_enabled'], bool):
+            return JSONResponse(
+                {"status": "error", "message": "dedup_time_enabled must be a boolean"},
+                status_code=400,
+            )
+    if 'dedup_interval_ms' in request_body:
+        try:
+            n = int(request_body['dedup_interval_ms'])
+            if not (0 <= n <= 60000):
+                raise ValueError("dedup_interval_ms must be 0-60000")
+            request_body['dedup_interval_ms'] = n
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+
+    if 'count_interpolate' in request_body:
+        request_body['count_interpolate'] = bool(request_body['count_interpolate'])
+    if 'tracker_fps_auto' in request_body:
+        request_body['tracker_fps_auto'] = bool(request_body['tracker_fps_auto'])
+    if 'tracker_fps' in request_body:
+        try:
+            _v = float(request_body['tracker_fps'])
+            if not (0 <= _v <= 120):
+                raise ValueError("tracker_fps must be 0-120 (0=auto)")
+            request_body['tracker_fps'] = _v
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+    if 'track_buffer' in request_body:
+        try:
+            _v = int(request_body['track_buffer'])
+            if not (1 <= _v <= 600):
+                raise ValueError("track_buffer must be 1-600")
+            request_body['track_buffer'] = _v
+        except (ValueError, TypeError) as e:
+            return JSONResponse(
+                {"status": "error", "message": str(e)}, status_code=400
+            )
+
+    allowed_keys = (
+        'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
+        'line_orientation', 'line_position', 'belt_direction',
+        'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
+        'roi_enabled', 'roi_points',
+        'clahe_enabled',
+        'dedup_time_enabled', 'dedup_interval_ms',
+        'count_interpolate', 'tracker_fps_auto', 'tracker_fps', 'track_buffer',
+    )
     current = _load_settings()
     for k in allowed_keys:
         if k in request_body:
             current[k] = request_body[k]
     _save_settings(current)
+
+    # Live-retarget the UDP publisher if the sorter address changed —
+    # spares the operator a stream restart for what's a single-call config.
+    if 'udp_host' in request_body or 'udp_port' in request_body:
+        try:
+            stream_handler.publisher.update_target(
+                current.get('udp_host', '127.0.0.1'),
+                int(current.get('udp_port', 9502)),
+            )
+        except Exception:
+            pass
+
+    if 'dedup_time_enabled' in request_body or 'dedup_interval_ms' in request_body:
+        try:
+            stream_handler.engine.dedup.configure(
+                current.get('dedup_time_enabled', True),
+                int(current.get('dedup_interval_ms', 300)),
+            )
+        except Exception:
+            pass  # engine may not be running yet — settings still saved & used on next start
+
+    if stream_handler.engine is not None and 'count_interpolate' in request_body:
+        try:
+            stream_handler.engine.configure_counting(
+                count_interpolate=bool(request_body['count_interpolate']))
+        except Exception:
+            pass  # engine may not be running yet — settings still saved & used on next start
+
     return {"status": "success", "settings": current}
 
 
@@ -480,10 +660,10 @@ def export_events(from_: str | None = Query(None, alias="from"),
                             status_code=400)
 
     def _generate():
-        yield "ts,class,id\n"
-        for ts, cls, eid in EventLogger.read_events(_events_dir(),
-                                                    window_start, window_end):
-            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''}\n"
+        yield "ts,class,id,seq\n"
+        for ts, cls, eid, seq in EventLogger.read_events_full(_events_dir(),
+                                                              window_start, window_end):
+            yield f"{ts.isoformat()},{cls},{eid if eid is not None else ''},{seq if seq is not None else ''}\n"
 
     filename = f"events_{from_}_to_{to}.csv"
     return StreamingResponse(
@@ -532,8 +712,15 @@ def get_models():
 
                 entry = {"name": file, "path": rel_path}
 
-                if file.endswith('.xml') and 'openvino' not in root_dir.lower():
-                    continue
+                # Skip non-model XML files (e.g. sitemap.xml). OpenVINO IRs
+                # always come as a (.xml, .bin) pair with matching basenames;
+                # use that as the gate rather than a directory-name heuristic
+                # — the latter excluded NNCF / POT-quantised IRs the operator
+                # drops alongside the FP32 weights instead of in a sub-folder.
+                if file.endswith('.xml'):
+                    bin_path = abs_path[:-4] + '.bin'
+                    if not os.path.exists(bin_path):
+                        continue
 
                 path_lower = rel_path.lower()
                 is_rfdetr = 'rfdetr' in path_lower or 'detr' in path_lower or 'rf-detr' in file.lower()
@@ -556,6 +743,18 @@ def get_models():
 
     yolo_models = sorted(yolo_models, key=lambda x: x["name"])
     rfdetr_models = sorted(rfdetr_models, key=lambda x: x["name"])
+
+    # Mode-driven filtering. CPU mode allows only YOLO + .xml/.onnx; GPU mode
+    # passes everything through.
+    model_cfg = (getattr(stream_handler, 'inference_config', None) or {}).get('model') or {}
+    allowed_exts = set(model_cfg.get('allowed_extensions') or [])
+    allowed_fams = set(model_cfg.get('allowed_families') or [])
+
+    if allowed_exts:
+        yolo_models = [m for m in yolo_models if os.path.splitext(m['name'])[1].lower() in allowed_exts]
+        rfdetr_models = [m for m in rfdetr_models if os.path.splitext(m['name'])[1].lower() in allowed_exts]
+    if 'rfdetr' not in allowed_fams:
+        rfdetr_models = []
 
     return {
         "status": "success",
@@ -606,9 +805,9 @@ def set_line(request_body: dict, _token: str = Depends(require_dev)):
         )
     if position is not None:
         position = float(position)
-        if not (0.1 <= position <= 0.9):
+        if not (0.0 <= position <= 1.0):
             return JSONResponse(
-                {"status": "error", "message": "position must be 0.1-0.9"},
+                {"status": "error", "message": "position must be 0.0-1.0"},
                 status_code=400,
             )
     valid_directions = ('left_to_right', 'right_to_left', 'top_to_bottom', 'bottom_to_top')
@@ -645,4 +844,12 @@ if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get('PORT', 9501))
     print(f"Starting FastAPI Server on http://0.0.0.0:{port}")
-    uvicorn.run(app, host='0.0.0.0', port=port)
+    # Launch by import string (NOT the in-process `app` object). Running this file
+    # as a script makes it the `__main__` module; passing `app` directly runs the
+    # lifespan (which sets the module-global `stream_handler`) in `__main__`, while
+    # `ws_routes._get_handler` imports a *separate* `isitec_api.app` module whose
+    # `stream_handler` stays None -> /ws/video crashes with
+    # "'NoneType' object has no attribute 'frame_ready'". The import string forces
+    # uvicorn to load the single canonical `isitec_api.app`, so the HTTP routes and
+    # the WebSocket routes share one handler.
+    uvicorn.run('isitec_api.app:app', host='0.0.0.0', port=port)

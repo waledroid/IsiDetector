@@ -6,6 +6,8 @@ import supervision as sv
 import numpy as np
 from datetime import datetime
 from src.utils.event_logger import EventLogger
+from src.shared.dedup_gate import DedupGate
+from src.shared.crossing import CrossingDetector
 
 logger = logging.getLogger(__name__)
 
@@ -49,22 +51,40 @@ class VisionEngine:
     def __init__(self, inferencer, config: dict):
         self.inferencer = inferencer
         self.config = config
-        
+
         # 1. Pipeline Config
+        # ByteTrack params now live under config['bytetrack'] (mode-driven, from
+        # isidet/configs/inference/{cpu,gpu}.yaml). Fall back to the legacy
+        # config['inference']['tracker'] location if a caller still uses the
+        # old train.yaml shape.
         inf_cfg = config.get('inference', {})
         conf_thresh = inf_cfg.get('conf_threshold', 0.3)
-        track_cfg = inf_cfg.get('tracker', {})
-        
+        track_cfg = config.get('bytetrack') or inf_cfg.get('tracker', {})
+
         # 2. Tracking & Core Analytics
-        self.tracker = sv.ByteTrack(
+        _fr = track_cfg.get('frame_rate')
+        _bt_kwargs = dict(
             track_activation_threshold=conf_thresh,
             lost_track_buffer=track_cfg.get('track_buffer', 60),
-            minimum_matching_threshold=track_cfg.get('match_thresh', 0.9)
+            minimum_matching_threshold=track_cfg.get('match_thresh', 0.9),
         )
+        if _fr:                      # 0/None => let supervision default (30)
+            _bt_kwargs['frame_rate'] = int(round(float(_fr)))
+        self.tracker = sv.ByteTrack(**_bt_kwargs)
+        self._tracker_kwargs = _bt_kwargs    # remembered for live rebuilds
         
         # 3. Line Counting Logic (Stateful)
-        self.line_zone = None 
-        self.counted_ids = set()
+        self.line_zone = None
+        # Dedup: track-ID base (always on) + optional time guard (operator toggle).
+        _inf = config.get('inference', {})
+        self.dedup = DedupGate(
+            time_enabled=bool(_inf.get('dedup_time_enabled', True)),
+            interval_ms=int(_inf.get('dedup_interval_ms', 300)),
+        )
+        # Recall booster — OR-ed with LineZone, shares the dedup/seq path.
+        self.count_interpolate = bool(_inf.get('count_interpolate', True))
+        self.crossing = CrossingDetector()
+        self._emit_seq = 0   # monotonic per-emitted-crossing counter (== UDP seq, == CSV seq)
         
         # 4. Logging & Telemetry — one CSV row per line crossing.
         # The events subdir keeps them separate from legacy snapshot logs
@@ -116,7 +136,7 @@ class VisionEngine:
 
         Rebuilds palette-dependent annotators against the new inferencer's
         class_names so per-class colours reflect the new model's convention
-        (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, counted_ids,
+        (YOLO 0-indexed vs RF-DETR 1-indexed). Tracker, dedup gate,
         line_zone, and event_logger are preserved so hot-swap keeps
         counts and per-event history intact.
         """
@@ -130,6 +150,16 @@ class VisionEngine:
         self.label_annotator = sv.LabelAnnotator(
             text_scale=0.3, text_thickness=1, text_padding=2,
         )
+
+    def configure_counting(self, count_interpolate=None):
+        """Live-toggle the recall recovery without tearing down session state.
+
+        Preserves counts/tracker/line/dedup. Only flips the interpolation flag;
+        CrossingDetector latch state is preserved so in-flight tracks keep their
+        before/after history across the toggle.
+        """
+        if count_interpolate is not None:
+            self.count_interpolate = bool(count_interpolate)
 
     def init_line(self, width, height, position=0.5, orientation='vertical',
                    belt_direction=None):
@@ -162,16 +192,36 @@ class VisionEngine:
             start = sv.Point(line_x, 0)
             end = sv.Point(line_x, height)
 
-        # Pick the leading-edge anchor based on orientation + belt direction.
-        anchor = self._ANCHOR_MAP.get(
-            (orientation, self.belt_direction),
-            sv.Position.BOTTOM_CENTER,   # safe fallback
-        )
+        # Trigger anchor. Default 'leading_edge': fire on the FRONT of the parcel
+        # ("début de l'objet") — the PLC's timing correlation expects the send at the
+        # leading edge (size-independent timing), not the centre (which fires later).
+        # 'center' (bbox centre) is an opt-in alternative.
+        _anchor_name = self.config.get('inference', {}).get('trigger_anchor', 'leading_edge')
+        if _anchor_name == 'leading_edge':
+            anchor = self._ANCHOR_MAP.get(
+                (orientation, self.belt_direction),
+                sv.Position.BOTTOM_CENTER,
+            )
+        else:
+            anchor = sv.Position.CENTER
+
+        # Geometry the CrossingDetector needs (axis + line coord + belt "after" side).
+        self._trigger_anchor = anchor
+        if orientation == 'horizontal':
+            self._cross_axis = 1            # compare anchor y
+            self._line_coord = float(line_y)
+            self._after_is_greater = (self.belt_direction == 'top_to_bottom')
+        else:
+            self._cross_axis = 0            # compare anchor x
+            self._line_coord = float(line_x)
+            self._after_is_greater = (self.belt_direction == 'left_to_right')
 
         self.line_zone = sv.LineZone(
             start=start, end=end,
             triggering_anchors=[anchor],
         )
+        logger.info(f"[LINE] {orientation} @ {position:.2f} ({_anchor_name}) "
+                    f"for frame {width}x{height}")
 
     def process_frame(self, frame: np.ndarray, class_totals: dict):
         """Run detection, tracking, and line-crossing counting on one frame.
@@ -200,12 +250,18 @@ class VisionEngine:
               in the same frame (close-together on the belt).
 
         Note:
-            ``counted_ids`` is automatically pruned when it exceeds
-            50,000 entries (prevents unbounded memory growth in
+            The dedup gate's ``counted_ids`` is automatically pruned when it
+            exceeds 50,000 entries (prevents unbounded memory growth in
             sessions longer than 8–12 hours).
         """
-        if self.line_zone is None:
-            h, w = frame.shape[:2]
+        # (Re)build the line whenever the incoming frame size changes — this is what
+        # makes line_position adapt to an ROI crop. The ROI crop (+ downscale) changes
+        # the frame dimensions; without this, the line keeps the pixel geometry from
+        # the first/pre-crop frame and no longer sits at line_position of the new crop.
+        # Dims are stable for a fixed ROI+source, so this only fires on an actual
+        # ROI/source change (no per-frame churn, no crossing-state thrash).
+        h, w = frame.shape[:2]
+        if self.line_zone is None or (w, h) != (self._frame_w, self._frame_h):
             self.init_line(w, h, self.line_position, self.line_orientation)
 
         # 1. Core AI Logic (timed for performance dashboard)
@@ -223,36 +279,54 @@ class VisionEngine:
         # 2. Crossing/Trigger Logic
         in_cross, out_cross = self.line_zone.trigger(detections=detections)
         all_crossings = in_cross | out_cross
-        
+
+        # Recall recovery: OR in the frame-gap-tolerant latch on the leading-edge
+        # anchor. Same dedup/seq path below, so a crossing caught by both counts once.
+        if self.count_interpolate and detections.tracker_id is not None and len(detections):
+            anchors = detections.get_anchors_coordinates(self._trigger_anchor)
+            ids = [int(t) for t in detections.tracker_id]
+            coords = [float(a[self._cross_axis]) for a in anchors]
+            recovered = self.crossing.update(ids, coords, self._line_coord,
+                                              self._after_is_greater)
+            if recovered:
+                all_crossings = all_crossings | np.array(
+                    [t in recovered for t in ids], dtype=bool)
+            self.crossing.forget(keep_ids=ids)
+
         # Collect EVERY new crossing this frame — the caller publishes one
         # UDP datagram per event so the sorter never misses a trigger when
         # two close-together objects cross in the same frame.
         new_events = []
+        now_ms = time.monotonic() * 1000.0   # one clock per frame; within-frame ties share it
         for i, crossed in enumerate(all_crossings):
             if crossed and detections.tracker_id is not None:
                 t_id = int(detections.tracker_id[i])
-                if t_id not in self.counted_ids:
+                if self.dedup.should_emit(t_id, now_ms):
                     class_id = int(detections.class_id[i])
                     name = self.inferencer.class_names.get(class_id, "object")
                     class_totals[name] = class_totals.get(name, 0) + 1
-                    self.counted_ids.add(t_id)
-                    new_events.append({"class": name, "id": t_id})
-                    self.event_logger.log(name, t_id)
-
-        # Prune counted_ids to prevent unbounded growth over long shifts.
-        # ByteTrack IDs are monotonically increasing — old IDs are never reassigned,
-        # so it is safe to discard the lower half once the set gets large.
-        if len(self.counted_ids) > 50_000:
-            sorted_ids = sorted(self.counted_ids)
-            self.counted_ids = set(sorted_ids[len(sorted_ids) // 2:])
-            logger.info(f"♻️ counted_ids pruned to {len(self.counted_ids)} entries")
+                    self.dedup.record(t_id, now_ms)
+                    # One monotonic seq per emitted crossing — the SAME value the
+                    # UDP publisher sends and the event log records, so the CSV can
+                    # be reconciled against the wire. Gap-free per stream/engine.
+                    self._emit_seq += 1
+                    new_events.append({"class": name, "id": t_id, "seq": self._emit_seq})
+                    self.event_logger.log(name, t_id, self._emit_seq)
+                elif self.dedup.time_suppressed(t_id, now_ms):
+                    logger.info(f"⏱️ dedup-suppressed crossing id={t_id} "
+                                f"(<{self.dedup.interval_ms}ms since last emit)")
 
         # 3. Visual Composition
+        # skip_masks / skip_traces are set by stream_handler._apply_render_settings
+        # from the mode-driven inference config (cpu.yaml: both True; gpu.yaml: both False).
+        # Default to False if the attribute isn't present (defensive — older callers
+        # that don't go through _apply_render_settings get the full render).
         annotated = frame.copy()
-        if detections.mask is not None:
+        if detections.mask is not None and not getattr(self, 'skip_masks', False):
             annotated = self.mask_annotator.annotate(scene=annotated, detections=detections)
-        
-        annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
+
+        if not getattr(self, 'skip_traces', False):
+            annotated = self.trace_annotator.annotate(scene=annotated, detections=detections)
         annotated = self.box_annotator.annotate(scene=annotated, detections=detections)
         
         if detections.tracker_id is not None:

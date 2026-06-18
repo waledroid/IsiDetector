@@ -36,12 +36,31 @@ from isitec_api.performance_monitor import PerformanceMonitor
 logger = logging.getLogger("IsiDetector-Web")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Recursively merge ``overlay`` into a copy of ``base``.
+
+    Dict subtrees are merged (not wholesale-replaced); overlay wins on leaf
+    conflicts. Neither input is mutated. Used to combine train.yaml's config
+    with the mode-driven inference_config so train.yaml-only subtrees (e.g.
+    ``inference.logging``) survive the overlay instead of being clobbered by
+    a shallow ``{**a, **b}`` spread.
+    """
+    import copy
+    out = copy.deepcopy(base)
+    for k, v in (overlay or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+    return out
+
 class UDPPublisher:
     """Broadcasts line-crossing events via UDP to the sorting machine controller.
 
-    Fires a ~60-byte JSON datagram on every line-crossing event::
+    Fires a ~70-byte JSON datagram on every line-crossing event::
 
-        {"class": "carton", "ts": "2026-03-31T14:23:45.312847"}
+        {"class": "carton", "seq": 17, "id": 42, "ts": "2026-03-31T14:23:45.312847"}
 
     A single UDP socket is created at construction and reused for
     every event — no connection overhead per datagram.
@@ -49,9 +68,22 @@ class UDPPublisher:
     The target can be re-pointed at runtime via :meth:`update_target`
     without restarting the stream (``POST /api/udp``).
 
+    The payload carries two distinct counters — do not confuse them:
+
+    - ``seq`` is a monotonic per-publisher datagram counter that
+      increments by exactly 1 on every emitted datagram. It is
+      **gap-free by construction**, so any gap the receiver sees in
+      ``seq`` is a genuinely dropped/lost datagram — the metric to
+      measure transport loss against.
+    - ``id`` is the ByteTrack *tracker ID* of the crossing object. It
+      is **not** sequential: ByteTrack assigns IDs to every tracked
+      object (including ones that never cross the line), so ``id`` gaps
+      are normal and do **not** indicate loss. Use it only for dedup /
+      tracing individual objects.
+
     Args:
         host: IP address of the sorting controller. Defaults to
-            ``"127.0.0.1"`` (same machine).
+            ``"127.0.0.1"`` (the canonical site PLC target).
         port: UDP port the controller is listening on. Defaults to
             ``9502``.
         enabled: Set ``False`` to disable all publishing without
@@ -69,15 +101,19 @@ class UDPPublisher:
         self.host = host
         self.port = port
         self.enabled = enabled
+        self._seq = 0   # monotonic datagram counter — gap-free by construction
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def publish(self, class_name, event_id=None):
+    def publish(self, class_name, event_id=None, seq=None):
         """Emit one UDP datagram per line-crossing event.
 
-        Optional ``event_id`` (tracker ID) is included in the payload as
-        ``"id"`` so the sorter can dedupe and trace individual objects.
-        Omitted when ``None`` — backward-compatible with consumers that
-        only read ``class``.
+        Every datagram carries a monotonic ``seq`` (increments by 1 per
+        emitted datagram, gap-free) so the receiver can detect genuinely
+        lost datagrams. Optional ``event_id`` (ByteTrack tracker ID) is
+        included as ``"id"`` for dedup / tracing — it is **not**
+        sequential, so do not use ``id`` gaps to infer loss. Omitted when
+        ``None`` — backward-compatible with consumers that only read
+        ``class``.
 
         Returns:
             Trigger-to-wire latency in nanoseconds (JSON encode +
@@ -89,8 +125,12 @@ class UDPPublisher:
         if not self.enabled:
             return 0
         t0 = time.perf_counter_ns()
+        if seq is None:                  # inference loop passes the engine's seq; fall back to
+            self._seq += 1               # our own counter for any direct/legacy caller
+            seq = self._seq
         msg = {
             "class": str(class_name),
+            "seq": seq,
             "ts": datetime.datetime.now().isoformat(),
         }
         if event_id is not None:
@@ -152,19 +192,98 @@ class LiveReader:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
+    def _open_capture(self):
+        """Open ``self.source`` with sensible defaults + RTSP fallback.
+
+        For RTSP sources, prefer ``rtsp_transport=tcp`` (more reliable on
+        noisy site LANs) and **fall back to UDP** if TCP can't open or
+        decode a frame. Avoids on-site troubleshooting trips for the few
+        cameras / firewalls where TCP is blocked.
+
+        Caps the open timeout at 5 s via ``CAP_PROP_OPEN_TIMEOUT_MSEC``
+        so a bad URL fails fast instead of hanging the inference thread
+        for 30+ s.
+        """
+        is_rtsp = (
+            isinstance(self.source, str)
+            and self.source.lower().startswith(('rtsp://', 'rtspt://'))
+        )
+        if not is_rtsp:
+            return cv2.VideoCapture(self.source)
+
+        def _try_open():
+            try:
+                return cv2.VideoCapture(
+                    self.source, cv2.CAP_FFMPEG,
+                    [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000],
+                )
+            except Exception:
+                return cv2.VideoCapture(self.source)
+
+        # Attempt 1: TCP (preferred)
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        cap = _try_open()
+        if cap.isOpened():
+            ok, _ = cap.read()
+            if ok:
+                logger.info("📡 RTSP transport: TCP (preferred)")
+                return cap
+            logger.warning("📡 RTSP TCP opened but first read failed; trying UDP fallback")
+            cap.release()
+        else:
+            logger.warning("📡 RTSP TCP open failed; trying UDP fallback")
+
+        # Attempt 2: UDP (fallback)
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;udp'
+        cap = _try_open()
+        if cap.isOpened():
+            logger.info("📡 RTSP transport: UDP (TCP unavailable on this network)")
+        else:
+            logger.error("📡 RTSP failed to open on both TCP and UDP")
+        # Restore TCP as default so subsequent reconnects retry the
+        # preferred transport (in case the network heals).
+        os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp'
+        return cap
+
     def _run(self):
         logger.info(f"🚀 LiveReader: Thread started for source {self.source}")
         while self.running:
             try:
                 with self._cap_lock:
                     if self.cap is None or not self.cap.isOpened():
-                        self.cap = cv2.VideoCapture(self.source)
+                        self.cap = self._open_capture()
                         if not self.cap.isOpened():
                             self.cap = None
                             logger.error(f"❌ LiveReader: Failed to open {self.source}. Retrying in 2s...")
                             time.sleep(2)
                             continue
+                        # Cap OpenCV's internal queue at 1 frame so the reader
+                        # always returns the most-recent frame from the network.
+                        # Default 5 → up to ~165 ms of stale frames pile up on
+                        # RTSP. CPU-only sites can't afford the wasted decode.
+                        try:
+                            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        except Exception:
+                            pass
                         logger.info(f"✅ LiveReader: Connection established to {self.source}")
+
+                        # Stream info on connect — confirms what the camera is
+                        # actually sending (resolution, native fps, codec).
+                        # Saves an `ffprobe` round-trip during on-site debugging.
+                        try:
+                            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                            fps_native = self.cap.get(cv2.CAP_PROP_FPS) or 0.0
+                            fourcc = int(self.cap.get(cv2.CAP_PROP_FOURCC) or 0)
+                            codec = bytes(
+                                [(fourcc >> shift) & 0xFF for shift in (0, 8, 16, 24)]
+                            ).decode(errors='replace').strip('\x00') or '?'
+                            logger.info(
+                                f"📹 Stream: {w}×{h} @ {fps_native:.0f} fps codec={codec}"
+                            )
+                        except Exception:
+                            pass
+
                         if self.is_file:
                             fps = self.cap.get(cv2.CAP_PROP_FPS)
                             self.frame_delay = (1.0 / fps) if fps > 0 else (1.0 / 30)
@@ -242,6 +361,16 @@ class StreamHandler:
         self.source_is_image = False
         self.frame_ready = threading.Event()
         self._current_source = None  # track for hot-swap detection
+        self.roi = None              # (x1,y1,x2,y2) bbox or None — loaded per start()
+        # 2:1 JPEG-encode throttle so display FPS ≈ inference FPS / 2 (~12 FPS
+        # at 25 FPS inference). Inference, tracking, line crossings, and UDP
+        # publish still run on every frame — only the visualization is throttled.
+        self._encode_skip_idx = 0
+        # Optional preprocess pipeline applied between ROI/downscale and
+        # engine.process_frame. Built from settings.json on each start().
+        # Currently supports SpecularGuard (CLAHE on LAB L-channel) for
+        # industrial glare. Empty list = passthrough.
+        self._preprocess_chain: list = []
 
         # Cache the STANDBY frame once — 16:9 aspect ratio
         _standby_h = int(self.web_imgsz * 9 / 16)
@@ -251,10 +380,26 @@ class StreamHandler:
         _, _buf = cv2.imencode('.jpg', _blank)
         self._standby_frame = _buf.tobytes()
 
-        # UDP Telemetry — priority: env var > train.yaml > default
+        # UDP Telemetry — config priority (highest wins):
+        #   1. settings.json (operator-edited from Settings UI; persists)
+        #   2. UDP_HOST / UDP_PORT env vars (compose / .env)
+        #   3. train.yaml inference.udp.host / port
+        #   4. Hardcoded default 127.0.0.1:9502
         udp_cfg = self.config.get('inference', {}).get('udp', {})
-        udp_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '127.0.0.1'))
-        udp_port = int(os.environ.get('UDP_PORT', udp_cfg.get('port', 9502)))
+        env_host = os.environ.get('UDP_HOST', udp_cfg.get('host', '127.0.0.1'))
+        env_port = int(os.environ.get('UDP_PORT', udp_cfg.get('port', 9502)))
+        udp_host, udp_port = env_host, env_port
+        try:
+            settings_path = Path(__file__).parent / 'settings.json'
+            if settings_path.exists():
+                with open(settings_path) as f:
+                    ui = json.load(f)
+                if isinstance(ui.get('udp_host'), str) and ui['udp_host'].strip():
+                    udp_host = ui['udp_host'].strip()
+                if isinstance(ui.get('udp_port'), int) and 1 <= ui['udp_port'] <= 65535:
+                    udp_port = ui['udp_port']
+        except Exception:
+            pass
         udp_enabled = udp_cfg.get('enabled', True)
         self.publisher = UDPPublisher(host=udp_host, port=udp_port, enabled=udp_enabled)
         logger.info(f"[UDP] Publisher ready → {self.publisher.host}:{self.publisher.port}")
@@ -262,10 +407,175 @@ class StreamHandler:
         # Performance Monitor — collects real-time metrics for /api/performance
         self.monitor = PerformanceMonitor()
 
-        # Background preload of the default RF-DETR ONNX. DINOv2 graphs take
-        # 3-8s of CUDA kernel compilation on first load; doing it now means
-        # the operator's first hot-swap to RF-DETR is near-instant.
-        threading.Thread(target=self._preload_default_onnx, daemon=True).start()
+        # Mode detection + inference-config loading. Mode is one of "cpu"|"gpu",
+        # determined from COMPOSE_MODE env var (set by up.sh / docker-compose),
+        # falling back to nvidia-smi probe and finally to "cpu" as the safe
+        # default. The mode picks which YAML in isidet/configs/inference/
+        # gets layered on top of common.yaml.
+        mode_info = self._detect_mode()
+        self.mode = mode_info['mode']
+        self.mode_detected_via = mode_info['detected_via']
+        self.inference_config, self.inference_config_files = self._load_inference_config(self.mode)
+        logger.info(
+            f"[mode] {self.mode} (detected_via: {self.mode_detected_via}) — "
+            f"loaded {' + '.join(self.inference_config_files)}"
+        )
+
+        # Background preload of the default RF-DETR ONNX. Skipped in CPU mode
+        # (RF-DETR isn't supported on CPU at all).
+        if self.mode == "gpu":
+            threading.Thread(target=self._preload_default_onnx, daemon=True).start()
+
+        # Boot-time auto-start: if the operator ticked "Auto-start on boot"
+        # in Settings → Camera, replay the last successful start() so the
+        # site PC is operator-ready without anyone clicking Start.
+        threading.Thread(target=self._maybe_auto_start, daemon=True).start()
+
+    def _settings_path(self):
+        return Path(__file__).parent / 'settings.json'
+
+    def _detect_mode(self):
+        """Resolve the operating mode (cpu | gpu) at container boot.
+
+        Priority: COMPOSE_MODE env > nvidia-smi probe > safe fallback (cpu).
+        Returns a dict {mode, detected_via} for the /api/mode endpoint.
+        """
+        env_mode = os.environ.get('COMPOSE_MODE', '').strip().lower()
+        if env_mode in ('cpu', 'gpu'):
+            return {'mode': env_mode, 'detected_via': 'COMPOSE_MODE env'}
+        try:
+            import subprocess as _sp
+            result = _sp.run(['nvidia-smi'], capture_output=True, timeout=2)
+            if result.returncode == 0:
+                return {'mode': 'gpu', 'detected_via': 'nvidia-smi probe'}
+        except Exception:
+            pass
+        return {'mode': 'cpu', 'detected_via': 'fallback (no GPU detected)'}
+
+    def _load_inference_config(self, mode: str):
+        """Load isidet/configs/inference/common.yaml + the mode-specific yaml.
+        Returns (merged_config_dict, list_of_loaded_filenames).
+        """
+        cfg_dir = Path(__file__).resolve().parent.parent.parent / 'isidet' / 'configs' / 'inference'
+        common_path = cfg_dir / 'common.yaml'
+        mode_path = cfg_dir / f'{mode}.yaml'
+
+        merged = {}
+        loaded = []
+
+        def deep_merge(base, overlay):
+            for k, v in overlay.items():
+                if isinstance(v, dict) and isinstance(base.get(k), dict):
+                    deep_merge(base[k], v)
+                else:
+                    base[k] = v
+
+        for label, path in [('common.yaml', common_path), (f'{mode}.yaml', mode_path)]:
+            try:
+                if path.exists():
+                    with open(path) as f:
+                        data = yaml.safe_load(f) or {}
+                    deep_merge(merged, data)
+                    loaded.append(label)
+                else:
+                    logger.warning(f"[mode] inference config not found: {path}")
+            except Exception as e:
+                logger.warning(f"[mode] failed to load {path}: {e}")
+
+        return merged, loaded
+
+    def _persist_last_used(self, model_type: str, weights: str):
+        """Write the last successful (model_type, weights) back to settings.json
+        so a subsequent container boot can replay them via _maybe_auto_start.
+        """
+        try:
+            path = self._settings_path()
+            current = {}
+            if path.exists():
+                with open(path) as f:
+                    current = json.load(f) or {}
+            current['last_model_type'] = str(model_type or '')
+            current['last_weights'] = str(weights or '')
+            with open(path, 'w') as f:
+                json.dump(current, f, indent=2)
+        except Exception as e:
+            logger.warning(f"[auto-start] Could not persist last-used selection: {e}")
+
+    def _load_roi(self):
+        """Read roi_enabled + roi_points from settings.json into self.roi.
+        Always sets self.roi to either a 4-tuple (x1,y1,x2,y2) bbox or None.
+        Any error → None + log; never raises.
+        """
+        self.roi = None
+        try:
+            path = self._settings_path()
+            if not path.exists():
+                return
+            with open(path) as f:
+                ui = json.load(f) or {}
+            if not ui.get('roi_enabled'):
+                return
+            pts = ui.get('roi_points')
+            if not (isinstance(pts, list) and len(pts) == 4):
+                return
+            xs = [int(p[0]) for p in pts]
+            ys = [int(p[1]) for p in pts]
+            x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+            if x2 > x1 and y2 > y1:
+                self.roi = (x1, y1, x2, y2)
+                logger.info(f"[ROI] Active crop: x=[{x1},{x2}] y=[{y1},{y2}] "
+                            f"({x2-x1}×{y2-y1})")
+        except Exception as e:
+            logger.warning(f"[ROI] Could not load — falling back to full frame: {e}")
+            self.roi = None
+
+    def get_raw_snapshot(self):
+        """Return the latest pre-crop, pre-resize, pre-annotation frame as JPEG.
+        Used by the Live-Inference Set-ROI configurator.
+        """
+        if not self.running or self.reader is None:
+            return None
+        try:
+            frame = self.reader.get_frame()
+            if frame is None:
+                return None
+            ok, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            return buf.tobytes() if ok else None
+        except Exception as e:
+            logger.warning(f"[snapshot] failed: {e}")
+            return None
+
+    def _maybe_auto_start(self):
+        """If auto_start is enabled and we have a saved camera + last-used
+        model, kick off start() once the HTTP server is up. No-op otherwise.
+        """
+        # Wait for the ASGI server to bind. 5 s is enough on this hardware
+        # and short enough that the operator sees the stream come up while
+        # the kiosk Chrome window is still finishing its first paint.
+        time.sleep(5.0)
+        try:
+            path = self._settings_path()
+            if not path.exists():
+                return
+            with open(path) as f:
+                ui = json.load(f) or {}
+            if not ui.get('auto_start'):
+                return
+            rtsp_url = (ui.get('rtsp_url') or '').strip()
+            model_type = (ui.get('last_model_type') or '').strip()
+            weights = (ui.get('last_weights') or '').strip()
+            if not (rtsp_url and model_type and weights):
+                logger.info("[auto-start] Enabled but missing rtsp_url / last_model_type / "
+                            "last_weights — skipping. Click Start once to record them.")
+                return
+            logger.info(f"[auto-start] Replaying last session: model_type={model_type} weights={weights}")
+            ok, msg = self.start(source="", model_type=model_type, weights=weights)
+            if ok:
+                logger.info(f"[auto-start] {msg}")
+            else:
+                logger.warning(f"[auto-start] failed: {msg}")
+        except Exception as e:
+            logger.warning(f"[auto-start] error: {e}")
 
     def _preload_default_onnx(self):
         try:
@@ -316,7 +626,7 @@ class StreamHandler:
             if orientation is not None:
                 engine.line_orientation = orientation
             if position is not None:
-                engine.line_position = max(0.1, min(0.9, float(position)))
+                engine.line_position = max(0.0, min(1.0, float(position)))
             if belt_direction is not None:
                 engine.belt_direction = belt_direction
             if engine.line_zone is not None:
@@ -348,12 +658,56 @@ class StreamHandler:
         except Exception:
             pass
 
+    def _apply_render_settings(self, engine):
+        """Apply render-perf flags from the mode-driven inference config.
+
+        Sourced from inference_config['render'] (cpu.yaml: skip_masks/traces=true,
+        gpu.yaml: skip_masks/traces=false). Not operator-tunable — these are
+        hardware-class optimization knobs.
+        """
+        try:
+            render_cfg = (self.inference_config or {}).get('render') or {}
+            engine.skip_masks = bool(render_cfg.get('skip_masks', False))
+            engine.skip_traces = bool(render_cfg.get('skip_traces', False))
+            logger.info(
+                f"VisionEngine render: skip_masks={engine.skip_masks} "
+                f"skip_traces={engine.skip_traces}"
+            )
+        except Exception as e:
+            logger.warning(f"[render] could not apply render settings: {e}")
+
+    def _build_preprocess_chain(self, ui_settings: dict) -> list:
+        """Build the per-session preprocess chain from settings.json toggles.
+
+        Applied in `_inference_loop` between the pre-engine downscale and
+        ``engine.process_frame()``. Each element exposes a single
+        ``.process(frame: BGR ndarray) -> BGR ndarray`` method. Failures of
+        any single stage are caught at apply-time so a bad preprocess never
+        kills the inference loop — it logs a warning and drops the stage
+        for the rest of the session.
+
+        Currently honors:
+        - ``clahe_enabled``: SpecularGuard (CLAHE on LAB L-channel for
+          industrial polybag glare). Defaults from train.yaml's preprocess
+          config: clip_limit=2.5, tile_grid=8x8.
+        """
+        chain: list = []
+        if ui_settings.get('clahe_enabled', False):
+            try:
+                from src.preprocess.clahe_engine import SpecularGuard
+                chain.append(SpecularGuard(clip_limit=2.5, tile_grid=[8, 8]))
+                logger.info("🛡️ CLAHE preprocess enabled (SpecularGuard, clip=2.5, grid=8x8)")
+            except Exception as e:
+                logger.warning(f"[preprocess] CLAHE enable failed: {e} — running without preprocess")
+        return chain
+
     def get_stats(self):
         with self.lock:
             stats = {
                 "is_running": self.running,
                 "counts": self.class_totals,
-                "last_detected": self.last_detected
+                "last_detected": self.last_detected,
+                "frame_rate": getattr(self, '_tracker_frame_rate', None),
             }
             return sanitize_for_json(stats)
 
@@ -511,6 +865,11 @@ class StreamHandler:
         has_gpu = self.monitor.has_gpu
         device_label = "GPU" if has_gpu else "CPU"
 
+        # OpenVINO + ByteTrack tunables come from the mode-driven inference config
+        # (isidet/configs/inference/{common,cpu,gpu}.yaml), NOT from settings.json.
+        ov_cfg = (self.inference_config or {}).get('openvino') or {}
+        cpu_threads = ov_cfg.get('inference_num_threads')  # may be None on GPU mode
+
         model_path = weights
         if not model_path:
             model_path = self._resolve_default_weights(model_type)
@@ -519,6 +878,24 @@ class StreamHandler:
 
         ext = Path(model_path).suffix.lower()
         in_docker = Path('/.dockerenv').exists()
+
+        # Mode-driven model allowlist. CPU mode rejects anything that isn't
+        # an OpenVINO IR or ONNX (no .pt / .pth / .engine on CPU). GPU mode
+        # accepts everything.
+        model_cfg = (self.inference_config or {}).get('model') or {}
+        allowed_exts = model_cfg.get('allowed_extensions')
+        if allowed_exts and ext not in allowed_exts:
+            raise ValueError(
+                f"Model extension '{ext}' is not supported in {self.mode.upper()} mode. "
+                f"Allowed in this mode: {', '.join(allowed_exts)}. "
+                f"On CPU mode, use OpenVINO (.xml) or ONNX (.onnx) — re-export via the office workstation's compress.sh if needed."
+            )
+        allowed_families = model_cfg.get('allowed_families') or []
+        if 'rfdetr' not in allowed_families and model_type == 'rfdetr':
+            raise ValueError(
+                f"RF-DETR is not supported in {self.mode.upper()} mode. "
+                f"Switch to a YOLO model in Settings → Model 1."
+            )
 
         if ext == '.engine' and not has_gpu:
             raise ValueError("TensorRT engines require an NVIDIA GPU. Use an OpenVINO (.xml) or ONNX (.onnx) model instead.")
@@ -529,13 +906,22 @@ class StreamHandler:
             mode_text = f"TensorRT • {device_label}"
         elif ext == '.xml':
             from src.inference.openvino_inferencer import OpenVINOInferencer
-            base_engine = OpenVINOInferencer(model_path=model_path, conf_threshold=final_conf, device=device, imgsz=imgsz)
-            mode_text = f"OpenVINO • CPU"
+            base_engine = OpenVINOInferencer(
+                model_path=model_path, conf_threshold=final_conf,
+                device=device, imgsz=imgsz, cpu_threads=cpu_threads,
+                performance_hint=ov_cfg.get('performance_hint', 'LATENCY'),
+                num_streams=ov_cfg.get('num_streams', 1),
+            )
+            precision_tag = " INT8" if getattr(base_engine, 'is_int8', False) else ""
+            mode_text = f"OpenVINO{precision_tag} • CPU"
         elif ext == '.onnx':
             from src.inference.onnx_inferencer import ONNXInferencer
             onnx_device = device if device else ("cuda" if has_gpu else "cpu")
             base_engine = ONNXInferencer(model_path=model_path, conf_threshold=final_conf, device=onnx_device, imgsz=imgsz)
-            mode_text = f"ONNX • {device_label}"
+            # Surface precision tag so the operator sees "ONNX INT8 • CPU" if
+            # the loaded weights are quantised, "ONNX • CPU" otherwise.
+            precision_tag = " INT8" if getattr(base_engine, 'is_int8', False) else ""
+            mode_text = f"ONNX{precision_tag} • {device_label}"
         elif ext == '.pth':
             if in_docker:
                 from src.inference.remote_rfdetr_inferencer import RemoteRFDETRInferencer
@@ -572,6 +958,26 @@ class StreamHandler:
         Returns:
             ``(bool, str)`` — success flag and message.
         """
+        # Empty / None source → fall back to the saved RTSP URL from settings.
+        # The Live Inference landing page's "📡 Site Camera" button submits
+        # source="" so the URL itself stays in Settings → Camera and isn't
+        # editable on the landing page (avoiding URL-typing mistakes on site).
+        if not source:
+            try:
+                settings_path = Path(__file__).parent / 'settings.json'
+                if settings_path.exists():
+                    with open(settings_path) as f:
+                        ui_settings = json.load(f)
+                    saved = ui_settings.get('rtsp_url', '').strip()
+                    if saved:
+                        source = saved
+                        logger.info(f"▶ Using saved RTSP URL from settings: {source}")
+                    else:
+                        return False, ("No source provided and no rtsp_url is "
+                                       "configured in Settings → Camera.")
+            except Exception as e:
+                return False, f"Could not read saved rtsp_url: {e}"
+
         # Normalize source for comparison
         src_val = int(source) if str(source).isdigit() else source
 
@@ -599,6 +1005,9 @@ class StreamHandler:
                 # swap_inferencer rebuilt the palette annotators with defaults —
                 # re-apply our web-resolution tuning on top.
                 self._tune_annotators(self.engine)
+                # Re-read render flags on every Start so a Settings toggle
+                # (e.g. skip_masks) takes effect even if the source is unchanged.
+                self._apply_render_settings(self.engine)
                 # Backfill class_totals with any NEW class names the new model exposes
                 # (without zeroing existing counts for classes that still apply).
                 for name in base_engine.class_names.values():
@@ -609,7 +1018,9 @@ class StreamHandler:
             del old_inferencer
 
             self.monitor.start_session(model_type=model_type)
+            self._load_roi()
             logger.info(f"🔄 Model switched to {mode_text} (hot-swap — counts preserved)")
+            self._persist_last_used(model_type, weights)
             return True, f"Model switched to {mode_text}."
 
         # ── Full restart: different source or not running ────────────────
@@ -623,9 +1034,56 @@ class StreamHandler:
             try:
                 self.web_imgsz = imgsz or self.config.get('image_size', 416)
                 base_engine, mode_text = self._build_engine(model_type, weights, imgsz, conf_thresh, device)
-                self.engine = VisionEngine(inferencer=base_engine, config=self.config)
+                # Merge mode-driven inference_config (bytetrack thresholds etc.)
+                # under self.config so VisionEngine sees both the train.yaml
+                # bits (logging) and the runtime mode bits. DEEP merge: a shallow
+                # {**a, **b} would let inference_config's `inference` block wholesale-
+                # replace train.yaml's, dropping inference.logging.log_dir and sending
+                # event CSVs to the wrong dir (read/write path mismatch → empty exports).
+                ve_config = _deep_merge(self.config, self.inference_config or {})
+                # Operator dedup controls (settings.json) override inference-config defaults.
+                try:
+                    _sp = Path(__file__).parent / 'settings.json'
+                    _ui = json.load(open(_sp)) if _sp.exists() else {}
+                except Exception:
+                    _ui = {}
+                ve_config.setdefault('inference', {})
+                if isinstance(_ui.get('dedup_time_enabled'), bool):
+                    ve_config['inference']['dedup_time_enabled'] = _ui['dedup_time_enabled']
+                if isinstance(_ui.get('dedup_interval_ms'), int) and 0 <= _ui['dedup_interval_ms'] <= 60000:
+                    ve_config['inference']['dedup_interval_ms'] = _ui['dedup_interval_ms']
+                # Make the operator's recall toggle authoritative at stream START (not just
+                # live via configure_counting) so it survives a stream restart.
+                if isinstance(_ui.get('count_interpolate'), bool):
+                    ve_config['inference']['count_interpolate'] = _ui['count_interpolate']
+                # Tracker FPS calibration — feed the real capture FPS to ByteTrack so
+                # its Kalman predicts the true per-frame displacement (fast parcels keep
+                # their id across the line). tracker_fps>0 overrides; auto uses the
+                # capture's nominal FPS, clamped to a sane 1..120, else 20.
+                # NOTE: self.reader (LiveReader) is not yet created at this point; we
+                # probe the source directly with a temporary VideoCapture to read the
+                # nominal FPS before the engine is built.
+                ve_config.setdefault('bytetrack', {})
+                _manual = float(_ui.get('tracker_fps', 0) or 0)
+                if _manual > 0:
+                    ve_config['bytetrack']['frame_rate'] = _manual
+                elif _ui.get('tracker_fps_auto', True):
+                    _native = 0.0
+                    try:
+                        _probe = cv2.VideoCapture(src_val)
+                        _native = float(_probe.get(cv2.CAP_PROP_FPS) or 0.0)
+                        _probe.release()
+                    except Exception:
+                        _native = 0.0
+                    ve_config['bytetrack']['frame_rate'] = _native if 1.0 <= _native <= 120.0 else 20.0
+                self._tracker_frame_rate = ve_config['bytetrack'].get('frame_rate')
+                _tb = int(_ui.get('track_buffer', 0) or 0)
+                if _tb > 0:
+                    ve_config['bytetrack']['track_buffer'] = _tb
+                self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
                 self._tune_annotators(self.engine)
                 self._apply_line_settings(self.engine)
+                self._apply_render_settings(self.engine)
                 self.mode_text = mode_text
             except ValueError as e:
                 return False, str(e)
@@ -640,11 +1098,25 @@ class StreamHandler:
             self._current_source = src_val
             self.reader = LiveReader(src_val)
 
+            # Build per-session preprocess chain (CLAHE etc.) from settings.json.
+            try:
+                settings_path = Path(__file__).parent / 'settings.json'
+                ui_settings = {}
+                if settings_path.exists():
+                    with open(settings_path) as f:
+                        ui_settings = json.load(f)
+                self._preprocess_chain = self._build_preprocess_chain(ui_settings)
+            except Exception as e:
+                logger.warning(f"[preprocess] chain build failed: {e}")
+                self._preprocess_chain = []
+
             self.running = True
             self.inf_thread = threading.Thread(target=self._inference_loop, daemon=True)
             self.inf_thread.start()
 
+            self._load_roi()
             logger.info(f"✅ Web App: Processing started ({self.mode_text})")
+            self._persist_last_used(model_type, weights)
             return True, "Processing started."
 
     def stop(self):
@@ -727,11 +1199,53 @@ class StreamHandler:
                 consecutive_drops = 0
 
                 try:
-                    # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz
+                    # Belt ROI crop — runs BEFORE the pre-engine downscale so
+                    # the resize works on a smaller region and the model sees
+                    # parcels at higher pixel density. Numpy slice = ~zero cost.
+                    # Any failure latches ROI off for the rest of the session
+                    # so a bad config can't spam the log every frame.
+                    if self.roi is not None:
+                        try:
+                            x1, y1, x2, y2 = self.roi
+                            h, w = frame.shape[:2]
+                            x1c = max(0, min(x1, w))
+                            y1c = max(0, min(y1, h))
+                            x2c = max(x1c + 1, min(x2, w))
+                            y2c = max(y1c + 1, min(y2, h))
+                            cropped = frame[y1c:y2c, x1c:x2c]
+                            if cropped.size == 0:
+                                raise ValueError(f"empty crop for {w}×{h} with roi {self.roi}")
+                            frame = cropped
+                        except Exception as roi_err:
+                            logger.warning(f"[ROI] Crop failed — disabling for this session: {roi_err}")
+                            self.roi = None  # latch off; never retry mid-session
+
+                    # Downscale ONCE — aspect-ratio preserved, fit within web_imgsz.
+                    # INTER_AREA = area-averaging: the correct, anti-aliased
+                    # downscaler for large reductions (e.g. 2880→320). The default
+                    # INTER_LINEAR samples only 2×2 source px and aliases/blurs at
+                    # that ratio — this is the frame the inference engine sees, so
+                    # it must be a clean downscale.
                     fh, fw = frame.shape[:2]
                     if max(fh, fw) > self.web_imgsz:
                         scale = self.web_imgsz / max(fh, fw)
-                        frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)))
+                        frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)),
+                                           interpolation=cv2.INTER_AREA)
+
+                    # Optional preprocess chain (CLAHE etc.) — applied on the
+                    # already-downscaled frame to keep the cost low. Each stage
+                    # is failure-tolerant: a bad preprocess gets dropped from
+                    # the chain, the loop continues.
+                    if self._preprocess_chain:
+                        for proc in list(self._preprocess_chain):
+                            try:
+                                frame = proc.process(frame)
+                            except Exception as preproc_err:
+                                logger.warning(
+                                    f"[preprocess] {type(proc).__name__} failed — "
+                                    f"dropping for remainder of session: {preproc_err}"
+                                )
+                                self._preprocess_chain.remove(proc)
 
                     _t_start = time.perf_counter()
                     annotated, detections, new_events = engine.process_frame(frame, self.class_totals)
@@ -752,13 +1266,19 @@ class StreamHandler:
                         ts = datetime.datetime.now().isoformat()
                         with self.lock:
                             self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
-                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'])
+                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'], seq=event.get('seq'))
                         self.monitor.track_udp_publish(latency_ns=latency_ns)
                         self.monitor.track_crossing()
 
-                    _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    self.latest_annotated = buffer.tobytes()
-                    self.frame_ready.set()
+                    # Throttle: encode every 2nd inference frame so display CPU
+                    # is halved. Skipped frames re-serve the prior JPEG via the
+                    # WS sender / MJPEG generator. frame_ready only fires on
+                    # real encodes.
+                    if self._encode_skip_idx % 2 == 0:
+                        _, buffer = cv2.imencode('.jpg', annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                        self.latest_annotated = buffer.tobytes()
+                        self.frame_ready.set()
+                    self._encode_skip_idx += 1
 
                     consecutive_errors = 0
                     frame_count += 1
