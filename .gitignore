@@ -36,7 +36,15 @@
 # ── webapp/ bucket — per-backend runtime state ──────────────────────────────
 /webapp/isitec_app/uploads/
 /webapp/isitec_api/uploads/
+/webapp/isitec_app/logs/
 /webapp/isitec_api/logs/
+
+# NOTE: settings.json (both backends) is NOT ignored — it's bind-mounted by
+# docker-compose, so a fresh clone must contain the file or Docker creates a
+# directory at the mount path and the app fails to start. The runtime churn it
+# accumulates is suppressed per-clone with `git update-index --skip-worktree`
+# instead. To intentionally commit a settings change: `--no-skip-worktree`
+# first, then add/commit.
 
 # ── deploy/ bucket ──────────────────────────────────────────────────────────
 # Per-host deployment marker written by run_start.sh
