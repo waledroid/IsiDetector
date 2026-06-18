@@ -21,7 +21,7 @@ from isitec_app.stream_handler import StreamHandler
 from src.utils.event_logger import EventLogger
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB upload cap
+app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024 * 1024  # 4GB upload cap
 stream_handler = StreamHandler()
 
 # ── Dev-mode authentication ──────────────────────────────────────────────────
