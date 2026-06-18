@@ -35,6 +35,36 @@ const translations = {
         "model_management": "Model Management",
         "model_soon": "Model Directory Viewer Coming Soon.",
         "system_settings": "System Settings",
+        "mode_label": "Runtime mode",
+        "mode_loaded_from": "Loaded:",
+        "mode_banner_hint": "CPU vs GPU is auto-detected at container boot. Optimization defaults (skip-masks, threads, ByteTrack thresholds) live in <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — not in this Settings panel.",
+        "src_site_camera": "Site Camera",
+        "site_camera_caption": "Saved camera (configurable in Settings → Camera)",
+        "cam_settings": "Camera",
+        "cam_settings_hint": "Tip: most IP cameras expose a sub-stream at a lower resolution — typically <code>stream=1</code> or <code>/102</code> in the URL path. On a CPU-only site PC, sub-stream gives much higher FPS.",
+        "set_rtsp_url_label": "Default RTSP URL",
+        "set_auto_start_label": "Auto-start stream on boot",
+        "set_auto_start_hint": "Once enabled, click Start manually one time to record the model selection. After that, the stream comes up by itself every container boot — no operator click needed.",
+        "set_roi_btn": "Set ROI",
+        "roi_clear_btn": "Clear ROI",
+        "set_roi_enabled_label": "Show \"Set ROI\" button on landing page",
+        "set_clahe_enabled_label": "Apply CLAHE preprocess (glare / low-light correction)",
+        "set_clahe_enabled_hint": "Boosts contrast in shadowed and reflective regions before the model sees the frame. Re-Start the stream after toggling.",
+        "roi_current": "Current ROI:",
+        "roi_none": "none (full frame)",
+        "roi_drag_instruction": "Click and drag a rectangle over the conveyor belt area.",
+        "roi_save": "Save ROI",
+        "roi_cancel": "Cancel",
+        "roi_need_stream": "Start the stream first to capture a snapshot.",
+        "roi_saved": "ROI saved. Stop and Start the stream to apply.",
+        "roi_cleared": "ROI cleared (full-frame mode).",
+        "roi_cleared_alert": "ROI cleared. Stop and Start the stream to apply.",
+        "roi_save_failed": "Could not save ROI: ",
+        "roi_clear_failed": "Could not clear ROI: ",
+        "sorter_settings": "Sorter (UDP target)",
+        "sorter_settings_hint": "Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.",
+        "set_udp_host_label": "Sorter IP / hostname",
+        "set_udp_port_label": "UDP port",
         "about_title": "About ISITEC visionAI",
         "about_desc": "Industrial Object Detection and Tracking Platform",
         "version": "Version 1.0.0-beta",
@@ -101,6 +131,36 @@ const translations = {
         "model_management": "Gestion des modèles",
         "model_soon": "Visionneur de répertoire de modèles à venir.",
         "system_settings": "Paramètres du système",
+        "mode_label": "Mode d'exécution",
+        "mode_loaded_from": "Chargé :",
+        "mode_banner_hint": "Le mode CPU/GPU est détecté automatiquement au démarrage du conteneur. Les paramètres d'optimisation (masques, threads, seuils ByteTrack) vivent dans <code>isidet/configs/inference/{common,cpu,gpu}.yaml</code> — pas dans ce panneau.",
+        "src_site_camera": "Caméra du site",
+        "site_camera_caption": "Caméra enregistrée (configurable dans Paramètres → Caméra)",
+        "cam_settings": "Caméra",
+        "cam_settings_hint": "Astuce : la plupart des caméras IP exposent un sous-flux à plus faible résolution — typiquement <code>stream=1</code> ou <code>/102</code> dans l'URL. Sur un PC site CPU-only, le sous-flux donne un FPS beaucoup plus élevé.",
+        "set_rtsp_url_label": "URL RTSP par défaut",
+        "set_auto_start_label": "Démarrage auto au boot",
+        "set_auto_start_hint": "Une fois activé, cliquez Démarrer une fois manuellement pour mémoriser le modèle. Ensuite, le flux démarre tout seul à chaque redémarrage du conteneur — aucun clic opérateur nécessaire.",
+        "set_roi_btn": "Définir ROI",
+        "roi_clear_btn": "Effacer ROI",
+        "set_roi_enabled_label": "Afficher le bouton « Définir ROI » sur la page d'accueil",
+        "set_clahe_enabled_label": "Appliquer le prétraitement CLAHE (correction d'éblouissement / faible lumière)",
+        "set_clahe_enabled_hint": "Renforce le contraste dans les zones d'ombre et de reflet avant que le modèle ne voie l'image. Redémarrez le flux après avoir basculé.",
+        "roi_current": "ROI actuelle :",
+        "roi_none": "aucune (image complète)",
+        "roi_drag_instruction": "Cliquez et glissez pour tracer un rectangle sur la zone du convoyeur.",
+        "roi_save": "Enregistrer ROI",
+        "roi_cancel": "Annuler",
+        "roi_need_stream": "Démarrez d'abord le flux pour capturer une image.",
+        "roi_saved": "ROI enregistrée. Arrêter puis Démarrer le flux pour l'appliquer.",
+        "roi_cleared": "ROI effacée (mode plein cadre).",
+        "roi_cleared_alert": "ROI effacée. Arrêter puis Démarrer le flux pour l'appliquer.",
+        "roi_save_failed": "Échec de l'enregistrement ROI : ",
+        "roi_clear_failed": "Échec de l'effacement ROI : ",
+        "sorter_settings": "Trieur (cible UDP)",
+        "sorter_settings_hint": "Chaque franchissement de ligne envoie un datagramme JSON ~60 octets <code>{class, id, ts}</code> à cette adresse. Enregistrer → l'éditeur retargete immédiatement, pas de redémarrage du flux. Tester avec <code>./net.sh test</code>.",
+        "set_udp_host_label": "IP / hôte du trieur",
+        "set_udp_port_label": "Port UDP",
         "about_title": "À propos d'ISITEC visionAI",
         "about_desc": "Plateforme industrielle de détection et de suivi d'objets",
         "version": "Version 1.0.0-bêta",
@@ -139,7 +199,7 @@ const msgTrans = {
         "msg_network_err": "Network error.",
         "msg_starting": "Starting inference stream...",
         "msg_enter_url": "Please enter a valid source URL/ID.",
-        "placeholder_rtsp": "Enter RTSP URL (e.g. rtsp://192.168.1.100:554/stream)",
+        "placeholder_rtsp": "Enter RTSP URL (e.g. rtsp://<camera-ip>:554/stream)",
         "placeholder_cam": "Enter Camera ID (e.g. 0 or 1)"
     },
     fr: {
@@ -148,7 +208,7 @@ const msgTrans = {
         "msg_network_err": "Erreur réseau.",
         "msg_starting": "Démarrage automatique du flux d'inférence...",
         "msg_enter_url": "Veuillez entrer une URL / ID de source valide.",
-        "placeholder_rtsp": "Entrez l'URL RTSP (ex. rtsp://192.168.1.100:554/stream)",
+        "placeholder_rtsp": "Entrez l'URL RTSP (ex. rtsp://<camera-ip>:554/stream)",
         "placeholder_cam": "Entrez l'ID de la caméra (ex. 0 ou 1)"
     }
 };
@@ -178,9 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const sourceText = document.getElementById('sourceText');
-        if (currentSourceType === 'rtsp') {
-            sourceText.placeholder = msgTrans[lang].placeholder_rtsp;
-        } else if (currentSourceType === 'camera') {
+        if (currentSourceType === 'camera') {
             sourceText.placeholder = msgTrans[lang].placeholder_cam;
         }
 
@@ -419,6 +477,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const videoCanvas = document.getElementById('videoCanvas');
     const vCtx = videoCanvas.getContext('2d');
+
+    // Shape the DISPLAY box to the frame's aspect ratio (longest side fills a
+    // fixed max), so a portrait crop shows portrait and a landscape crop shows
+    // landscape — instead of being squeezed into a fixed square. Sizes both the
+    // canvas and its wrapper so the frame hugs the view with no distortion.
+    const VIDEO_MAX = 640;
+    function fitCanvasDisplay() {
+        const w = videoCanvas.width, h = videoCanvas.height;
+        if (!w || !h) return;
+        const ar = w / h;
+        const dw = ar >= 1 ? VIDEO_MAX : Math.round(VIDEO_MAX * ar);  // landscape → fill width
+        const dh = ar >= 1 ? Math.round(VIDEO_MAX / ar) : VIDEO_MAX;  // portrait  → fill height
+        videoCanvas.style.width = dw + 'px';
+        videoCanvas.style.height = dh + 'px';
+        const wrap = videoCanvas.closest('.video-wrapper');
+        if (wrap) { wrap.style.width = dw + 'px'; wrap.style.height = dh + 'px'; }
+    }
+
+    // ROI capture pauses the WebSocket-to-canvas draw so the snapshot stays
+    // visible while the operator clicks the 4 corners.
+    let roiCaptureActive = false;
     const statCartons = document.getElementById('statCartons');
     const statPolybags = document.getElementById('statPolybags');
     const statLast = document.getElementById('statLast');
@@ -435,6 +514,10 @@ document.addEventListener('DOMContentLoaded', () => {
         videoWs.binaryType = 'blob';
 
         videoWs.onmessage = (event) => {
+            // Skip frame draws while the operator is configuring an ROI —
+            // the snapshot displayed under the click markers must not be
+            // overwritten by incoming live frames.
+            if (roiCaptureActive) return;
             const blob = event.data;
             const url = URL.createObjectURL(blob);
             const img = new Image();
@@ -442,6 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (videoCanvas.width !== img.width || videoCanvas.height !== img.height) {
                     videoCanvas.width = img.width;
                     videoCanvas.height = img.height;
+                    fitCanvasDisplay();
                 }
                 vCtx.drawImage(img, 0, 0);
                 URL.revokeObjectURL(url);
@@ -519,6 +603,8 @@ document.addEventListener('DOMContentLoaded', () => {
             udpEl.textContent = 'UDP: idle';
             udpEl.style.color = '#9aa0a6';
         }
+        const _fpsEl = document.getElementById('detectedFps');
+        if (_fpsEl) _fpsEl.textContent = (data && data.frame_rate) ? Math.round(data.frame_rate) + ' fps' : '—';
     }
 
     function closeWebSockets() {
@@ -606,38 +692,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileDropArea = document.getElementById('fileDropArea');
     const sourceFile = document.getElementById('sourceFile');
     const sourceText = document.getElementById('sourceText');
+    const siteCamCaption = document.getElementById('siteCameraCaption');
     const fileMsg = document.querySelector('.file-msg');
 
-    let currentSourceType = 'image';
+    // Default source = the saved Site Camera (RTSP URL from settings.json).
+    // 'rtsp' type removed — its text input duplicated the saved URL. Other
+    // 3 buttons are ad-hoc overrides (Image / Video / USB Camera).
+    let currentSourceType = 'site_camera';
     let uploadedFilePath = '';
+
+    function _showSourceUI(type) {
+        if (fileDropArea) fileDropArea.style.display = 'none';
+        if (sourceText) sourceText.style.display = 'none';
+        if (siteCamCaption) siteCamCaption.style.display = 'none';
+
+        if (type === 'image') {
+            fileDropArea.style.display = 'flex';
+            sourceFile.setAttribute('accept', 'image/*');
+            fileMsg.textContent = translations[currentLang].drag_drop;
+        } else if (type === 'video') {
+            fileDropArea.style.display = 'flex';
+            sourceFile.setAttribute('accept', 'video/mp4,video/x-m4v,video/*');
+            fileMsg.textContent = translations[currentLang].drag_drop;
+        } else if (type === 'camera') {
+            sourceText.style.display = 'block';
+            sourceText.placeholder = msgTrans[currentLang].placeholder_cam;
+            sourceText.value = '0';
+        } else {
+            // site_camera (default) — no input field; backend uses settings.rtsp_url
+            if (siteCamCaption) siteCamCaption.style.display = 'flex';
+        }
+    }
+
+    _showSourceUI(currentSourceType);
 
     sourceBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             sourceBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentSourceType = btn.getAttribute('data-type');
-
-            if (currentSourceType === 'image') {
-                fileDropArea.style.display = 'flex';
-                sourceText.style.display = 'none';
-                sourceFile.setAttribute('accept', 'image/*');
-                fileMsg.textContent = translations[currentLang].drag_drop;
-            } else if (currentSourceType === 'video') {
-                fileDropArea.style.display = 'flex';
-                sourceText.style.display = 'none';
-                sourceFile.setAttribute('accept', 'video/mp4,video/x-m4v,video/*');
-                fileMsg.textContent = translations[currentLang].drag_drop;
-            } else if (currentSourceType === 'rtsp') {
-                fileDropArea.style.display = 'none';
-                sourceText.style.display = 'block';
-                sourceText.placeholder = msgTrans[currentLang].placeholder_rtsp;
-                sourceText.value = '';
-            } else if (currentSourceType === 'camera') {
-                fileDropArea.style.display = 'none';
-                sourceText.style.display = 'block';
-                sourceText.placeholder = msgTrans[currentLang].placeholder_cam;
-                sourceText.value = '0';
-            }
+            _showSourceUI(currentSourceType);
         });
     });
 
@@ -661,17 +755,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (model_type === 'yolo') {
             weights = localStorage.getItem('isitec_yolo_weights') || '';
-            imgsz = localStorage.getItem('isitec_yolo_imgsz');
+            // imgsz is now mode-driven (cpu.yaml / gpu.yaml) — backend resolves it
             conf = localStorage.getItem('isitec_yolo_conf');
         } else if (model_type === 'Detr') {
             weights = localStorage.getItem('isitec_detr_weights') || '';
-            imgsz = localStorage.getItem('isitec_detr_imgsz');
+            // imgsz is now mode-driven — backend resolves it
             conf = localStorage.getItem('isitec_detr_conf');
         }
 
         let finalSource = '';
 
-        if (currentSourceType === 'image' || currentSourceType === 'video') {
+        if (currentSourceType === 'site_camera') {
+            // Empty source → backend resolves from settings.rtsp_url.
+            finalSource = '';
+        } else if (currentSourceType === 'image' || currentSourceType === 'video') {
             if (sourceFile.files.length === 0 && !uploadedFilePath) {
                 showMessage(msgTrans[currentLang].msg_select_file, "error");
                 return;
@@ -703,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             finalSource = uploadedFilePath;
         } else {
+            // 'camera' (USB) — sourceText holds the device index
             finalSource = sourceText.value;
             if (!finalSource) {
                 showMessage(msgTrans[currentLang].msg_enter_url, "error");
@@ -881,6 +979,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pct = Math.round(d.cpu_pct);
                 html += buildProgressBar('CPU Util', pct, `${pct}%`, [80, 95]);
             }
+            if (d.cpu_model) {
+                const model = String(d.cpu_model).replace(/\(R\)|\(TM\)/g, '').replace(/\s+/g, ' ').trim();
+                html += pmRow('CPU Model', `<span style="font-size: 12px;">${model}</span>`);
+            }
             if (d.cpu_freq_mhz != null) {
                 html += pmRow('CPU Freq', fmt(d.cpu_freq_mhz, ' MHz', 0));
             }
@@ -888,6 +990,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += pmRow('CPU Cores', fmt(d.cpu_cores, '', 0));
             }
             html += pmRow('CPU Temp', d.cpu_temp_c != null ? fmt(d.cpu_temp_c, '\u00b0C', 0) : '<span class="pm-na">\u2014</span>');
+            // ML feature flags \u2014 answers "is INT8 quantization worth it on this box?"
+            // VNNI / AMX = green (INT8 2-3\u00d7 wins). AVX-512 = amber. AVX2-only = grey.
+            if (Array.isArray(d.cpu_flags) && d.cpu_flags.length) {
+                const flags = d.cpu_flags;
+                const tag = (f, color) => `<span style="display:inline-block; padding:1px 6px; margin-right:4px; border-radius:3px; background:${color}; color:#fff; font-size:11px; font-family:monospace;">${f}</span>`;
+                const colored = flags.map(f => {
+                    if (f === 'avx512_vnni' || f.startsWith('amx_')) return tag(f, '#1b8a3a');
+                    if (f.startsWith('avx512')) return tag(f, '#c4831f');
+                    return tag(f, '#5c6370');
+                }).join('');
+                html += pmRow('ML Features', `<div style="line-height:1.8;">${colored}</div>`);
+            }
         }
 
         if (d.ram_used_mb != null && d.ram_total_mb != null) {
@@ -1091,19 +1205,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btnLineBack').addEventListener('click', () => {
-        lineSlider.value = Math.max(10, parseInt(lineSlider.value) - 5);
+        lineSlider.value = Math.max(0, parseInt(lineSlider.value) - 5);
         linePosVal.textContent = lineSlider.value;
         updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     document.getElementById('btnLineForward').addEventListener('click', () => {
-        lineSlider.value = Math.min(90, parseInt(lineSlider.value) + 5);
+        lineSlider.value = Math.min(100, parseInt(lineSlider.value) + 5);
         linePosVal.textContent = lineSlider.value;
         updateLinePreview(lineOrientation, parseInt(lineSlider.value), beltDirection);
     });
 
     lineSlider.addEventListener('input', (e) => {
         linePosVal.textContent = e.target.value;
+        updateLinePreview(lineOrientation, parseInt(e.target.value), beltDirection);
     });
     lineSlider.addEventListener('change', (e) => {
         updateLinePreview(lineOrientation, parseInt(e.target.value), beltDirection);
@@ -1120,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
-
+    // CPU threads slider — plain integer display (no `px` / `.XX` suffix)
     function applySliderValue(id, val) {
         const slider = document.getElementById(`set_${id}`);
         const valSpan = document.getElementById(`val_${id}`);
@@ -1130,7 +1245,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Mode banner — fetch /api/mode and populate the read-only banner at the top
+    // of the Settings panel. Also hide all .gpu-only elements when the resolved
+    // mode is 'cpu' (RF-DETR / Mode 2 entry / RF-DETR config group).
+    async function applyMode() {
+        try {
+            const res = await fetch('/api/mode');
+            if (!res.ok) return;
+            const data = await res.json();
+            const mode = (data.mode || 'unknown').toLowerCase();
+            const valEl = document.getElementById('mode_banner_value');
+            const viaEl = document.getElementById('mode_banner_via');
+            const filesEl = document.getElementById('mode_banner_files');
+            if (valEl) valEl.textContent = mode === 'cpu' ? '⚡ CPU mode' : (mode === 'gpu' ? '🟢 GPU mode' : `❓ ${mode}`);
+            if (viaEl) viaEl.textContent = data.detected_via ? `(detected via ${data.detected_via})` : '';
+            if (filesEl) filesEl.textContent = (data.config_files || []).join(' + ') || '—';
+
+            const gpuOnlyEls = document.querySelectorAll('.gpu-only');
+            gpuOnlyEls.forEach(el => {
+                el.style.display = (mode === 'cpu') ? 'none' : '';
+            });
+        } catch (e) {
+            console.warn('Could not load /api/mode', e);
+        }
+    }
+
     async function loadSettings() {
+        await applyMode();
+
         let serverSettings = {};
         try {
             const sRes = await fetch('/api/settings');
@@ -1138,10 +1280,49 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sData.status === 'success') serverSettings = sData.settings || {};
         } catch (e) { console.warn('Could not load server settings', e); }
 
-        ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
+        // Apply confidence sliders. Imgsz/cpu_threads/skip_* are mode-driven now.
+        ['yolo_conf', 'detr_conf'].forEach(id => {
             const val = serverSettings[id] || localStorage.getItem(`isitec_${id}`);
             if (val != null) applySliderValue(id, val);
         });
+        const rtspUrlEl = document.getElementById('set_rtsp_url');
+        if (rtspUrlEl && serverSettings.rtsp_url) rtspUrlEl.value = serverSettings.rtsp_url;
+        const autoStartEl = document.getElementById('set_auto_start');
+        if (autoStartEl) autoStartEl.checked = !!serverSettings.auto_start;
+        // CLAHE: glare/low-light preprocess. Stop+Start stream to apply.
+        const claheEl = document.getElementById('set_clahe_enabled');
+        if (claheEl) claheEl.checked = !!serverSettings.clahe_enabled;
+        // ROI: toggle reveals the Live-page "Set ROI" + "Clear ROI" buttons + show current bbox.
+        const roiEnabledEl = document.getElementById('set_roi_enabled');
+        const setRoiBtn = document.getElementById('btnSetROI');
+        const clearRoiBtn = document.getElementById('btnClearROI');
+        const roiCurrentEl = document.getElementById('disp_roi_current');
+        if (roiEnabledEl) roiEnabledEl.checked = !!serverSettings.roi_enabled;
+        if (setRoiBtn) setRoiBtn.style.display = serverSettings.roi_enabled ? 'flex' : 'none';
+        if (clearRoiBtn) clearRoiBtn.style.display = serverSettings.roi_enabled ? 'flex' : 'none';
+        if (roiCurrentEl) {
+            const pts = serverSettings.roi_points;
+            if (Array.isArray(pts) && pts.length === 4) {
+                const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+                const x1 = Math.min(...xs), x2 = Math.max(...xs);
+                const y1 = Math.min(...ys), y2 = Math.max(...ys);
+                roiCurrentEl.textContent = `x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
+                roiCurrentEl.removeAttribute('data-i18n');
+            } else {
+                roiCurrentEl.setAttribute('data-i18n', 'roi_none');
+                roiCurrentEl.textContent = (translations[currentLang] && translations[currentLang]['roi_none']) || 'none (full frame)';
+            }
+        }
+        const udpHostEl = document.getElementById('set_udp_host');
+        if (udpHostEl) udpHostEl.value = serverSettings.udp_host ?? '127.0.0.1';
+        const udpPortEl = document.getElementById('set_udp_port');
+        if (udpPortEl) udpPortEl.value = serverSettings.udp_port ?? 9502;
+        const dedupTimeEl = document.getElementById('set_dedup_time');
+        if (dedupTimeEl) dedupTimeEl.checked = serverSettings.dedup_time_enabled ?? false;
+        const dedupIntEl = document.getElementById('set_dedup_interval');
+        if (dedupIntEl) dedupIntEl.value = serverSettings.dedup_interval_ms ?? 300;
+        const ciEl = document.getElementById('set_count_interpolate');
+        if (ciEl) ciEl.checked = serverSettings.count_interpolate !== false;
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1220,22 +1401,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSaveSettings = document.getElementById('btnSaveSettings');
     if (btnSaveSettings) {
         btnSaveSettings.addEventListener('click', async () => {
+            // imgsz / cpu_threads / skip_masks / skip_traces are mode-driven.
+            const detrWeightsEl = document.getElementById('set_detr_weights');
+            const detrConfEl = document.getElementById('set_detr_conf');
             const settings = {
                 yolo_weights:  document.getElementById('set_yolo_weights').value,
-                rfdetr_weights: document.getElementById('set_detr_weights').value,
-                yolo_imgsz:    parseInt(document.getElementById('set_yolo_imgsz').value),
+                rfdetr_weights: detrWeightsEl ? detrWeightsEl.value : '',
                 yolo_conf:     parseFloat(document.getElementById('set_yolo_conf').value),
-                detr_imgsz:    parseInt(document.getElementById('set_detr_imgsz').value),
-                detr_conf:     parseFloat(document.getElementById('set_detr_conf').value),
+                detr_conf:     detrConfEl ? parseFloat(detrConfEl.value) : 0.35,
                 line_orientation: lineOrientation,
                 line_position: parseInt(lineSlider.value) / 100,
                 belt_direction: beltDirection,
+                rtsp_url:      document.getElementById('set_rtsp_url').value.trim(),
+                auto_start:    document.getElementById('set_auto_start').checked,
+                roi_enabled:   document.getElementById('set_roi_enabled').checked,
+                clahe_enabled: document.getElementById('set_clahe_enabled').checked,
+                udp_host:      document.getElementById('set_udp_host').value.trim(),
+                udp_port:      parseInt(document.getElementById('set_udp_port').value),
+                dedup_time_enabled: document.getElementById('set_dedup_time').checked,
+                dedup_interval_ms:  parseInt(document.getElementById('set_dedup_interval').value),
+                count_interpolate:  document.getElementById('set_count_interpolate').checked,
             };
 
             localStorage.setItem('isitec_yolo_weights', settings.yolo_weights);
-            localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights);
-            ['yolo_imgsz', 'yolo_conf', 'detr_imgsz', 'detr_conf'].forEach(id => {
-                localStorage.setItem(`isitec_${id}`, settings[id]);
+            localStorage.setItem('isitec_detr_weights', settings.rfdetr_weights || '');
+            ['yolo_conf', 'detr_conf'].forEach(id => {
+                if (settings[id] != null) localStorage.setItem(`isitec_${id}`, settings[id]);
             });
 
             try {
@@ -1246,11 +1437,257 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } catch (e) { console.warn('Server settings save failed', e); }
 
+            // Live-reflect the ROI toggle on the landing page without a reload.
+            const setRoiBtnNow = document.getElementById('btnSetROI');
+            if (setRoiBtnNow) setRoiBtnNow.style.display = settings.roi_enabled ? 'flex' : 'none';
+            const clearRoiBtnNow = document.getElementById('btnClearROI');
+            if (clearRoiBtnNow) clearRoiBtnNow.style.display = settings.roi_enabled ? 'flex' : 'none';
+
             const confirmMsg = document.getElementById('saveConfirm');
             confirmMsg.classList.remove('hidden');
             setTimeout(() => confirmMsg.classList.add('hidden'), 3000);
         });
     }
+
+    // ── ROI capture (Live-page Set-ROI button) ─────────────────────────────
+    // 4 clicks on a snapshot → axis-aligned bbox → POST /api/settings.
+    // Pauses the WebSocket-to-canvas draw via roiCaptureActive flag.
+    (function setupRoiCapture() {
+        const btnSetROI = document.getElementById('btnSetROI');
+        const banner = document.getElementById('roiCaptureBanner');
+        const statusEl = document.getElementById('roiCaptureStatus');
+        const buttons = document.getElementById('roiCaptureButtons');
+        const btnSave = document.getElementById('btnSaveROI');
+        const btnCancel = document.getElementById('btnCancelROI');
+        if (!btnSetROI) return;
+
+        // Drag-to-rectangle ROI selection. Replaces the prior 4-click corner picker.
+        let dragStart = null;          // {x, y} in native canvas coords
+        let pendingBbox = null;        // [x1, y1, x2, y2] in native canvas coords
+        let snapshotImg = null;
+        let onMouseDown = null, onMouseMove = null, onMouseUp = null;
+
+        function endCapture() {
+            roiCaptureActive = false;
+            banner.style.display = 'none';
+            buttons.style.display = 'none';
+            if (onMouseDown) videoCanvas.removeEventListener('pointerdown', onMouseDown);
+            if (onMouseMove) videoCanvas.removeEventListener('pointermove', onMouseMove);
+            if (onMouseUp)   {
+                videoCanvas.removeEventListener('pointerup', onMouseUp);
+                videoCanvas.removeEventListener('pointercancel', onMouseUp);
+            }
+            videoCanvas.style.cursor = '';
+            dragStart = null;
+            pendingBbox = null;
+            snapshotImg = null;
+        }
+
+        function clientToCanvas(e) {
+            // The canvas has `object-fit: contain` in CSS — its drawing surface
+            // is letterboxed inside the CSS box if the aspect ratios differ.
+            // getBoundingClientRect() returns the OUTER CSS box including the
+            // letterbox bars; subtract those to get the true content area.
+            const r = videoCanvas.getBoundingClientRect();
+            const cssAspect = r.width / r.height;
+            const canvasAspect = videoCanvas.width / videoCanvas.height;
+            let contentW, contentH, offX, offY;
+            if (canvasAspect > cssAspect) {
+                contentW = r.width;
+                contentH = r.width / canvasAspect;
+                offX = 0;
+                offY = (r.height - contentH) / 2;
+            } else {
+                contentH = r.height;
+                contentW = r.height * canvasAspect;
+                offX = (r.width - contentW) / 2;
+                offY = 0;
+            }
+            const cssX = Math.max(0, Math.min(contentW, e.clientX - r.left - offX));
+            const cssY = Math.max(0, Math.min(contentH, e.clientY - r.top - offY));
+            return {
+                x: Math.round(cssX * (videoCanvas.width / contentW)),
+                y: Math.round(cssY * (videoCanvas.height / contentH))
+            };
+        }
+
+        function redrawSnapshot(extra) {
+            if (!snapshotImg) return;
+            vCtx.drawImage(snapshotImg, 0, 0);
+            if (extra) extra();
+        }
+
+        async function beginCapture() {
+            try {
+                const res = await fetch('/api/snapshot');
+                if (!res.ok) {
+                    const msg = (translations[currentLang] && translations[currentLang]['roi_need_stream'])
+                                || 'Start the stream first to capture a snapshot.';
+                    alert(msg);
+                    return;
+                }
+                const blob = await res.blob();
+                const img = new Image();
+                img.onload = () => {
+                    roiCaptureActive = true;
+                    snapshotImg = img;
+                    videoCanvas.width = img.naturalWidth;
+                    videoCanvas.height = img.naturalHeight;
+                    fitCanvasDisplay();
+                    vCtx.drawImage(img, 0, 0);
+                    videoCanvas.style.cursor = 'crosshair';
+                    dragStart = null;
+                    pendingBbox = null;
+                    banner.style.display = 'block';
+                    buttons.style.display = 'none';
+                    statusEl.textContent = (translations[currentLang] && translations[currentLang]['roi_drag_instruction'])
+                                           || 'Click and drag a rectangle over the conveyor belt area.';
+
+                    // Use pointer events with setPointerCapture so the drag keeps
+                    // updating even when the cursor leaves the canvas — only ends
+                    // when the button is actually released.
+                    onMouseDown = (e) => {
+                        if (e.button !== 0) return;
+                        e.preventDefault();
+                        try { videoCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+                        dragStart = clientToCanvas(e);
+                        pendingBbox = null;
+                        buttons.style.display = 'none';
+                    };
+
+                    onMouseMove = (e) => {
+                        if (!dragStart) return;
+                        e.preventDefault();
+                        const cur = clientToCanvas(e);
+                        redrawSnapshot(() => {
+                            const lw = Math.max(2, Math.round(videoCanvas.width / 400));
+                            vCtx.strokeStyle = '#00ff00';
+                            vCtx.lineWidth = lw;
+                            vCtx.setLineDash([Math.max(6, lw * 3), Math.max(4, lw * 2)]);
+                            vCtx.strokeRect(
+                                Math.min(dragStart.x, cur.x),
+                                Math.min(dragStart.y, cur.y),
+                                Math.abs(cur.x - dragStart.x),
+                                Math.abs(cur.y - dragStart.y)
+                            );
+                            vCtx.setLineDash([]);
+                        });
+                    };
+
+                    onMouseUp = (e) => {
+                        if (!dragStart) return;
+                        e.preventDefault();
+                        try { videoCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+                        const end = clientToCanvas(e);
+                        const x1 = Math.min(dragStart.x, end.x);
+                        const y1 = Math.min(dragStart.y, end.y);
+                        const x2 = Math.max(dragStart.x, end.x);
+                        const y2 = Math.max(dragStart.y, end.y);
+                        if (x2 - x1 < 20 || y2 - y1 < 20) {
+                            redrawSnapshot();
+                            dragStart = null;
+                            return;
+                        }
+                        pendingBbox = [x1, y1, x2, y2];
+                        redrawSnapshot(() => {
+                            const lw = Math.max(2, Math.round(videoCanvas.width / 400));
+                            vCtx.strokeStyle = '#00ff00';
+                            vCtx.lineWidth = lw;
+                            vCtx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                            vCtx.fillStyle = 'rgba(0, 255, 0, 0.18)';
+                            vCtx.fillRect(x1, y1, x2 - x1, y2 - y1);
+                        });
+                        statusEl.textContent =
+                            `Captured: x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1}) — drag again to redraw, or save.`;
+                        buttons.style.display = 'flex';
+                        dragStart = null;
+                    };
+
+                    videoCanvas.addEventListener('pointerdown', onMouseDown);
+                    videoCanvas.addEventListener('pointermove', onMouseMove);
+                    videoCanvas.addEventListener('pointerup', onMouseUp);
+                    videoCanvas.addEventListener('pointercancel', onMouseUp);
+                };
+                img.src = URL.createObjectURL(blob);
+            } catch (e) {
+                console.warn('ROI capture failed', e);
+                alert('Could not start ROI capture: ' + e);
+            }
+        }
+
+        btnSetROI.addEventListener('click', beginCapture);
+        btnCancel.addEventListener('click', endCapture);
+
+        // Clear ROI: wipes the saved bbox so the next stream session starts in
+        // full-frame mode. Operator can then re-draw with Set ROI. Sends an
+        // empty `roi_points: []` (the backend treats <4 points as no ROI) and
+        // keeps `roi_enabled: true` so the Set/Clear buttons stay visible.
+        const btnClearROI = document.getElementById('btnClearROI');
+        if (btnClearROI) {
+            btnClearROI.addEventListener('click', async () => {
+                try {
+                    const res = await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                        body: JSON.stringify({ roi_enabled: true, roi_points: [] })
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok || body.status !== 'success') {
+                        const prefix = (translations[currentLang] && translations[currentLang]['roi_clear_failed']) || 'Could not clear ROI: ';
+                        alert(prefix + (body.message || `HTTP ${res.status}`));
+                        return;
+                    }
+                    const ok = (translations[currentLang] && translations[currentLang]['roi_cleared_alert'])
+                               || 'ROI cleared. Stop and Start the stream to apply.';
+                    alert(ok);
+                    // Reflect the cleared state in the Settings → Camera readout.
+                    const roiCurrentEl = document.getElementById('disp_roi_current');
+                    if (roiCurrentEl) {
+                        roiCurrentEl.setAttribute('data-i18n', 'roi_none');
+                        roiCurrentEl.textContent = (translations[currentLang] && translations[currentLang]['roi_none']) || 'none (full frame)';
+                    }
+                } catch (e) {
+                    console.warn('ROI clear failed', e);
+                    alert('Could not clear ROI: ' + e);
+                }
+            });
+        }
+
+        btnSave.addEventListener('click', async () => {
+            if (!pendingBbox) { endCapture(); return; }
+            const [x1, y1, x2, y2] = pendingBbox;
+            const points = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                    body: JSON.stringify({ roi_enabled: true, roi_points: points })
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok || body.status !== 'success') {
+                    const prefix = (translations[currentLang] && translations[currentLang]['roi_save_failed']) || 'Could not save ROI: ';
+                    alert(prefix + (body.message || `HTTP ${res.status}`));
+                    return;
+                }
+                const ok = (translations[currentLang] && translations[currentLang]['roi_saved'])
+                           || 'ROI saved. Stop and Start the stream to apply.';
+                alert(ok);
+                const roiCurrentEl = document.getElementById('disp_roi_current');
+                if (roiCurrentEl) {
+                    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
+                    const x1 = Math.min(...xs), x2 = Math.max(...xs);
+                    const y1 = Math.min(...ys), y2 = Math.max(...ys);
+                    roiCurrentEl.removeAttribute('data-i18n');
+                    roiCurrentEl.textContent = `x=[${x1},${x2}] y=[${y1},${y2}] (${x2-x1}×${y2-y1})`;
+                }
+            } catch (e) {
+                console.warn('ROI save failed', e);
+                alert('Could not save ROI: ' + e);
+            } finally {
+                endCapture();
+            }
+        });
+    })();
 
     loadSettings();
 
