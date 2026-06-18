@@ -62,13 +62,19 @@ class EventLogger:
                 except OSError as exc:
                     logger.warning(f"Could not prune {fp}: {exc}")
 
-    def log(self, class_name: str, event_id: Optional[int] = None) -> None:
+    def log(self, class_name: str, event_id: Optional[int] = None,
+            seq: Optional[int] = None) -> None:
         """Append one event row. Safe to call from any thread.
 
         Args:
             class_name: Class label string (e.g. ``"carton"``).
             event_id: Optional ByteTrack tracker ID. Stored so downstream
                 tools can dedupe or trace individual objects.
+            seq: Optional monotonic per-stream datagram counter — the SAME
+                value sent over UDP for this crossing. Lets the CSV be
+                reconciled against what was sent/received on the wire.
+                Appended as the last column so older 3-column readers are
+                unaffected.
         """
         now = datetime.now()
         date_str = now.strftime("%Y-%m-%d")
@@ -82,11 +88,12 @@ class EventLogger:
                 with open(fp, mode="a", newline="", encoding="utf-8") as f:
                     w = csv.writer(f)
                     if new_file:
-                        w.writerow(["ts", "class", "id"])
+                        w.writerow(["ts", "class", "id", "seq"])
                     w.writerow([
                         now.isoformat(),
                         str(class_name),
                         "" if event_id is None else int(event_id),
+                        "" if seq is None else int(seq),
                     ])
             except OSError as exc:
                 logger.error(f"⚠️ Failed to write event log: {exc}")
@@ -138,5 +145,59 @@ class EventLogger:
                             except ValueError:
                                 eid = None
                         yield ts, row[1], eid
+            except OSError:
+                continue
+
+    @classmethod
+    def read_events_full(
+        cls,
+        log_dir: str,
+        from_dt: datetime,
+        to_dt: datetime,
+    ):
+        """Like :meth:`read_events` but also yields the ``seq`` column:
+        ``(ts, class_name, event_id_or_none, seq_or_none)``.
+
+        Tolerates legacy 3-column rows (no ``seq`` → ``None``). Used by the
+        events export so the CSV can be reconciled against the UDP wire.
+        """
+        log_path = Path(log_dir)
+        if not log_path.is_dir():
+            return
+        start_date = from_dt.date()
+        end_date = to_dt.date()
+        day = start_date
+        one_day = timedelta(days=1)
+        while day <= end_date:
+            fp = log_path / f"events_{day.strftime('%Y-%m-%d')}.csv"
+            day += one_day
+            if not fp.exists():
+                continue
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    next(reader, None)  # header
+                    for row in reader:
+                        if len(row) < 2:
+                            continue
+                        try:
+                            ts = datetime.fromisoformat(row[0])
+                        except ValueError:
+                            continue
+                        if ts < from_dt or ts >= to_dt:
+                            continue
+                        eid = None
+                        if len(row) >= 3 and row[2]:
+                            try:
+                                eid = int(row[2])
+                            except ValueError:
+                                eid = None
+                        seq = None
+                        if len(row) >= 4 and row[3]:
+                            try:
+                                seq = int(row[3])
+                            except ValueError:
+                                seq = None
+                        yield ts, row[1], eid, seq
             except OSError:
                 continue

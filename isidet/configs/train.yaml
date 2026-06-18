@@ -39,16 +39,14 @@ scale: 0.5
 # mixed_precision: true
 
 
+# Runtime inference defaults moved to isidet/configs/inference/{common,cpu,gpu}.yaml.
+# Mode is auto-detected from COMPOSE_MODE env at container boot. See CLAUDE.md
+# § "Inference config (mode-driven)" for the split rationale.
+#
+# Per-session logging knobs that legitimately belong with training/runtime
+# infrastructure (event-CSV save_interval and log_dir) live here:
 inference:
-  conf_threshold: 0.3      # AI confidence cutoff
-  tracker:
-    track_buffer: 60       # Frames to wait before dropping ID
-    match_thresh: 0.9      # Strictness of ID matching
   logging:
     enabled: true
-    save_interval: 3600    # 3600 = 1 Hour, 60 = 1 Minute # 15 to test
+    save_interval: 3600    # event-CSV rollover cadence (seconds)
     log_dir: "isidet/logs"
-  udp:
-    enabled: true
-    host: "127.0.0.1"      # localhost — sorting controller on same machine
-    port: 9502             # consumer binds to this port to receive crossing events
