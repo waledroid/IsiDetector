@@ -5,8 +5,27 @@
 
 # ── isidet/ bucket — ML core, mostly large artefacts ────────────────────────
 /isidet/data/
-/isidet/runs/
 /isidet/logs/
+
+# runs/ is ignored wholesale EXCEPT the OpenVINO export of the 320 model,
+# which main needs as a ready-to-run CPU detector. git won't descend into an
+# ignored directory, so each parent must be re-included before its child;
+# only weights/openvino/{model.xml,model.bin} end up tracked.
+/isidet/runs/*
+!/isidet/runs/segment/
+/isidet/runs/segment/*
+!/isidet/runs/segment/models/
+/isidet/runs/segment/models/*
+!/isidet/runs/segment/models/yolo/
+/isidet/runs/segment/models/yolo/*
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/
+/isidet/runs/segment/models/yolo/yolo26n_320_200/*
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/
+/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/*
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/
+/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/*
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/model.xml
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/openvino/model.bin
 #
 # models/ is special: we ignore EVERYTHING under it (trained run outputs,
 # exported ONNX/XML/engine files, etc.) but keep the pretrained/ sub-dir
@@ -51,6 +70,9 @@ venv/
 
 # ── OS / editor noise ───────────────────────────────────────────────────────
 .DS_Store
+# Windows "mark of the web" alternate-data-stream sidecars (appear when files
+# are copied in from Windows/WSL) — never want these in the repo.
+*:Zone.Identifier
 
 # ── Session-local diagnostics (not for shared repo) ─────────────────────────
 /MODULAR.md
