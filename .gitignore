@@ -61,6 +61,14 @@
 !/isidet/models/pretrained/yolo26n.pt
 !/isidet/models/pretrained/yolov8m-seg.pt
 
+# Inference weights of the 320 model that main needs (best.* only — training
+# checkpoints last.pt/epoch195.pt stay ignored). Must come AFTER *.pt/*.onnx
+# since gitignore is last-match-wins; the runs/ re-include chain above already
+# lets git walk into the weights/ dir.
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/best.pt
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/best.onnx
+!/isidet/runs/segment/models/yolo/yolo26n_320_200/weights/best.fp16.onnx
+
 # ── Python hygiene ──────────────────────────────────────────────────────────
 **/__pycache__/
 *.pyc
