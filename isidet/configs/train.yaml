@@ -15,7 +15,7 @@ hooks:
 model_type: "yolo"
 model_size: "n"
 dataset_path: "isidet/data/universal_dataset"
-optimizer_config: "isidet/configs/optimizers/yolo_optim.yaml"
+optimizer_config: "configs/optimizers/yolo_optim.yaml" # resolved against isidet/ (script dir), not repo root
 batch_size: 16
 image_size: 320
 mixed_precision: true 
