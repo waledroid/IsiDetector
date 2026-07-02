@@ -79,3 +79,6 @@ venv/
 /ONNX_TUTORIAL.md
 /OPENVINO_TUTORIAL.md
 /isidet/a.py
+
+# Flow-recorder output (tools/flow_record_watch.sh) — video sessions stay local
+/recordings/
