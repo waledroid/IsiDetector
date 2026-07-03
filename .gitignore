@@ -80,5 +80,7 @@ venv/
 /OPENVINO_TUTORIAL.md
 /isidet/a.py
 
-# Flow-recorder output (tools/flow_record_watch.sh) — video sessions stay local
-/recordings/
+# Recording output (tools/flow_record_watch.sh, tools/rtsp_record_30min.sh) —
+# video sessions stay local. Unanchored: the manual recorder writes its default
+# recordings/ dir relative to wherever it was invoked from (e.g. tools/recordings/).
+recordings/
