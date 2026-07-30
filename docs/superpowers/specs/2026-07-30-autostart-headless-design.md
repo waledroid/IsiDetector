@@ -64,23 +64,27 @@ there is nothing to do; prints each artifact it removes.
 
 - Remove `isidetector.desktop` from every `/home/*/.config/autostart` and
   `/root/.config/autostart`.
-- GDM3 (`/etc/gdm3/custom.conf`):
-  - newest `.pre-autostart-*` backup exists → restore it (recovers the
-    pre-kiosk file including any sysadmin keys);
-  - no backup → surgically delete `AutomaticLogin*` lines only.
-    **`WaylandEnable` is never touched in this path** — that key is co-owned by
-    `remote.sh` (RustDesk needs X11) with its own `.pre-remote-*` backups.
+- GDM3 (`/etc/gdm3/custom.conf`): surgically delete `AutomaticLogin*` lines,
+  and only when at least one `.pre-autostart-*` backup exists — the backup is
+  the evidence that *this script* wrote those lines, protecting a sysadmin's
+  own auto-login config. Wholesale backup-restore was dropped (changed from
+  the draft design): restoring an old backup would also revert a
+  `WaylandEnable=false` that `remote.sh` wrote *after* our backup was taken,
+  breaking RustDesk capture on the next reboot. **`WaylandEnable` is never
+  touched** — co-owned by `remote.sh` with its own `.pre-remote-*` backups.
+  Backups stay on disk untouched.
 - LightDM / SDDM: delete our
   `50-isidetector-autologin.conf` drop-ins if present.
 
 ### 3. `auto_start` flip
 
-- Stack answering on `tcp/9501` → `POST /api/settings {"auto_start": true}` so
-  the running backend applies it immediately.
-- Otherwise → edit `webapp/isitec_app/settings.json` and
-  `webapp/isitec_api/settings.json` directly (whichever exist) with a
-  `python3` JSON load/set/dump one-liner; `chown` each file back to the
-  install-dir owner. No other keys touched.
+- Edit `webapp/isitec_app/settings.json` and `webapp/isitec_api/settings.json`
+  directly (whichever exist) with a `python3` JSON load/set/dump one-liner;
+  `chown` each file back to the install-dir owner. No other keys touched.
+- Rationale for not using the API (changed from the draft design):
+  `POST /api/settings` requires a dev-auth session (403 otherwise), and
+  `auto_start` is only read once at container boot (`_maybe_auto_start`), so a
+  live POST buys nothing — the file edit is sufficient and always works.
 - Any failure here is a **warning, not fatal** — the systemd install is never
   rolled back because a settings write failed.
 
