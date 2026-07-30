@@ -119,74 +119,59 @@ docker compose down            # stop the stack
 
 ---
 
-## 🔌 Boot-to-running auto-start (Linux site PC, hands-free kiosk)
+## 🔌 Boot-to-running auto-start (Linux site PC, headless)
 
-For a fully unattended site PC — power on → boot → desktop opens → stack
-running → browser fullscreen on the dashboard, no human input, no
-internet — wire up **three independent layers**. Run all three on the
-site PC once:
+For an unattended site PC — power on → stack up → detection running, no
+human input, no internet, no browser — install the boot layer once:
 
 ```bash
 cd ~/fps               # or ~/logistic — wherever the install lives
 
-sudo ./autostart.sh enable           # all three layers in one go
-./autostart.sh status                # confirm all three are green
-sudo reboot                          # apply the auto-login + X11 switch
+sudo ./autostart.sh enable           # systemd unit + auto_start flip
+./autostart.sh status                # confirm unit + auto_start are green
 ```
 
-The CLI is intentionally tiny — `enable`, `disable`, `status`. `enable`
-auto-escalates to sudo, auto-detects the target user from `$SUDO_USER`,
-and installs Layer 1 (auto-login) + Layer 2 (systemd) + Layer 3 (kiosk
-Chrome) in sequence. `disable` rolls all three back. Together they take
-cold-boot-to-stream-running from "wait for kiosk + click Start" down to
-**~30–40 s with zero clicks**.
+`enable` auto-escalates to sudo and does three things:
+
+- installs `/etc/systemd/system/isidetector.service`, which runs
+  `docker compose up -d` from the install dir at boot, ordered after
+  `docker.service`. `User=` is the install-dir owner so settings.json
+  ownership stays consistent.
+- sets `auto_start=true` in both webapps' settings.json, so the container
+  replays the last successful Start (saved camera + last-used model) at
+  boot — detection, UDP datagrams and the event CSV resume with zero
+  clicks and no browser.
+- cleans up any leftovers from the old kiosk installer (see below).
+
+**One-time prerequisite:** click **Start** once on the dashboard so the
+camera + model get recorded (`last_model_type` / `last_weights`); every
+boot after that resumes hands-free. Open Chrome manually whenever you
+want to watch — closing it changes nothing.
 
 ```bash
-sudo ./autostart.sh enable kiosk     # override target user explicitly
-sudo ./autostart.sh disable          # full rollback, restores GDM3 backup
+sudo ./autostart.sh disable          # remove the unit (+ legacy cleanup)
+./autostart.sh status                # read-only state + site diagnostics
 ```
 
-### What each layer does
+### No more kiosk mode
 
-- **Layer 1 — `enable-autologin USER`** writes `AutomaticLogin=` for
-  GDM3 / LightDM / SDDM. Takes effect on next reboot. Auto-detects the
-  display manager. Removes the operator's only manual step (sitting at
-  the login screen). Reverse with `disable-autologin`.
-
-- **Layer 2 — `enable-systemd`** installs
-  `/etc/systemd/system/isidetector.service` that runs `docker compose
-  up -d` from the install dir, ordered after `docker.service`. The stack
-  is up before the desktop session even loads. Cuts ~30 s off cold boot
-  vs. waiting for the .desktop autostart to fire. Reverse with
-  `disable-systemd`.
-
-- **Layer 3 — `enable`** writes
-  `~/.config/autostart/isidetector.desktop`, which the desktop session
-  runs ~10 s after login. Opens the dashboard in **kiosk Chrome** —
-  fullscreen, no address bar, no tabs, operator can't accidentally
-  navigate away. Press **Ctrl+Alt+F2** for a TTY if you need to drop
-  out. The entry auto-rewrites itself based on whether Layer 2 is
-  present: with systemd installed it uses `--open-only` (browser only,
-  no compose race); without, it uses full `up.sh --no-build --kiosk
-  --force-cpu` (compose + browser).
-
-### Combined with the in-app **Auto-start stream on boot** toggle
-
-Settings → Camera has a checkbox that makes the **stream itself**
-auto-resume on container start (replays the last successful Start). Tick
-it and click Start once to record the model. From then on, every
-container restart auto-resumes the saved camera + last-used model — no
-operator click on the dashboard.
-
-The three OS-level layers above + that one in-app toggle = the fully
-hands-free path. Power button → operator-ready in under a minute.
+Older versions of this script also configured OS auto-login (GDM3
+`custom.conf` edits, `WaylandEnable=false`) and a fullscreen kiosk Chrome
+at login. Those layers proved fragile on site (display-manager /
+Wayland-vs-X11 breakage) and are **gone** — the script no longer touches
+display-manager config at all. Running `enable` or `disable` on a PC that
+had the old layers cleans them up: kiosk `.desktop` files are deleted,
+and `AutomaticLogin*` lines are stripped from GDM3 config only when our
+`.pre-autostart-*` backups prove this script wrote them. `WaylandEnable`
+is left alone — that key belongs to `./remote.sh` (RustDesk needs X11).
 
 ### Why `restart: unless-stopped` in `docker-compose.yml` isn't enough
 
 It only resumes containers that were running before shutdown. On a
 **first** boot after install, or after a fresh `docker compose down`,
-nothing brings them back. Layer 2 catches that case at boot, Layer 3
-opens the browser regardless of whether compose was already up.
+nothing brings them back. The systemd unit catches that case at boot —
+`docker compose up -d` runs unconditionally, whether or not the
+containers were up before.
 
 ---
 
@@ -288,7 +273,7 @@ No `net.ps1` yet — set the static IP via the GUI (**Settings → Network → E
 
 ## 🌐 Remote access — Tailscale + RustDesk (`remote.sh`)
 
-Once-per-site setup so you can reach the kiosk from anywhere — no port-forward, no public IP, no TeamViewer license.
+Once-per-site setup so you can reach the site PC from anywhere — no port-forward, no public IP, no TeamViewer license.
 
 ```bash
 sudo ./remote.sh setup            # interactive: tailscale via Gmail SSO
@@ -300,7 +285,7 @@ sudo ./remote.sh remove           # uninstall both
 
 **What you get:**
 - **Tailscale** — site PC joins your private mesh at a `100.x.x.x` IP. SSH and HTTPS from your laptop just work, no DNS or NAT shenanigans. Free for personal/small-team use; sign in with the Gmail account that owns the tailnet.
-- **RustDesk** — full GUI of the kiosk Chrome dashboard. The script enables the systemd service so RustDesk runs even when no operator is logged in.
+- **RustDesk** — full GUI of the site PC's desktop (open Chrome on the dashboard as needed). The script enables the systemd service so RustDesk runs even when no operator is logged in.
 - **X11 forced** — on Ubuntu 22.04+ (GDM3) the default session is Wayland, which blocks RustDesk's screen capture and input. The script writes `WaylandEnable=false` into `/etc/gdm3/custom.conf` (idempotent; backs up the original). **Reboot required** for the change to take effect — the script prints a reminder when this happens. LightDM/SDDM hosts already default to X11 so they're skipped.
 
 The script prints the Tailscale IP, RustDesk ID, and a generated permanent password at the end of `setup` — write them down. They're also saved to `/var/log/isidetector/remote-state.json` for the next visit. Idempotent; safe to re-run.

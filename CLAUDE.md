@@ -125,28 +125,40 @@ sudo ./remote.sh remove                   # uninstall both, leave system clean
 - **State persistence** — Tailscale IP, RustDesk ID, password SHA-256, and install timestamp are written to `/var/log/isidetector/remote-state.json` (mode 0640) so the admin can read the connection details on the next visit without re-running `setup`.
 - **Idempotent** — re-running `setup` detects existing installs and skips them. Internet check at the top fails fast with a clear "connect a cable and re-run" message.
 
-### Standalone-mode helpers (`autostart.sh`)
+### Standalone-mode helper (`autostart.sh`)
 
-Three layers turn a fresh site PC into a hands-free kiosk, installed and rolled back via a single command each.
+Headless boot installer. One systemd unit + the in-app `auto_start` flag make a
+site PC survive power cuts, Docker restarts and closed browsers with detection
+running — no login, no browser, no clicks.
 
 ```bash
-sudo ./autostart.sh enable [USER]   # install all three layers (auto-escalates sudo)
-                                    # USER defaults to $SUDO_USER / first /home/* user
-sudo ./autostart.sh disable         # reverse all three; restores GDM3 from .pre-autostart-* backup
-./autostart.sh status               # read-only — state of all three layers
+sudo ./autostart.sh enable [USER]   # systemd unit + auto_start=true + legacy cleanup
+                                    # USER only affects file-ownership fallback
+sudo ./autostart.sh disable         # remove the unit + legacy cleanup
+./autostart.sh status               # read-only — unit + auto_start state + site diagnostics
 ```
 
-The CLI is intentionally three commands. The script orchestrates the three internal layers in order:
+- **Boot-time compose.** Installs `/etc/systemd/system/isidetector.service`
+  that runs `docker compose up -d` from the install directory, ordered after
+  `docker.service` + `network-online.target`. `User=` is set to the install-dir
+  owner so settings.json file ownership stays consistent across
+  systemd-managed and operator-managed runs.
+- **Detection auto-start.** `enable` sets `auto_start=true` in both webapps'
+  settings.json directly (only that key; ownership preserved). The API isn't
+  used on purpose: `POST /api/settings` needs dev-auth and `auto_start` is
+  only read once at container boot. One-time prerequisite: one manual Start
+  click ever, so `last_model_type` / `last_weights` exist to replay.
+- **No display-manager writes.** The old kiosk layers (OS auto-login via GDM3
+  `custom.conf`, `WaylandEnable=false`, kiosk-Chrome `.desktop`) are gone —
+  they broke display sessions on site. `enable`/`disable` both clean up
+  leftovers from old installs: `.desktop` files deleted; GDM3
+  `AutomaticLogin*` lines stripped **only when** `.pre-autostart-*` backups
+  prove this script wrote them (protects sysadmin-owned auto-login; wholesale
+  backup-restore would clobber a `WaylandEnable=false` that `remote.sh` wrote
+  later). `WaylandEnable` is never touched here — `remote.sh` owns it.
 
-- **Layer 1 — OS auto-login.** Auto-detects the display manager and writes `AutomaticLogin=USER` to the right config (`/etc/gdm3/custom.conf`, LightDM `lightdm.conf.d/`, or SDDM `sddm.conf.d/`). On GDM3 also writes `WaylandEnable=false` so RustDesk's X11-only capture works. Takes effect on next reboot — script does not restart the DM, that would log the operator out mid-setup. GDM3 edits go through per-key incremental `sed` calls (one key per `-e`) plus post-edit verification with rollback to a `.pre-autostart-<timestamp>` backup — the old single-shot `sed "..a A\nB\nC"` corrupted custom.conf because bash double-quotes + sed's `a` command both refuse to expand `\n` into a newline.
-- **Layer 2 — boot-time compose.** Installs `/etc/systemd/system/isidetector.service` that runs `docker compose up -d` from the install directory, ordered after `docker.service` + `network-online.target`. `User=` is set to the install-dir owner so settings.json file ownership stays consistent across systemd-managed and operator-managed runs.
-- **Layer 3 — kiosk Chrome at login.** Writes `~/.config/autostart/isidetector.desktop` (resolved from the target user's home, not the script-invoker's `$HOME` — necessary because `sudo` flips `$HOME` to `/root`). Auto-rewrites itself to use `up.sh --open-only` (skip compose, just wait + open Chrome) when Layer 2 is also installed, so the two layers don't race.
-
-`disable` reverses in reverse-order (Layer 3 → Layer 2 → Layer 1). The Layer 1 restoration uses the most recent `.pre-autostart-*` backup if found, which preserves any extra `[daemon]` keys the original sysadmin had. The `.pre-autostart-*` suffix is distinct from `remote.sh`'s `.pre-remote-*`, so the two scripts coexist without clobbering each other's backups.
-
-Combined with the in-app **Settings → Camera → Auto-start stream on boot** toggle, the full hands-free path is: power on → ~30–40 s → kiosk Chrome on the dashboard with the stream running, zero clicks.
-
-`up.sh --open-only` is a new flag that skips `docker compose up/down` entirely, waits briefly for `tcp/9501`, then opens the browser. Used by Layer 3 when Layer 2 owns the compose lifecycle.
+`up.sh` keeps `--kiosk` / `--open-only` for manual use; nothing auto-invokes
+them anymore.
 
 ---
 
