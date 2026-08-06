@@ -67,20 +67,32 @@ class YOLOTrainer(BaseTrainer):
         self.data_yaml_path = self._prepare_data_yaml()
 
     def _prepare_data_yaml(self) -> str:
-        """Generate the ``data.yaml`` that Ultralytics requires, if missing.
+        """Generate / repair the ``data.yaml`` that Ultralytics requires.
 
         Reads ``nc`` and ``class_names`` from ``train.yaml``, making the
-        config the single source of truth. Does nothing if the file
-        already exists.
+        config the single source of truth. If a ``data.yaml`` already exists
+        its splits/classes are kept, but the ``path`` key is ALWAYS pinned to
+        the absolute dataset directory — a relative ``path`` (e.g. ``.``) is
+        resolved by Ultralytics against the CWD and silently points at images
+        that don't exist, so absolute is the only CWD-proof form.
 
         Returns:
             Absolute path to ``data.yaml`` as a string.
         """
         yaml_path = self.dataset_path / 'data.yaml'
+        abs_path = str(self.dataset_path.resolve())
 
-        if not yaml_path.exists():
+        if yaml_path.exists():
+            with open(yaml_path, 'r') as f:
+                data_dict = yaml.safe_load(f) or {}
+            if data_dict.get('path') != abs_path:
+                data_dict['path'] = abs_path
+                with open(yaml_path, 'w') as f:
+                    yaml.dump(data_dict, f, default_flow_style=False)
+                logger.info(f"📌 Pinned data.yaml path → {abs_path}")
+        else:
             data_dict = {
-                'path': str(self.dataset_path.absolute()),
+                'path': abs_path,
                 'train': 'images/train',
                 'val': 'images/val',
                 'test': 'images/test',
@@ -298,7 +310,7 @@ class YOLOTrainer(BaseTrainer):
         Args:
             format: Export format. ``'onnx'`` (default) uses
                 deployment-optimised flags (``opset=12``,
-                ``simplify=True``, ``nms=True``, ``dynamic=False``).
+                ``simplify=True``, ``nms=True``, ``dynamic=True``).
                 Any other string is passed directly to Ultralytics.
 
         Returns:
@@ -313,7 +325,7 @@ class YOLOTrainer(BaseTrainer):
                 opset=12,
                 nms=True,         # Bakes Non-Max Suppression into graph
                 simplify=True,    # Graph optimization
-                dynamic=False     # Static input for maximum RTX 5070 throughput
+                dynamic=True      # Dynamic batch+size: zone-scoped consumers batch crops
             )
         else:
             export_path = self.model.export(format=format)
