@@ -228,6 +228,8 @@ Rebuilt: the inferencer reference and palette-indexed annotators (mask/box/label
 
 Dedup: track-ID (one emission per ByteTrack id) is always on; a time guard (`dedup_time_enabled`, default on; `dedup_interval_ms`, default 300) suppresses churned re-emissions of the same parcel. `seq` is stamped post-dedup, so it stays a gap-free delivery counter.
 
+**Predictive trigger** (`pred:` commit series, `isidet/src/shared/predictive_trigger.py`, default OFF): instead of firing on the first processed frame *after* the leading edge passes the line, each track's crossing time is estimated from a least-squares fit of its recent leading-edge positions (capture-timestamped), refined by interpolation once samples straddle the line, and a scheduler thread fires at `t_cross + trigger_offset_ms` (signed: +300 = 300 ms after the line). A detection gap at the line no longer delays the datagram, and the lead is tuned in milliseconds, not by moving the line. Tracks with no estimate (appeared at the line) fall back to observed-crossing + offset through the same scheduler. Emission goes through the same dedup/count/seq/CSV path (`VisionEngine._emit`, lock-guarded) and `StreamHandler._handle_event` publishes the UDP datagram. Untick the setting to return to the observed trigger instantly; `git reset` before the `pred:` series removes the code. Log lines are prefixed `[PRED]` (per fire + summary every 100). Dev-box replay: `isidet/tests/replay_predictive.py`.
+
 Line-crossing fires on the **leading edge** of the bbox — the side that enters the line zone first given belt direction. Maximises the sorter gate's reaction window. Mapping lives in `isidet/src/shared/vision_engine.py _ANCHOR_MAP`:
 
 | Orientation | Belt direction | Anchor (`sv.Position`) |
@@ -356,6 +358,8 @@ Operator-tunable per-site state only. Hardware-optimization knobs live in the mo
 | `last_model_type` | str | "" | **Server-written.** Recorded after a successful Start; used by `auto_start`. Client POSTs cannot set this. |
 | `last_weights` | str | "" | **Server-written.** Same as above. |
 | `roi_enabled` | bool | false | If true, exposes the **📐 Set ROI** button on the Live Inference page. ROI crop only applies if both `roi_enabled` AND a valid 4-point `roi_points` are set. |
+| `predictive_trigger` | bool | false | Predictive line trigger (see Trigger semantics). Live-applied; OFF = observed-crossing trigger. |
+| `trigger_offset_ms` | int [-2000..2000] | 0 | Signed offset added to the predicted crossing time before the datagram fires. Live-applied. |
 | `roi_points` | list of 0 or 4 `[x,y]` pairs | [] | Operator-drawn corner points in original camera-frame pixel coords. Backend computes the axis-aligned bounding rectangle and applies it as a numpy-slice crop in `_inference_loop` before the pre-engine resize. Any error → `self.roi = None` latch + log; pipeline never breaks. |
 
 **Removed in the mode-driven refactor** (now in `isidet/configs/inference/{cpu,gpu}.yaml`): `yolo_imgsz`, `detr_imgsz`, `cpu_threads`, `skip_masks`, `skip_traces`. These were operator-visible toggles in the old Settings UI; they're now invisible system tuning that auto-applies based on detected hardware.
