@@ -26,9 +26,10 @@ def run(mode, args, log_dir):
                          'logging': {'log_dir': f'{log_dir}/{mode}', 'retention_days': 1}},
            'bytetrack': {'frame_rate': 25, 'track_buffer': 60, 'match_thresh': 0.7}}
     eng = VisionEngine(inf, cfg)
+    if not hasattr(eng, 'configure_predictive'): print('(baseline engine: no predictive support)')
     eng.line_orientation, eng.line_position, eng.belt_direction = ORIENT, args.line, args.belt
     events = []
-    eng.on_event = lambda ev: events.append((time.monotonic() * 1000.0, dict(ev)))
+    eng.on_event = lambda ev: (events.append((time.monotonic() * 1000.0, dict(ev))), print(f"EV seq={ev.get('seq')} id={ev['id']} cls={ev['class']} src={ev.get('src')}"))
     cap = cv2.VideoCapture(args.video)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(args.start * fps))
@@ -45,15 +46,19 @@ def run(mode, args, log_dir):
             break
         frame = frame[:, x1:x2]
         h, ww = frame.shape[:2]
-        s = 640 / max(h, ww)
+        s = args.max_side / max(h, ww)
         frame = cv2.resize(frame, (int(ww * s), int(h * s)), interpolation=cv2.INTER_AREA)
         ts = t0 + i * 1000.0 / fps
         wait = ts - time.monotonic() * 1000.0
         if wait > 0:
             time.sleep(wait / 1000.0)
-        _, det, evs = eng.process_frame(frame, counts, frame_ts_ms=ts)
+        try:
+            _, det, evs = eng.process_frame(frame, counts, frame_ts_ms=ts)
+        except TypeError:                                   # pre-pred engine (A/B baseline)
+            _, det, evs = eng.process_frame(frame, counts)
         for ev in evs:                                      # observed mode only
             events.append((time.monotonic() * 1000.0, dict(ev)))
+            print(f"EV seq={ev.get('seq')} id={ev['id']} cls={ev['class']} frame={i}")
             if det.tracker_id is not None:
                 idx = [k for k, t in enumerate(det.tracker_id) if int(t) == ev['id']]
                 if idx:
@@ -81,6 +86,7 @@ if __name__ == '__main__':
     ap.add_argument('--start', type=float, default=0)
     ap.add_argument('--offset', type=int, default=0)
     ap.add_argument('--mode', choices=['both', 'observed', 'predictive'], default='both')
+    ap.add_argument('--max-side', type=int, default=640, help='downscale long side (site CPU mode = 320)')
     ap.add_argument('--belt', default=BELT, help='belt_direction as in settings.json')
     ap.add_argument('--line', type=float, default=LINE)
     ap.add_argument('--roi-px', default='', help="x1,x2 pixel crop (e.g. 153,563 = site ROI); default = fraction band")
