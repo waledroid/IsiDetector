@@ -319,7 +319,9 @@ class LiveReader:
                 if not self.q.empty():
                     try: self.q.get_nowait()
                     except: pass
-                self.q.put(frame)
+                # Capture stamp (monotonic ms) rides with the frame — the
+                # predictive trigger schedules against this clock.
+                self.q.put((frame, time.monotonic() * 1000.0))
 
                 # Pace to native FPS for file sources (lock NOT held during sleep)
                 if self.frame_delay > 0:
@@ -329,6 +331,7 @@ class LiveReader:
                 time.sleep(1)
 
     def get_frame(self):
+        """Latest ``(frame, capture_ts_ms)`` or None on timeout."""
         try: return self.q.get(timeout=0.2)
         except: return None
 
@@ -548,6 +551,19 @@ class StreamHandler:
             logger.warning(f"[ROI] Could not load — falling back to full frame: {e}")
             self.roi = None
 
+    def _handle_event(self, event):
+        """Publish one crossing: last_detected, UDP datagram, monitor counters.
+
+        Called from the inference loop (observed crossings) and, in predictive
+        mode, from the predictor's scheduler thread via ``engine.on_event``.
+        """
+        ts = datetime.datetime.now().isoformat()
+        with self.lock:
+            self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
+        latency_ns = self.publisher.publish(event['class'], event_id=event['id'], seq=event.get('seq'))
+        self.monitor.track_udp_publish(latency_ns=latency_ns)
+        self.monitor.track_crossing()
+
     def get_raw_snapshot(self):
         """Return the latest pre-crop, pre-resize, pre-annotation frame as JPEG.
         Used by the Live-Inference Set-ROI configurator.
@@ -555,9 +571,10 @@ class StreamHandler:
         if not self.running or self.reader is None:
             return None
         try:
-            frame = self.reader.get_frame()
-            if frame is None:
+            item = self.reader.get_frame()
+            if item is None:
                 return None
+            frame = item[0]
             ok, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
             return buf.tobytes() if ok else None
         except Exception as e:
@@ -1017,6 +1034,10 @@ class StreamHandler:
 
         with self.lock:
             if self.engine:
+                try:
+                    self.engine.stop()
+                except Exception:
+                    pass
                 del self.engine
                 self.engine = None
 
@@ -1041,6 +1062,11 @@ class StreamHandler:
                     ve_config['inference']['dedup_time_enabled'] = _ui['dedup_time_enabled']
                 if isinstance(_ui.get('dedup_interval_ms'), int) and 0 <= _ui['dedup_interval_ms'] <= 60000:
                     ve_config['inference']['dedup_interval_ms'] = _ui['dedup_interval_ms']
+                # Predictive trigger (pred: series) — operator toggle + signed offset.
+                if isinstance(_ui.get('predictive_trigger'), bool):
+                    ve_config['inference']['predictive_trigger'] = _ui['predictive_trigger']
+                if isinstance(_ui.get('trigger_offset_ms'), int) and -2000 <= _ui['trigger_offset_ms'] <= 2000:
+                    ve_config['inference']['trigger_offset_ms'] = _ui['trigger_offset_ms']
                 # Make the operator's recall toggle authoritative at stream START (not just
                 # live via configure_counting) so it survives a stream restart.
                 if isinstance(_ui.get('count_interpolate'), bool):
@@ -1070,6 +1096,7 @@ class StreamHandler:
                 if _tb > 0:
                     ve_config['bytetrack']['track_buffer'] = _tb
                 self.engine = VisionEngine(inferencer=base_engine, config=ve_config)
+                self.engine.on_event = self._handle_event   # predictive fires publish through here
                 self._apply_line_settings(self.engine)
                 self._apply_render_settings(self.engine)
                 self.mode_text = mode_text
@@ -1123,6 +1150,11 @@ class StreamHandler:
             self.inf_thread = None
             self.reader = None
             self.engine = None
+            try:
+                if engine is not None:
+                    engine.stop()          # predictor scheduler thread, if any
+            except Exception:
+                pass
 
         def _cleanup():
             try:
@@ -1177,8 +1209,8 @@ class StreamHandler:
                     time.sleep(0.01)
                     continue
 
-                frame = reader.get_frame()
-                if frame is None:
+                item = reader.get_frame()
+                if item is None:
                     consecutive_drops += 1
                     self.monitor.track_frame_drop()
                     # Backoff on sustained drops: 1ms → 10ms → 50ms → 200ms cap
@@ -1186,6 +1218,7 @@ class StreamHandler:
                     time.sleep(drop_sleep)
                     continue
                 consecutive_drops = 0
+                frame, frame_ts = item
 
                 try:
                     # Belt ROI crop — runs BEFORE the pre-engine downscale so
@@ -1238,7 +1271,8 @@ class StreamHandler:
                                 self._preprocess_chain.remove(proc)
 
                     _t_start = time.perf_counter()
-                    annotated, detections, new_events = engine.process_frame(frame, self.class_totals)
+                    annotated, detections, new_events = engine.process_frame(
+                        frame, self.class_totals, frame_ts_ms=frame_ts)
                     _t_done = time.perf_counter()
 
                     stage_ms = dict(getattr(engine, 'last_timing', {}))
@@ -1254,12 +1288,7 @@ class StreamHandler:
                     # in the same frame, both get triggered (previously only
                     # the last event was published).
                     for event in new_events:
-                        ts = datetime.datetime.now().isoformat()
-                        with self.lock:
-                            self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
-                        latency_ns = self.publisher.publish(event['class'], event_id=event['id'], seq=event.get('seq'))
-                        self.monitor.track_udp_publish(latency_ns=latency_ns)
-                        self.monitor.track_crossing()
+                        self._handle_event(event)
 
                     # Throttle: encode every 2nd inference frame so display CPU
                     # is halved. Skipped frames re-serve the prior JPEG via the

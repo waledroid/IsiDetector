@@ -1347,6 +1347,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dedupTimeEl) dedupTimeEl.checked = serverSettings.dedup_time_enabled ?? false;
         const dedupIntEl = document.getElementById('set_dedup_interval');
         if (dedupIntEl) dedupIntEl.value = serverSettings.dedup_interval_ms ?? 300;
+        const predEl = document.getElementById('set_predictive_trigger');
+        if (predEl) predEl.checked = serverSettings.predictive_trigger ?? false;
+        const offEl = document.getElementById('set_trigger_offset');
+        if (offEl) offEl.value = serverSettings.trigger_offset_ms ?? 0;
         const ciEl = document.getElementById('set_count_interpolate');
         if (ciEl) ciEl.checked = serverSettings.count_interpolate !== false;
 
@@ -1451,6 +1455,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 udp_port:      parseInt(document.getElementById('set_udp_port').value),
                 dedup_time_enabled: document.getElementById('set_dedup_time').checked,
                 dedup_interval_ms:  parseInt(document.getElementById('set_dedup_interval').value),
+                predictive_trigger: document.getElementById('set_predictive_trigger').checked,
+                trigger_offset_ms:  parseInt(document.getElementById('set_trigger_offset').value) || 0,
                 count_interpolate:  document.getElementById('set_count_interpolate').checked,
             };
 

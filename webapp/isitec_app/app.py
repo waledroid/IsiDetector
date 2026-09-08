@@ -272,6 +272,17 @@ def settings():
             data['dedup_interval_ms'] = n
         except (ValueError, TypeError):
             return jsonify({"status": "error", "message": "dedup_interval_ms must be 0-60000"}), 400
+    if 'predictive_trigger' in data:
+        if not isinstance(data['predictive_trigger'], bool):
+            return jsonify({"status": "error", "message": "predictive_trigger must be a boolean"}), 400
+    if 'trigger_offset_ms' in data:
+        try:
+            n = int(data['trigger_offset_ms'])
+            if not (-2000 <= n <= 2000):
+                raise ValueError
+            data['trigger_offset_ms'] = n
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "trigger_offset_ms must be -2000..2000"}), 400
 
     if 'count_interpolate' in data:
         data['count_interpolate'] = bool(data['count_interpolate'])
@@ -301,6 +312,7 @@ def settings():
         'roi_enabled', 'roi_points',
         'clahe_enabled',
         'dedup_time_enabled', 'dedup_interval_ms',
+        'predictive_trigger', 'trigger_offset_ms',
         'count_interpolate', 'tracker_fps_auto', 'tracker_fps', 'track_buffer',
     )
     current = _load_settings()
@@ -326,6 +338,15 @@ def settings():
                 current.get('dedup_time_enabled', True),
                 int(current.get('dedup_interval_ms', 300)),
             )
+        except Exception:
+            pass  # engine may not be running yet — settings still saved & used on next start
+
+    if 'predictive_trigger' in data or 'trigger_offset_ms' in data:
+        try:
+            if stream_handler.engine is not None:
+                stream_handler.engine.configure_predictive(
+                    enabled=bool(current.get('predictive_trigger', False)),
+                    offset_ms=int(current.get('trigger_offset_ms', 0)))
         except Exception:
             pass  # engine may not be running yet — settings still saved & used on next start
 

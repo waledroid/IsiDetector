@@ -2,12 +2,14 @@
 import cv2
 import time
 import logging
+import threading
 import supervision as sv
 import numpy as np
 from datetime import datetime
 from src.utils.event_logger import EventLogger
 from src.shared.dedup_gate import DedupGate
 from src.shared.crossing import CrossingDetector
+from src.shared.predictive_trigger import PredictiveTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +87,15 @@ class VisionEngine:
         self.count_interpolate = bool(_inf.get('count_interpolate', True))
         self.crossing = CrossingDetector()
         self._emit_seq = 0   # monotonic per-emitted-crossing counter (== UDP seq, == CSV seq)
+        # Emit path is shared by the inference thread and (predictive mode) the
+        # scheduler thread → one lock around dedup/count/seq/CSV.
+        self._emit_lock = threading.Lock()
+        self._class_totals = None    # last dict handed to process_frame (scheduled fires update it)
+        self.on_event = None         # callable(event) — StreamHandler publishes UDP from it
+        # Predictive trigger (pred: series) — OFF = unchanged observed-crossing trigger.
+        self.predictive_enabled = bool(_inf.get('predictive_trigger', False))
+        self.trigger_offset_ms = int(_inf.get('trigger_offset_ms', 0))
+        self.predictor = None
         
         # 4. Logging & Telemetry — one CSV row per line crossing.
         # The events subdir keeps them separate from legacy snapshot logs
@@ -161,6 +172,80 @@ class VisionEngine:
         if count_interpolate is not None:
             self.count_interpolate = bool(count_interpolate)
 
+    # ------------------------------------------------------------ predictive
+    def configure_predictive(self, enabled=None, offset_ms=None):
+        """Live-toggle the predictive trigger / offset without touching counts.
+
+        Enabling builds a fresh predictor (line geometry must be known, i.e. at
+        least one frame processed — otherwise it is built by init_line).
+        Disabling stops the scheduler thread; pending fires are dropped and the
+        observed-crossing path takes over on the next frame.
+        """
+        if enabled is not None:
+            self.predictive_enabled = bool(enabled)
+        if offset_ms is not None:
+            self.trigger_offset_ms = int(offset_ms)
+        if not self.predictive_enabled:
+            if self.predictor is not None:
+                self.predictor.stop()
+                self.predictor = None
+                logger.info("[PRED] disabled — observed-crossing trigger active")
+            return
+        if self.predictor is None:
+            self._rebuild_predictor()
+        else:
+            self.predictor.configure(self.trigger_offset_ms)
+            logger.info(f"[PRED] offset={self.trigger_offset_ms}ms")
+
+    def _rebuild_predictor(self):
+        old, self.predictor = self.predictor, None
+        if old is not None:
+            old.stop()
+        if not self.predictive_enabled or self.line_zone is None:
+            return
+        self.predictor = PredictiveTrigger(
+            line_coord=self._line_coord,
+            after_is_greater=self._after_is_greater,
+            extent=self._cross_extent,
+            offset_ms=self.trigger_offset_ms,
+            on_fire=self._on_predicted_fire,
+        )
+        logger.info(f"[PRED] enabled — line={self._line_coord:.0f}px "
+                    f"offset={self.trigger_offset_ms}ms")
+
+    def _on_predicted_fire(self, track_id, class_name, meta):
+        """Scheduler-thread callback: same dedup/count/seq/CSV path, then publish."""
+        ev = self._emit(track_id, class_name, time.monotonic() * 1000.0, self._class_totals)
+        if ev is None:
+            return
+        ev['src'] = meta.get('src', 'pred')
+        cb = self.on_event
+        if cb is not None:
+            cb(ev)
+
+    def _emit(self, t_id, name, now_ms, class_totals):
+        """Dedup-gated emission. Returns the event dict or None if suppressed."""
+        with self._emit_lock:
+            if not self.dedup.should_emit(t_id, now_ms):
+                if self.dedup.time_suppressed(t_id, now_ms):
+                    logger.info(f"⏱️ dedup-suppressed crossing id={t_id} "
+                                f"(<{self.dedup.interval_ms}ms since last emit)")
+                return None
+            if class_totals is not None:
+                class_totals[name] = class_totals.get(name, 0) + 1
+            self.dedup.record(t_id, now_ms)
+            # One monotonic seq per emitted crossing — the SAME value the UDP
+            # publisher sends and the event log records (CSV ↔ wire reconciliation).
+            self._emit_seq += 1
+            self.event_logger.log(name, t_id, self._emit_seq)
+            return {"class": name, "id": t_id, "seq": self._emit_seq}
+
+    def stop(self):
+        """Release background resources (predictor scheduler thread)."""
+        if self.predictor is not None:
+            self.predictor.stop()
+            self.predictor = None
+
     def init_line(self, width, height, position=0.5, orientation='vertical',
                    belt_direction=None):
         """Initializes the counting line based on frame dimensions.
@@ -220,10 +305,12 @@ class VisionEngine:
             start=start, end=end,
             triggering_anchors=[anchor],
         )
+        self._cross_extent = float(height if orientation == 'horizontal' else width)
+        self._rebuild_predictor()
         logger.info(f"[LINE] {orientation} @ {position:.2f} ({_anchor_name}) "
                     f"for frame {width}x{height}")
 
-    def process_frame(self, frame: np.ndarray, class_totals: dict):
+    def process_frame(self, frame: np.ndarray, class_totals: dict, frame_ts_ms=None):
         """Run detection, tracking, and line-crossing counting on one frame.
 
         Called once per frame from the inference thread. Thread-safe
@@ -280,12 +367,18 @@ class VisionEngine:
         in_cross, out_cross = self.line_zone.trigger(detections=detections)
         all_crossings = in_cross | out_cross
 
-        # Recall recovery: OR in the frame-gap-tolerant latch on the leading-edge
-        # anchor. Same dedup/seq path below, so a crossing caught by both counts once.
-        if self.count_interpolate and detections.tracker_id is not None and len(detections):
+        # Leading-edge anchors — shared by the recall latch and the predictor.
+        ids, coords, names = [], [], []
+        if detections.tracker_id is not None and len(detections):
             anchors = detections.get_anchors_coordinates(self._trigger_anchor)
             ids = [int(t) for t in detections.tracker_id]
             coords = [float(a[self._cross_axis]) for a in anchors]
+            names = [self.inferencer.class_names.get(int(c), "object")
+                     for c in detections.class_id]
+
+        # Recall recovery: OR in the frame-gap-tolerant latch on the leading-edge
+        # anchor. Same dedup/seq path below, so a crossing caught by both counts once.
+        if self.count_interpolate and ids:
             recovered = self.crossing.update(ids, coords, self._line_coord,
                                               self._after_is_greater)
             if recovered:
@@ -296,25 +389,28 @@ class VisionEngine:
         # Collect EVERY new crossing this frame — the caller publishes one
         # UDP datagram per event so the sorter never misses a trigger when
         # two close-together objects cross in the same frame.
+        # Frame CAPTURE time when the reader supplies it (predictor needs the
+        # same clock as its scheduler); process time otherwise.
         new_events = []
-        now_ms = time.monotonic() * 1000.0   # one clock per frame; within-frame ties share it
+        now_ms = float(frame_ts_ms) if frame_ts_ms is not None else time.monotonic() * 1000.0
+        self._class_totals = class_totals
+        predictor = self.predictor if self.predictive_enabled else None
+        if predictor is not None:
+            predictor.observe(ids, coords, names, now_ms)
         for i, crossed in enumerate(all_crossings):
             if crossed and detections.tracker_id is not None:
                 t_id = int(detections.tracker_id[i])
-                if self.dedup.should_emit(t_id, now_ms):
-                    class_id = int(detections.class_id[i])
-                    name = self.inferencer.class_names.get(class_id, "object")
-                    class_totals[name] = class_totals.get(name, 0) + 1
-                    self.dedup.record(t_id, now_ms)
-                    # One monotonic seq per emitted crossing — the SAME value the
-                    # UDP publisher sends and the event log records, so the CSV can
-                    # be reconciled against the wire. Gap-free per stream/engine.
-                    self._emit_seq += 1
-                    new_events.append({"class": name, "id": t_id, "seq": self._emit_seq})
-                    self.event_logger.log(name, t_id, self._emit_seq)
-                elif self.dedup.time_suppressed(t_id, now_ms):
-                    logger.info(f"⏱️ dedup-suppressed crossing id={t_id} "
-                                f"(<{self.dedup.interval_ms}ms since last emit)")
+                name = self.inferencer.class_names.get(int(detections.class_id[i]), "object")
+                if predictor is not None:
+                    # Predictive mode: the scheduler owns the emit. This only arms
+                    # the observed+offset fallback for tracks without an estimate.
+                    predictor.report_observed(t_id, name, now_ms)
+                    continue
+                ev = self._emit(t_id, name, now_ms, class_totals)
+                if ev is not None:
+                    new_events.append(ev)
+        if predictor is not None:
+            predictor.forget(keep_ids=ids, now_ms=now_ms)
 
         # 3. Visual Composition
         # skip_masks / skip_traces are set by stream_handler._apply_render_settings
