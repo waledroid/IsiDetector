@@ -125,7 +125,7 @@ def test_wrong_direction_gives_no_prediction():
 
 def test_belt_speed_fallback_for_short_track():
     trig, fired = make(offset_ms=0)
-    run_track(trig, 1, t_end=280)          # confident track → belt speed known
+    run_track(trig, 1, t_end=440)          # 12 samples: >=5 feed the belt median
     assert abs(trig.belt_speed - V) < 0.01
     trig.observe([2], [380.0], ['polybag'], 1000)   # single sample, 20 px upstream
     assert trig.pending_fire_time(2) is not None
@@ -164,3 +164,11 @@ def test_scheduler_thread_fires_on_real_clock():
         assert -5 < late < 60, f"fired {late:.1f} ms off schedule"
     finally:
         trig.stop()
+
+
+def test_static_false_track_does_not_define_belt_speed():
+    trig, fired = make(offset_ms=0)
+    for k in range(12):                    # jittering, near-static detection
+        trig.observe([9], [200.0 + (k % 2) * 0.5], ['carton'], k * DT)
+    assert trig.belt_speed == 0.0
+    assert trig.pending_fire_time(9) is None

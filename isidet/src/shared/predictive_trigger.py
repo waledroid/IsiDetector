@@ -37,7 +37,9 @@ CANCEL_UPSTREAM_FRAC = 0.20  # … while still > 20 % of the extent upstream →
 FORGET_MS = 2000.0           # drop state for ids unseen this long
 ERR_WINDOW = 500             # est_err samples kept for stats()
 SUMMARY_EVERY = 100          # fires between summary log lines
-_EPS_V = 1e-4                # px/ms — below this the belt is "stopped"
+BELT_MIN_SUPPORT = 5         # belt-median entries before it may override a track's own fit
+BELT_FEED_DISP_FRAC = 0.05   # a track must have moved >= 5 % of the extent to feed the median
+V_FLOOR_MS = 20000.0         # v floor = extent / 20 s: slower than that is "not moving"
 
 
 class _Track:
@@ -81,6 +83,7 @@ class PredictiveTrigger:
         self._sign = 1.0 if after_is_greater else -1.0
         self._L = self._sign * float(line_coord)
         self._extent = float(extent)
+        self._v_floor = self._extent / V_FLOOR_MS
         self.offset_ms = float(offset_ms)
         self.on_fire = on_fire
         self._clock = clock or (lambda: time.monotonic() * 1000.0)
@@ -240,21 +243,26 @@ class PredictiveTrigger:
         if s >= self._L:
             return                              # past the line, no straddle: fallback via report_observed
         belt = self.belt_speed
+        belt_ok = belt > self._v_floor and len(self._belt) >= BELT_MIN_SUPPORT
         n = len(tr.samples)
         if n >= MIN_SAMPLES:
             v, a, t_last = _fit(tr.samples)
-            if n >= CONFIDENT_SAMPLES and v > _EPS_V:
+            # Feed the belt median only from tracks that really travelled: a
+            # near-static false detection must never define the belt speed.
+            disp = tr.samples[-1][1] - tr.samples[0][1]
+            if n >= CONFIDENT_SAMPLES and v > self._v_floor and disp >= BELT_FEED_DISP_FRAC * self._extent:
                 self._belt.append(v)
                 belt = self.belt_speed
-            if v <= _EPS_V:
-                if belt <= _EPS_V:
+                belt_ok = len(self._belt) >= BELT_MIN_SUPPORT
+            if v <= self._v_floor:
+                if not belt_ok:
                     return                      # wrong way / stopped and no belt reference
                 v, s_now, src = belt, s, 'belt'
-            elif belt > _EPS_V and abs(v - belt) / belt > VEL_DEV_FRAC:
+            elif belt_ok and abs(v - belt) / belt > VEL_DEV_FRAC:
                 v, s_now, src = belt, s, 'belt'
             else:
                 v, s_now, src = v, a + v * t_last, 'extrap'
-        elif belt > _EPS_V:
+        elif belt_ok:
             v, s_now, src = belt, s, 'belt'
         else:
             return
