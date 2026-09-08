@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 HISTORY = 12                 # samples kept per track
 MIN_SAMPLES = 3              # samples needed for a per-track fit
-CONFIDENT_SAMPLES = 6        # samples before a track's v feeds the belt-speed median
+CONFIDENT_SAMPLES = 4        # samples before a track's v feeds the belt-speed median (site tracks are short)
 BELT_WINDOW = 25             # per-track velocities kept for the belt-speed median
 VEL_DEV_FRAC = 0.5           # |v - belt| / belt above this → use belt speed instead
 CANCEL_UNSEEN_FRAMES = 10    # armed + unseen this many frames …
