@@ -40,6 +40,8 @@ SUMMARY_EVERY = 100          # fires between summary log lines
 BELT_MIN_SUPPORT = 5         # belt-median entries before it may override a track's own fit
 BELT_FEED_DISP_FRAC = 0.05   # a track must have moved >= 5 % of the extent to feed the median
 V_FLOOR_MS = 20000.0         # v floor = extent / 20 s: slower than that is "not moving"
+REVERSED_WARN_AFTER = 5      # confident tracks moving the WRONG way before we warn
+REVERSED_WARN_EVERY_MS = 60000.0
 
 
 class _Track:
@@ -91,6 +93,8 @@ class PredictiveTrigger:
         self._belt: Deque[float] = deque(maxlen=BELT_WINDOW)
         self.errors_ms: Deque[float] = deque(maxlen=ERR_WINDOW)
         self.fire_count = 0
+        self.reversed_count = 0          # confident tracks that moved toward the 'before' side
+        self._reversed_warned_at = None
         self._cond = threading.Condition()
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -240,6 +244,15 @@ class PredictiveTrigger:
             tr.t_cross, tr.src, tr.refined = t_int, 'interp', True
             tr.t_fire = t_int + self.offset_ms
             return
+        if len(tr.samples) == CONFIDENT_SAMPLES:
+            # Direction sanity (either side of the line): a track clearly travelling
+            # toward the 'before' side means belt_direction is reversed in Settings
+            # (trigger anchor on the TRAILING edge, predictions impossible).
+            v_chk, _, _ = _fit(tr.samples)
+            disp_chk = tr.samples[-1][1] - tr.samples[0][1]
+            if v_chk < -self._v_floor and -disp_chk >= BELT_FEED_DISP_FRAC * self._extent:
+                self.reversed_count += 1
+                self._maybe_warn_reversed(t_ms)
         if s >= self._L:
             return                              # past the line, no straddle: fallback via report_observed
         belt = self.belt_speed
@@ -269,6 +282,17 @@ class PredictiveTrigger:
         tr.v, tr.n_fit, tr.src = v, n, src
         tr.t_cross = t_ms + max(0.0, (self._L - s_now)) / v
         tr.t_fire = tr.t_cross + self.offset_ms
+
+    def _maybe_warn_reversed(self, t_ms: float) -> None:
+        if self.reversed_count < REVERSED_WARN_AFTER:
+            return
+        if (self._reversed_warned_at is not None
+                and (t_ms - self._reversed_warned_at) < REVERSED_WARN_EVERY_MS):
+            return
+        self._reversed_warned_at = t_ms
+        logger.warning(f"[PRED] {self.reversed_count} tracks moved AGAINST belt_direction — "
+                       "the setting looks reversed (trigger anchor is on the TRAILING edge; "
+                       "predictions impossible). Flip belt_direction in Settings.")
 
     def _log_summary(self) -> None:
         logger.info(f"[PRED] summary fires={self.fire_count} {self.stats()}")

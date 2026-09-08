@@ -172,3 +172,12 @@ def test_static_false_track_does_not_define_belt_speed():
         trig.observe([9], [200.0 + (k % 2) * 0.5], ['carton'], k * DT)
     assert trig.belt_speed == 0.0
     assert trig.pending_fire_time(9) is None
+
+
+def test_reversed_direction_is_flagged():
+    trig, fired = make(offset_ms=0)
+    for tid in range(1, 7):                # 6 parcels travelling the wrong way
+        for k in range(8):
+            trig.observe([tid], [500.0 - 20 * k], ['carton'], tid * 1000 + k * DT)
+    assert trig.reversed_count >= 5
+    assert trig._reversed_warned_at is not None
