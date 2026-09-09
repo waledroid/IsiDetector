@@ -32,6 +32,7 @@ def sanitize_for_json(obj):
 # TensorRTInferencer are all imported inside start() when needed.
 from src.shared.vision_engine import VisionEngine
 from isitec_app.performance_monitor import PerformanceMonitor
+from src.shared.digital_out import DigitalOutPublisher
 
 logger = logging.getLogger("IsiDetector-Web")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -418,6 +419,18 @@ class StreamHandler:
         self.publisher = UDPPublisher(host=udp_host, port=udp_port, enabled=udp_enabled)
         logger.info(f"[UDP] Publisher ready → {self.publisher.host}:{self.publisher.port}")
 
+        # Digital-output (relay pulse) publisher — the "wire" trigger that runs
+        # alongside UDP. App-lifetime, reads dio_* keys from settings.json,
+        # re-configured live by POST /api/settings. Disabled by default.
+        self.dio = DigitalOutPublisher()
+        try:
+            _sp = Path(__file__).parent / 'settings.json'
+            if _sp.exists():
+                with open(_sp) as f:
+                    self.dio.configure(DigitalOutPublisher.from_settings(json.load(f)))
+        except Exception as e:
+            logger.warning(f"[DIO] settings.json dio_* invalid — publisher stays OFF: {e}")
+
         # Performance Monitor — collects real-time metrics for /api/performance
         self.monitor = PerformanceMonitor()
 
@@ -732,7 +745,10 @@ class StreamHandler:
                 "last_detected": self.last_detected,
                 "frame_rate": getattr(self, '_tracker_frame_rate', None),
             }
-            return sanitize_for_json(stats)
+        # Sorter-output LEDs on the Live page: per-channel relay pulse ages
+        # (public, no secrets — mirrors what the relay board's own LEDs show).
+        stats["dio"] = self.dio.channels()
+        return sanitize_for_json(stats)
 
     def get_performance(self) -> dict:
         """Return a full performance snapshot for ``GET /api/performance``.
@@ -759,6 +775,7 @@ class StreamHandler:
             snapshot['counting']['rate_per_hour'] = {}
 
         snapshot['counting']['status'] = self.monitor._status_counting(totals, is_running)
+        snapshot['dio'] = self.dio.state()
 
         return sanitize_for_json(snapshot)
 
@@ -1259,6 +1276,7 @@ class StreamHandler:
                             self.last_detected = {"class": event['class'], "time": ts, "id": event['id']}
                         latency_ns = self.publisher.publish(event['class'], event_id=event['id'], seq=event.get('seq'))
                         self.monitor.track_udp_publish(latency_ns=latency_ns)
+                        self.dio.pulse(event['class'])   # relay pulse (no-op unless enabled)
                         self.monitor.track_crossing()
 
                     # Throttle: encode every 2nd inference frame so display CPU

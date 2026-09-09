@@ -271,6 +271,17 @@ while True:
     trigger_sort_gate(event["class"])   # act on "carton" or "polybag"
 ```
 
+## Digital output — relay pulse on a wire (`isidet/src/shared/digital_out.py`)
+
+The electrical twin of the UDP datagram: on every crossing `DigitalOutPublisher.pulse(class)` drives a relay channel ON for `dio_pulse_ms` then OFF (a PLC digital input, like a photocell). Runs **alongside** UDP, both fired from the same event in `_inference_loop`. App-lifetime like `UDPPublisher`; a worker thread serialises pulses (back-to-back, never overlapped) so slow USB/Modbus writes never touch the inference loop.
+
+- Drivers: `serial` (USB boards `/dev/ttyUSB0` **or** Ethernet-serial `socket://IP:PORT`; protocols `numato` / `lcus` / `custom` templates), `modbus_tcp` (FC05 write-single-coil, ack via echo, no library), `sim` (no hardware).
+- Settings keys `dio_*` (dev-gated, live-applied by `POST /api/settings` — toggling ON takes effect on the next crossing). `GET /api/dio` state; `POST /api/dio/test {"channel": n}` fires one pulse **even while OFF** (commissioning button in the Settings page).
+- Dashboard group "Relay Pulse (wire)": red = ON but device unreachable, yellow = last pulse failed, green otherwise. Idle worker auto-reconnects every 2 s (log rate-limited to 30 s).
+- Docker: USB boards need `deploy/docker-compose.dio.yml` — `up.sh` adds it when `/dev/ttyUSB0` exists or `DIO_DEVICE` is set. Ethernet relays need nothing.
+- See it without hardware: Live page "Sorter outputs" LEDs (from `/api/stats.dio`, per-channel pulse age) and `./io.sh board|test|on|off|status` (`deploy/_impl/io.sh` + `dio_board.py`, an on-screen serial/Modbus relay-board emulator).
+- Docs: `mkdocs/docs/settings/digital-out.md`.
+
 ## Data flow
 
 **Training:**

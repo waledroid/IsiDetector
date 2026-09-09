@@ -1,0 +1,15 @@
+# Digital-output (relay pulse) device passthrough — OPTIONAL overlay.
+#
+# up.sh adds this file automatically when DIO_DEVICE is set or /dev/ttyUSB0
+# exists on the host, so hosts without a relay board are untouched:
+#
+#   DIO_DEVICE=/dev/ttyUSB0 ./up.sh          # explicit
+#   ./up.sh                                  # auto if /dev/ttyUSB0 is present
+#
+# The device keeps the same path inside the container, so the Settings page
+# value (dio_device) is the host path. Ethernet relays (socket://…, Modbus)
+# need no passthrough at all.
+services:
+  web:
+    devices:
+      - "${DIO_DEVICE:-/dev/ttyUSB0}:${DIO_DEVICE:-/dev/ttyUSB0}"

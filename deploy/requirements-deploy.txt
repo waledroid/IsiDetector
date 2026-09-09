@@ -27,3 +27,8 @@ psutil>=5.9.0
 
 # ── Config ───────────────────────────────────────────────────────────────────
 PyYAML>=6.0
+
+# ── Digital output (relay pulse to the sorter PLC) ──────────────────────────
+# pyserial drives USB relay boards (/dev/ttyUSBx) and Ethernet-serial relays
+# (socket://IP:PORT). Modbus/TCP relays need no library (raw FC05 frames).
+pyserial>=3.5

@@ -116,6 +116,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - Cheat-Sheet: cheatsheet.md
   - Getting Started:
     - Install (Linux & Windows): getting-started/install.md
     - First Run & Camera Setup: getting-started/first-run.md
@@ -128,6 +129,7 @@ nav:
     - Counting Line & Triggers: settings/counting.md
     - Image & ROI: settings/image-roi.md
     - Models & Modes (GPU/CPU): settings/models-modes.md
+    - Digital Output (relay pulse): settings/digital-out.md
   - Network & Remote:
     - Network Lock-down (net.sh): network/network.md
     - UDP Sorter Protocol: network/udp.md

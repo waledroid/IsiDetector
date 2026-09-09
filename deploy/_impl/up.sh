@@ -112,6 +112,19 @@ else
     echo "▶ Using GPU compose profile (rfdetr sidecar enabled)"
 fi
 
+# ── Optional: relay-board (digital output) passthrough ──────────────────────
+# Adds deploy/docker-compose.dio.yml when a USB relay is present or DIO_DEVICE
+# is set explicitly. Ethernet relays (socket:// / Modbus) need nothing here.
+if [[ -n "${DIO_DEVICE:-}" || -e /dev/ttyUSB0 ]]; then
+    export DIO_DEVICE="${DIO_DEVICE:-/dev/ttyUSB0}"
+    if [[ -e "$DIO_DEVICE" ]]; then
+        COMPOSE_CMD="$COMPOSE_CMD -f docker-compose.dio.yml"
+        echo "▶ Relay device passthrough: $DIO_DEVICE (docker-compose.dio.yml)"
+    else
+        echo "⚠ DIO_DEVICE=$DIO_DEVICE not found on host — skipping relay passthrough"
+    fi
+fi
+
 # ── Start the stack ─────────────────────────────────────────────────────────
 echo "▶ Starting IsiDetector stack (docker compose up -d --build)..."
 $COMPOSE_CMD up -d --build

@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..')))
 
 from isitec_app.stream_handler import StreamHandler
 from src.utils.event_logger import EventLogger
+from src.shared.digital_out import DigitalOutPublisher
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024 * 1024  # 4GB upload cap
@@ -59,6 +60,10 @@ def _shutdown(signum, frame):
         stream_handler.publisher.close()
     except Exception as e:
         print(f"Shutdown: publisher.close() error: {e}")
+    try:
+        stream_handler.dio.close()
+    except Exception as e:
+        print(f"Shutdown: dio.close() error: {e}")
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, _shutdown)
@@ -294,7 +299,26 @@ def settings():
         except (ValueError, TypeError) as e:
             return jsonify({"status": "error", "message": str(e)}), 400
 
+    # Digital-output (relay pulse) keys — validated as a block by the
+    # publisher's own normalizer so the rules live in one place.
+    dio_keys = [k for k in data if k.startswith('dio_')]
+    if dio_keys:
+        try:
+            _merged = dict(_load_settings()); _merged.update({k: data[k] for k in dio_keys})
+            _norm = DigitalOutPublisher.normalize(DigitalOutPublisher.from_settings(_merged))
+        except (ValueError, TypeError) as e:
+            return jsonify({"status": "error", "message": f"digital output: {e}"}), 400
+        for k in dio_keys:                     # store the normalized values
+            short = k[len('dio_'):]
+            if short in _norm:
+                data[k] = _norm[short]
+            else:
+                del data[k]                    # unknown dio_* key — strip
+
     allowed_keys = (
+        'dio_enabled', 'dio_driver', 'dio_device', 'dio_pulse_ms', 'dio_map',
+        'dio_serial_baud', 'dio_serial_protocol', 'dio_on_cmd', 'dio_off_cmd',
+        'dio_modbus_unit', 'dio_modbus_offset',
         'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
         'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
@@ -319,6 +343,14 @@ def settings():
             )
         except Exception:
             pass  # publisher may not be initialised yet — settings still saved
+
+    # Live-apply digital output — toggling ON/OFF or re-pointing the device
+    # takes effect on the very next crossing, no stream restart.
+    if dio_keys:
+        try:
+            stream_handler.dio.configure(DigitalOutPublisher.from_settings(current))
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"digital output: {e}"}), 400
 
     if 'dedup_time_enabled' in data or 'dedup_interval_ms' in data:
         try:
@@ -715,6 +747,31 @@ def udp_target():
         return jsonify({"status": "error", "message": "Invalid host or port (port must be 1-65535, host must be valid IP)"}), 400
     stream_handler.set_udp_target(host, port)
     return jsonify({"status": "success", "host": host, "port": port})
+
+@app.route('/api/dio', methods=['GET'])
+def dio_state():
+    """Live state of the relay-pulse publisher (connected, fired, errors, recent)."""
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+    return jsonify({"status": "success", "dio": stream_handler.dio.state()})
+
+@app.route('/api/dio/test', methods=['POST'])
+def dio_test():
+    """Fire one pulse on an explicit channel — the on-site commissioning
+    button. Works even when dio_enabled is false so the automaticien can
+    verify the wiring before switching the feature on."""
+    if not _check_dev():
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+    data = request.json or {}
+    try:
+        ch = int(data.get('channel', 1))
+        queued = stream_handler.dio.test_pulse(ch)
+    except (ValueError, TypeError) as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    if not queued:
+        return jsonify({"status": "error", "message": "pulse not queued (queue full / device dead)",
+                        "dio": stream_handler.dio.state()}), 503
+    return jsonify({"status": "success", "channel": ch, "dio": stream_handler.dio.state()})
 
 @app.route('/api/line', methods=['GET', 'POST'])
 def line_config():

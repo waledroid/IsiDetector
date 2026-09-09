@@ -106,6 +106,7 @@
                         </select>
                     </div>
 
+                    <div id="sourcePanel">
                     <div class="input-group">
                         <label data-i18n="input_source">Input Source</label>
                         <div class="source-buttons">
@@ -134,6 +135,14 @@
                             <i class="material-icons" style="font-size:18px; vertical-align:middle;">info</i>
                             <span data-i18n="site_camera_caption">Saved camera (configurable in Settings → Camera)</span>
                         </div>
+                    </div>
+                    </div><!-- /sourcePanel -->
+
+                    <!-- Sorter outputs — one line: UDP light · WIRE light + per-channel relay lights -->
+                    <div class="stat-card io-strip" id="ioStrip">
+                        <span class="io-item"><span class="io-led udp" id="ledUdp"></span>UDP</span>
+                        <span class="io-sep"></span>
+                        <span class="io-item"><span class="io-led off" id="ledWire"></span>WIRE <span class="io-note" id="ledWireSub">off</span></span>
                     </div>
                 </div>
 
@@ -341,6 +350,14 @@
                     </div>
                     <div class="pg-metrics" id="pm-udp"></div>
                 </div>
+
+                <div class="perf-group" id="pg-dio">
+                    <div class="pg-header">
+                        <span class="pg-dot" id="dot-dio" title="Green: off, or on & device connected. Yellow: errors seen. Red: on but device unreachable"></span>
+                        <h3>Relay Pulse (wire)</h3>
+                    </div>
+                    <div class="pg-metrics" id="pm-dio"></div>
+                </div>
             </div>
         </section>
 
@@ -423,6 +440,93 @@
                                 <span id="detectedFps">—</span>
                             </p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- DIGITAL OUTPUT (relay pulse on a wire) — runs alongside UDP -->
+                <div class="settings-group" style="grid-column: 1 / -1; margin-bottom: 24px;">
+                    <div class="sg-header">
+                        <span class="sg-badge" style="background:#00897b;">DIO</span>
+                        <h3 data-i18n="dio_settings">Sorter (electrical pulse)</h3>
+                        <span id="dioStateBadge" style="margin-left:auto; font-family:'Roboto Mono', monospace; font-size:12px; padding:2px 8px; border-radius:10px; background:#eceff1; color:#546e7a;">OFF</span>
+                    </div>
+                    <div class="sg-body">
+                        <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                            <input type="checkbox" id="set_dio_enabled" style="width: 18px; height: 18px;">
+                            <span data-i18n="set_dio_enabled_label" title="Drives a relay channel ON for pulse_ms then OFF on every line crossing — a plain digital input for the PLC, like a photocell. Applies immediately on Save, no stream restart.">Relay pulse on every crossing</span>
+                        </label>
+                        <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap;">
+                            <div style="flex: 0 0 150px;">
+                                <label data-i18n="set_dio_driver_label">Driver</label>
+                                <select id="set_dio_driver" class="set-select">
+                                    <option value="serial">Serial / USB</option>
+                                    <option value="modbus_tcp">Modbus TCP</option>
+                                    <option value="sim">Simulation</option>
+                                </select>
+                            </div>
+                            <div style="flex: 2 1 240px;">
+                                <label data-i18n="set_dio_device_label" title="Serial: /dev/ttyUSB0 or socket://IP:PORT (Ethernet-serial relay). Modbus: IP[:502].">Device</label>
+                                <input type="text" id="set_dio_device" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="/dev/ttyUSB0 · socket://10.0.0.5:4196 · 10.0.0.5:502">
+                            </div>
+                            <div style="flex: 0 0 110px;">
+                                <label data-i18n="set_dio_pulse_label" title="Must be shorter than the gap between two parcels. 50 ms is safe at 1 m/s.">Pulse (ms)</label>
+                                <input type="number" id="set_dio_pulse_ms" class="set-select" min="5" max="5000" value="50">
+                            </div>
+                        </div>
+                        <div id="dioSerialOpts" style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-top:10px;">
+                            <div style="flex: 0 0 150px;">
+                                <label>Protocol</label>
+                                <select id="set_dio_serial_protocol" class="set-select">
+                                    <option value="numato">Numato</option>
+                                    <option value="lcus">LCUS / CH340</option>
+                                    <option value="custom">Custom</option>
+                                </select>
+                            </div>
+                            <div style="flex: 0 0 110px;">
+                                <label>Baud</label>
+                                <select id="set_dio_serial_baud" class="set-select">
+                                    <option>9600</option><option>19200</option><option>38400</option><option>57600</option><option>115200</option>
+                                </select>
+                            </div>
+                            <div id="dioCustomOpts" style="display:contents;">
+                                <div style="flex: 1 1 160px;">
+                                    <label title="Placeholders: {ch} 1-based, {ch0} 0-based, {chx}/{ch0x} hex. Escapes \r \n \xNN allowed.">ON template</label>
+                                    <input type="text" id="set_dio_on_cmd" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="relay on {ch0}\r">
+                                </div>
+                                <div style="flex: 1 1 160px;">
+                                    <label>OFF template</label>
+                                    <input type="text" id="set_dio_off_cmd" class="set-select" style="font-family: 'Roboto Mono', monospace; font-size: 13px;" placeholder="relay off {ch0}\r">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="dioModbusOpts" style="display: none; gap: 12px; align-items: end; flex-wrap: wrap; margin-top:10px;">
+                            <div style="flex: 0 0 110px;">
+                                <label>Unit ID</label>
+                                <input type="number" id="set_dio_modbus_unit" class="set-select" min="0" max="255" value="1">
+                            </div>
+                            <div style="flex: 0 0 150px;">
+                                <label title="Coil address = channel − 1 + offset">Coil offset</label>
+                                <input type="number" id="set_dio_modbus_offset" class="set-select" min="0" max="65535" value="0">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-top:10px;">
+                            <div style="flex: 0 0 140px;">
+                                <label>Carton → ch</label>
+                                <input type="number" id="set_dio_ch_carton" class="set-select" min="0" max="255" value="1">
+                            </div>
+                            <div style="flex: 0 0 140px;">
+                                <label>Polybag → ch</label>
+                                <input type="number" id="set_dio_ch_polybag" class="set-select" min="0" max="255" value="2">
+                            </div>
+                            <div style="flex: 0 0 auto; display:flex; gap:8px;">
+                                <button type="button" class="btn-secondary" id="btnDioTest1" style="padding:6px 12px;" title="Fire one pulse on the carton channel — even while OFF. Watch the relay LED / PLC input.">⚡ Carton</button>
+                                <button type="button" class="btn-secondary" id="btnDioTest2" style="padding:6px 12px;" title="Fire one pulse on the polybag channel — even while OFF.">⚡ Polybag</button>
+                            </div>
+                            <span id="dioTestMsg" style="font-size:12px; color: var(--text-light); font-family:'Roboto Mono', monospace;"></span>
+                        </div>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: var(--text-light);" data-i18n="dio_settings_hint">
+                            Runs alongside UDP · channel 0 = not wired · Test works while OFF · USB board: <code>DIO_DEVICE=/dev/ttyUSB0 ./up.sh</code>
+                        </p>
                     </div>
                 </div>
 
@@ -545,7 +649,7 @@
     </main>
 
     <footer style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; font-size:12px; color:var(--text-light); border-top:1px solid #dadce0; margin-top:auto;">
-        <span id="udpStatus" style="font-family:monospace; color:#9aa0a6;">UDP: idle</span>
+        <span></span>
         <span>&copy; Copyright Isitec International 2026</span>
     </footer>
 

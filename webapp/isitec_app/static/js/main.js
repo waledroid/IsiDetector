@@ -62,6 +62,12 @@ const translations = {
         "roi_save_failed": "Could not save ROI: ",
         "roi_clear_failed": "Could not clear ROI: ",
         "sorter_settings": "Sorter (UDP target)",
+        "dio_settings": "Sorter (electrical pulse)",
+        "set_dio_enabled_label": "Relay pulse on every crossing",
+        "set_dio_driver_label": "Driver",
+        "set_dio_device_label": "Device",
+        "set_dio_pulse_label": "Pulse (ms)",
+        "dio_settings_hint": "Runs alongside UDP · channel 0 = not wired · Test works while OFF · USB board: <code>DIO_DEVICE=/dev/ttyUSB0 ./up.sh</code>",
         "sorter_settings_hint": "Each line crossing fires one ~60-byte JSON datagram <code>{class, id, ts}</code> to this address. Save → publisher retargets immediately, no stream restart needed. Test with <code>./net.sh test</code>.",
         "set_udp_host_label": "Sorter IP / hostname",
         "set_udp_port_label": "UDP port",
@@ -158,6 +164,12 @@ const translations = {
         "roi_save_failed": "Échec de l'enregistrement ROI : ",
         "roi_clear_failed": "Échec de l'effacement ROI : ",
         "sorter_settings": "Trieur (cible UDP)",
+        "dio_settings": "Trieur (impulsion électrique)",
+        "set_dio_enabled_label": "Impulsion relais à chaque franchissement",
+        "set_dio_driver_label": "Pilote",
+        "set_dio_device_label": "Périphérique",
+        "set_dio_pulse_label": "Impulsion (ms)",
+        "dio_settings_hint": "En parallèle de l'UDP · canal 0 = non câblé · Test fonctionne même sur OFF · carte USB : <code>DIO_DEVICE=/dev/ttyUSB0 ./up.sh</code>",
         "sorter_settings_hint": "Chaque franchissement de ligne envoie un datagramme JSON ~60 octets <code>{class, id, ts}</code> à cette adresse. Enregistrer → l'éditeur retargete immédiatement, pas de redémarrage du flux. Tester avec <code>./net.sh test</code>.",
         "set_udp_host_label": "IP / hôte du trieur",
         "set_udp_port_label": "Port UDP",
@@ -489,10 +501,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const statPolybags = document.getElementById('statPolybags');
     const statLast = document.getElementById('statLast');
 
+    // ── Sorter output LEDs (Live page) ──────────────────────────────────────
+    const LED_HOLD_MS = 700;                    // visual hold per pulse (real pulse ≈ 50 ms)
+    let _udpLastKey = null, _udpLitUntil = 0, _wireLitUntil = 0;
+    function updateIoLeds(data) {
+        const now = Date.now();
+        // While a stream runs, keep the Source buttons but fold away the
+        // sub-panel under them (file drop / USB index / saved-camera caption).
+        const sp = document.getElementById('dynamicInputContainer');
+        if (sp && typeof data.is_running === 'boolean') sp.style.display = data.is_running ? 'none' : '';
+        // UDP: light on every new last_detected event
+        const led = document.getElementById('ledUdp');
+        if (led && data.last_detected) {
+            const key = data.last_detected.time + '|' + data.last_detected.id;
+            if (key !== _udpLastKey) { _udpLastKey = key; _udpLitUntil = now + LED_HOLD_MS; }
+            led.className = 'io-led udp' + (now < _udpLitUntil ? ' on' : '');
+        }
+        // WIRE: one LED, lit on every relay pulse (any channel) — same as UDP.
+        const d = data.dio; const wire = document.getElementById('ledWire');
+        const sub = document.getElementById('ledWireSub');
+        if (!d || !wire) return;
+        if (!d.enabled) { wire.className = 'io-led off'; sub.textContent = 'off'; return; }
+        let newest = null;
+        Object.values(d.channels || {}).forEach(c => { if (c.age_ms !== null && (newest === null || c.age_ms < newest)) newest = c.age_ms; });
+        if (newest !== null && newest < 600) _wireLitUntil = Math.max(_wireLitUntil, now + LED_HOLD_MS - newest);
+        const lit = now < _wireLitUntil;
+        wire.className = 'io-led wire' + (lit ? ' on' : (d.connected ? ' armed' : ' err'));
+        sub.textContent = d.connected ? '' : 'not connected';
+    }
+    // hold timer so LEDs switch off between polls
+    setInterval(() => {
+        const now = Date.now();
+        const led = document.getElementById('ledUdp');
+        if (led && led.classList.contains('on') && now >= _udpLitUntil) led.classList.remove('on');
+        const w = document.getElementById('ledWire');
+        if (w && w.classList.contains('on') && now >= _wireLitUntil) { w.classList.remove('on'); w.classList.add('armed'); }
+    }, 100);
+
     async function fetchStats() {
         try {
             const res = await fetch('/api/stats');
             const data = await res.json();
+            updateIoLeds(data);
 
             if (data.counts) {
                 let cartonCount = 0;
@@ -523,8 +573,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const idStr = (id !== undefined && id !== null) ? ` #${id}` : '';
                 statLast.textContent = `${cls}${idStr} - ${data.last_detected.time}`;
                 statLast.removeAttribute('data-i18n');
-                udpEl.textContent = `UDP \u2192 ${cls}${idStr} @ ${ts}`;
-                udpEl.style.color = '#43a047';
+                if (udpEl) { udpEl.textContent = `UDP \u2192 ${cls}${idStr} @ ${ts}`; udpEl.style.color = '#43a047'; }
             } else if (udpEl) {
                 udpEl.textContent = 'UDP: idle';
                 udpEl.style.color = '#9aa0a6';
@@ -883,6 +932,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatePerfGroup('tracking',    d.tracking,    buildTrackingRows);
                 updatePerfGroup('counting',    d.counting,    buildCountingRows);
                 updatePerfGroup('udp',         d.udp,         buildUdpRows);
+                if (d.dio) updatePerfGroup('dio', d.dio, buildDioRows);
+                if (d.dio) updateDioBadges(d.dio);
             }
             // Always update sessions table (now in Analytics)
             updateSessionsTable(d.sessions);
@@ -1054,6 +1105,37 @@ document.addEventListener('DOMContentLoaded', () => {
              + pmRow('p95',            fmt(d.p95_us, ' µs', 0))
              + pmRow('p99',            fmt(d.p99_us, ' µs', 0))
              + pmRow('Max',            fmt(d.max_us, ' µs', 0));
+    }
+
+    function buildDioRows(d) {
+        // Relay-pulse (wire) trigger. Mirrors the UDP group so the automation
+        // engineer sees both trigger paths side by side.
+        const state = !d.enabled ? 'OFF' : (d.connected ? 'ON · connected' : 'ON · not connected');
+        return pmRow('State',          state)
+             + pmRow('Driver',         `${d.driver} · ${d.device}`)
+             + pmRow('Pulse width',    fmt(d.pulse_ms, ' ms', 0))
+             + pmRow('Pulses fired',   fmt(d.fired, '', 0))
+             + pmRow('Errors',         fmt(d.errors, '', 0) + (d.dropped ? ` (+${d.dropped} dropped)` : ''))
+             + pmRow('Queue',          fmt(d.queue_depth, '', 0))
+             + pmRow('p50 / p95',      `${fmt(d.p50_us, ' µs', 0)} / ${fmt(d.p95_us, ' µs', 0)}`)
+             + pmRow('Last',           d.last_ts ? `ch${d.last_channel} ${d.last_class} @ ${d.last_ts.split('T')[1].split('.')[0]}` : '<span class="pm-na">—</span>')
+             + (d.last_error ? pmRow('Last error', `<span style="color:#e53935">${d.last_error}</span>`) : '');
+    }
+
+    function updateDioBadges(d) {
+        const badge = document.getElementById('dioStateBadge');
+        if (badge) {
+            if (!d.enabled)          { badge.textContent = 'OFF';                 badge.style.background = '#eceff1'; badge.style.color = '#546e7a'; }
+            else if (d.connected)    { badge.textContent = `ON · ${d.fired} pulses`; badge.style.background = '#e0f2f1'; badge.style.color = '#00695c'; }
+            else if (d.errors)       { badge.textContent = 'ON · device error';   badge.style.background = '#ffebee'; badge.style.color = '#c62828'; }
+            else                     { badge.textContent = 'ON · waiting';        badge.style.background = '#fff8e1'; badge.style.color = '#ef6c00'; }
+        }
+        const foot = document.getElementById('dioStatus');
+        if (foot) {
+            if (!d.enabled)          { foot.textContent = 'DIO: off'; foot.style.color = '#9aa0a6'; }
+            else if (d.last_ts)      { foot.textContent = `DIO \u2192 ch${d.last_channel} ${String(d.last_class).toUpperCase()} @ ${d.last_ts.split('T')[1].split('.')[0]}`; foot.style.color = d.connected ? '#00897b' : '#e53935'; }
+            else                     { foot.textContent = d.connected ? 'DIO: armed' : (d.errors ? 'DIO: device error' : 'DIO: on'); foot.style.color = d.errors && !d.connected ? '#e53935' : '#00897b'; }
+        }
     }
 
     // ── Session Comparison Table ─────────────────────────────────────────────
@@ -1293,6 +1375,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function dioSyncDriverOpts() {
+        const drv = document.getElementById('set_dio_driver');
+        if (!drv) return;
+        const isSerial = drv.value === 'serial', isModbus = drv.value === 'modbus_tcp';
+        document.getElementById('dioSerialOpts').style.display = isSerial ? 'flex' : 'none';
+        document.getElementById('dioModbusOpts').style.display = isModbus ? 'flex' : 'none';
+        const proto = document.getElementById('set_dio_serial_protocol').value;
+        document.getElementById('dioCustomOpts').style.display = (isSerial && proto === 'custom') ? 'contents' : 'none';
+        const dev = document.getElementById('set_dio_device');
+        dev.placeholder = isModbus ? '10.0.0.5:502' : (isSerial ? '/dev/ttyUSB0 · socket://10.0.0.5:4196' : '(ignored in simulation)');
+    }
+    (function wireDio() {
+        const drv = document.getElementById('set_dio_driver');
+        const proto = document.getElementById('set_dio_serial_protocol');
+        if (drv) drv.addEventListener('change', dioSyncDriverOpts);
+        if (proto) proto.addEventListener('change', dioSyncDriverOpts);
+        async function fire(chInputId, label) {
+            const msg = document.getElementById('dioTestMsg');
+            const ch = parseInt(document.getElementById(chInputId).value);
+            if (!ch) { msg.textContent = `${label}: channel 0 = not wired`; return; }
+            msg.textContent = `pulsing ch${ch}…`;
+            try {
+                const res = await fetch('/api/dio/test', { method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...devHeaders() },
+                    body: JSON.stringify({ channel: ch }) });
+                const body = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    // give the worker a moment, then read back the result
+                    await new Promise(r => setTimeout(r, 300));
+                    const st = await fetch('/api/dio', { headers: devHeaders() }).then(r => r.json()).catch(() => ({}));
+                    const d = st.dio || body.dio || {};
+                    msg.textContent = d.connected
+                        ? `ch${ch} pulsed ✓ (${d.fired} total, ${d.driver} ${d.device})`
+                        : `ch${ch}: ${d.last_error || 'device not connected'}`;
+                    msg.style.color = d.connected ? '#00897b' : '#e53935';
+                    updateDioBadges(d);
+                } else {
+                    msg.textContent = body.message || `HTTP ${res.status}`; msg.style.color = '#e53935';
+                }
+            } catch (e) { msg.textContent = String(e); msg.style.color = '#e53935'; }
+        }
+        const b1 = document.getElementById('btnDioTest1'), b2 = document.getElementById('btnDioTest2');
+        if (b1) b1.addEventListener('click', () => fire('set_dio_ch_carton', 'carton'));
+        if (b2) b2.addEventListener('click', () => fire('set_dio_ch_polybag', 'polybag'));
+    })();
+
     async function loadSettings() {
         // 0. Apply mode banner + .gpu-only visibility before anything else
         await applyMode();
@@ -1349,6 +1477,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dedupIntEl) dedupIntEl.value = serverSettings.dedup_interval_ms ?? 300;
         const ciEl = document.getElementById('set_count_interpolate');
         if (ciEl) ciEl.checked = serverSettings.count_interpolate !== false;
+
+        // Digital output (relay pulse)
+        const _dio = (id) => document.getElementById(id);
+        if (_dio('set_dio_enabled')) {
+            _dio('set_dio_enabled').checked        = !!serverSettings.dio_enabled;
+            _dio('set_dio_driver').value           = serverSettings.dio_driver ?? 'serial';
+            _dio('set_dio_device').value           = serverSettings.dio_device ?? '/dev/ttyUSB0';
+            _dio('set_dio_pulse_ms').value         = serverSettings.dio_pulse_ms ?? 50;
+            _dio('set_dio_serial_protocol').value  = serverSettings.dio_serial_protocol ?? 'numato';
+            _dio('set_dio_serial_baud').value      = String(serverSettings.dio_serial_baud ?? 9600);
+            _dio('set_dio_on_cmd').value           = serverSettings.dio_on_cmd ?? 'relay on {ch0}\\r';
+            _dio('set_dio_off_cmd').value          = serverSettings.dio_off_cmd ?? 'relay off {ch0}\\r';
+            _dio('set_dio_modbus_unit').value      = serverSettings.dio_modbus_unit ?? 1;
+            _dio('set_dio_modbus_offset').value    = serverSettings.dio_modbus_offset ?? 0;
+            const map = serverSettings.dio_map || { carton: 1, polybag: 2 };
+            _dio('set_dio_ch_carton').value        = map.carton ?? 1;
+            _dio('set_dio_ch_polybag').value       = map.polybag ?? 2;
+            dioSyncDriverOpts();
+            if (devToken()) {
+                fetch('/api/dio', { headers: devHeaders() }).then(r => r.json())
+                    .then(b => { if (b && b.dio) updateDioBadges(b.dio); }).catch(() => {});
+            }
+        }
 
         // Restore line settings
         const savedOrientation = serverSettings.line_orientation || 'vertical';
@@ -1452,6 +1603,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 dedup_time_enabled: document.getElementById('set_dedup_time').checked,
                 dedup_interval_ms:  parseInt(document.getElementById('set_dedup_interval').value),
                 count_interpolate:  document.getElementById('set_count_interpolate').checked,
+                dio_enabled:        document.getElementById('set_dio_enabled').checked,
+                dio_driver:         document.getElementById('set_dio_driver').value,
+                dio_device:         document.getElementById('set_dio_device').value.trim(),
+                dio_pulse_ms:       parseInt(document.getElementById('set_dio_pulse_ms').value),
+                dio_serial_protocol: document.getElementById('set_dio_serial_protocol').value,
+                dio_serial_baud:    parseInt(document.getElementById('set_dio_serial_baud').value),
+                dio_on_cmd:         document.getElementById('set_dio_on_cmd').value,
+                dio_off_cmd:        document.getElementById('set_dio_off_cmd').value,
+                dio_modbus_unit:    parseInt(document.getElementById('set_dio_modbus_unit').value),
+                dio_modbus_offset:  parseInt(document.getElementById('set_dio_modbus_offset').value),
+                dio_map: {
+                    carton:  parseInt(document.getElementById('set_dio_ch_carton').value),
+                    polybag: parseInt(document.getElementById('set_dio_ch_polybag').value),
+                },
             };
 
             // Save to server first — if it rejects (e.g. RF-DETR .xml,

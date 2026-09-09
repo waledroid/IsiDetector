@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..', '..', 'isidet')))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, '..')))
 
 from isitec_api.stream_handler import StreamHandler
+from src.shared.digital_out import DigitalOutPublisher
 from isitec_api.dependencies import (
     DEV_PASSWORD, require_dev, create_dev_token, discard_dev_token, check_dev_token,
 )
@@ -66,6 +67,10 @@ async def lifespan(app: FastAPI):
         pass
     try:
         stream_handler.publisher.close()
+    except Exception:
+        pass
+    try:
+        stream_handler.dio.close()
     except Exception:
         pass
 
@@ -395,7 +400,26 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
                 {"status": "error", "message": str(e)}, status_code=400
             )
 
+    # Digital-output (relay pulse) keys — validated as a block by the
+    # publisher's own normalizer so the rules live in one place.
+    dio_keys = [k for k in request_body if k.startswith('dio_')]
+    if dio_keys:
+        try:
+            _merged = dict(_load_settings()); _merged.update({k: request_body[k] for k in dio_keys})
+            _norm = DigitalOutPublisher.normalize(DigitalOutPublisher.from_settings(_merged))
+        except (ValueError, TypeError) as e:
+            return JSONResponse({"status": "error", "message": f"digital output: {e}"}, status_code=400)
+        for k in dio_keys:
+            short = k[len('dio_'):]
+            if short in _norm:
+                request_body[k] = _norm[short]
+            else:
+                del request_body[k]
+
     allowed_keys = (
+        'dio_enabled', 'dio_driver', 'dio_device', 'dio_pulse_ms', 'dio_map',
+        'dio_serial_baud', 'dio_serial_protocol', 'dio_on_cmd', 'dio_off_cmd',
+        'dio_modbus_unit', 'dio_modbus_offset',
         'yolo_weights', 'rfdetr_weights', 'yolo_conf', 'detr_conf',
         'line_orientation', 'line_position', 'belt_direction',
         'rtsp_url', 'udp_host', 'udp_port', 'auto_start',
@@ -420,6 +444,13 @@ async def save_settings(request_body: dict, _token: str = Depends(require_dev)):
             )
         except Exception:
             pass
+
+    # Live-apply digital output — toggling ON/OFF takes effect on the next crossing.
+    if dio_keys:
+        try:
+            stream_handler.dio.configure(DigitalOutPublisher.from_settings(current))
+        except Exception as e:
+            return JSONResponse({"status": "error", "message": f"digital output: {e}"}, status_code=400)
 
     if 'dedup_time_enabled' in request_body or 'dedup_interval_ms' in request_body:
         try:
@@ -786,6 +817,26 @@ def set_udp_target(request_body: dict, _token: str = Depends(require_dev)):
         )
     stream_handler.set_udp_target(host, port)
     return {"status": "success", "host": host, "port": port}
+
+
+@app.get("/api/dio")
+def get_dio(_token: str = Depends(require_dev)):
+    """Live state of the relay-pulse publisher."""
+    return {"status": "success", "dio": stream_handler.dio.state()}
+
+
+@app.post("/api/dio/test")
+def dio_test(request_body: dict, _token: str = Depends(require_dev)):
+    """Fire one pulse on an explicit channel — works even when dio_enabled is false."""
+    try:
+        ch = int(request_body.get('channel', 1))
+        queued = stream_handler.dio.test_pulse(ch)
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+    if not queued:
+        return JSONResponse({"status": "error", "message": "pulse not queued (queue full / device dead)",
+                             "dio": stream_handler.dio.state()}, status_code=503)
+    return {"status": "success", "channel": ch, "dio": stream_handler.dio.state()}
 
 
 @app.get("/api/line")
