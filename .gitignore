@@ -95,3 +95,11 @@ venv/
 /ONNX_TUTORIAL.md
 /OPENVINO_TUTORIAL.md
 /isidet/a.py
+
+# ── Local-only bulk artefacts at the repo root ──────────────────────────────
+# Training outputs written by Ultralytics when launched with CWD elsewhere
+/runs/
+# Media extracted by build_deck.py for the client deck (67 MB, regenerable)
+/.pptx_media/
+# Opaque 10 MB blob left at the root (UUID-named .data file)
+/*.data
