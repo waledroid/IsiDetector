@@ -8,9 +8,29 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: isitec-visionai
-    ports:
-      - "9501:9501"
-      - "9502:9502/udp"
+    # ╔═══════════════════════════════════════════════════════════════════╗
+    # ║ DEV-ONLY — DO NOT MERGE TO deploy / fps (would BREAK the site).    ║
+    # ║ host networking is required ONLY when the UDP consumer runs LOCALLY║
+    # ║ on this same machine (Windows DetectionCarton) under WSL2 mirrored ║
+    # ║ networking: it lets the container share WSL's netns so 127.0.0.1   ║
+    # ║ bridges to the Windows-side listener. A bridged container's        ║
+    # ║ 127.0.0.1 is its own loopback, and the LAN IP (192.168.x) is a     ║
+    # ║ local Linux interface that swallows the packet before it reaches   ║
+    # ║ Windows — verified by controlled test. PRODUCTION/site uses bridge ║
+    # ║ networking + a REMOTE UDP_HOST (e.g. 10.0.0.1); host mode there is ║
+    # ║ wrong. Strip this line (and restore `ports:`) when refreshing      ║
+    # ║ deploy — see CLAUDE.md deploy-branch deletion/derivation steps.    ║
+    # ╚═══════════════════════════════════════════════════════════════════╝
+    network_mode: host
+    # `ports:` are DISCARDED under network_mode: host — the app binds PORT
+    # (9501) directly on the host namespace, reachable at localhost:9501
+    # (incl. from Windows via mirrored localhost forwarding). On deploy/fps
+    # (bridge networking) restore this block:
+    #   ports:
+    #     - "9501:9501"
+    # 9502/udp is NEVER published — the app is UDP send-only (sendto →
+    # UDP_HOST:9502); an ingress publish is dead weight and, with a local
+    # consumer bound to 0.0.0.0:9502/udp, collides ("address already in use").
     volumes:
       - ../isidet/models:/opt/isitec/isidet/models
       - ../isidet/runs:/opt/isitec/isidet/runs
