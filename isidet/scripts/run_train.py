@@ -11,6 +11,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
+# Anchor CWD to the repo root (parent of isidet/). Config paths such as
+# `dataset_path: isidet/data/...` and output dirs (isidet/runs/, isidet/logs/)
+# are repo-root-relative, so the pipeline assumes CWD == repo root. Forcing it
+# here makes run_train.py behave identically from ANY launch directory
+# (repo root, isidet/, anywhere) instead of failing on a doubled
+# `isidet/isidet/...` path when run from inside isidet/.
+REPO_ROOT = PROJECT_ROOT.parent
+os.chdir(REPO_ROOT)
+
 # 2. Registry and hooks (hooks have no optional dependencies so always safe to import)
 from src.shared.registry import TRAINERS
 import src.training.hooks

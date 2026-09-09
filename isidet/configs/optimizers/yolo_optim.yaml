@@ -5,7 +5,7 @@ epochs: 200
 
 optimizer:
   type: "AdamW"
-  lr: 0.001
+  lr: 0.0005
   weight_decay: 0.0005
   
   scheduler:
@@ -16,7 +16,7 @@ optimizer:
 
 early_stopping:
   enabled: true
-  patience: 30     # 🛑 Aggressive cutoff: Stop if no improvement for 10 epochs
+  patience: 20     # 🛑 Aggressive cutoff: Stop if no improvement for 10 epochs
   min_delta: 0.0005
   monitor: "mAP50"
   mode: "max"
