@@ -94,9 +94,14 @@ class FP16Stage(Stage):
     #: the model's outputs stay FP32, so the NMS coordinate Mul/Add
     #: nodes at the boundary receive FP32 inputs from the outside and
     #: don't need explicit blocking.
+    #: * ``Range`` — the ONNX spec does not allow float16 inputs for Range
+    #:   at all (yolo26 end2end heads use it for anchor generation; without
+    #:   this entry ORT refuses to load the converted model with
+    #:   "Type 'tensor(float16)' ... of operator (Range) is invalid").
     fp16_op_block_list: tuple[str, ...] = (
         "Resize", "Upsample",
         "ReduceSum", "TopK",
+        "Range",
     )
 
     def run(self, src: Path) -> Path:
